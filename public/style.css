@@ -152,16 +152,31 @@ body {
 .q-item .q-intent { font-size: 0.78rem; color: var(--muted); }
 
 /* ===== Practice ===== */
+.practice-question-card {
+  border-left: 4px solid var(--accent);
+  background: var(--bg0);
+}
 .practice-layout { display: grid; grid-template-columns: 1fr 280px; gap: 1rem; }
 .practice-main textarea { width: 100%; margin-bottom: 0.5rem; }
-.practice-sidebar { font-size: 0.85rem; }
-.practice-sidebar ul { list-style: none; padding: 0; }
-.practice-sidebar li {
-  padding: 0.5rem 0.7rem; border-radius: 6px; cursor: pointer;
-  border-bottom: 1px solid var(--rule); font-size: 0.82rem;
+#practice-question-list {
+  list-style: none; padding: 0; margin: 0;
 }
-.practice-sidebar li:hover { background: var(--tag-bg); }
-.practice-sidebar li.active { background: var(--tag-bg); font-weight: 600; color: var(--accent); }
+#practice-question-list li {
+  padding: 0.45rem 0.6rem; border-radius: 6px; cursor: pointer;
+  border-bottom: 1px solid var(--rule); font-size: 0.84rem;
+  display: flex; align-items: flex-start; gap: 0.5rem;
+  line-height: 1.5;
+}
+#practice-question-list li:hover { background: var(--tag-bg); }
+#practice-question-list li.active { background: var(--tag-bg); font-weight: 600; color: var(--accent); }
+.q-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; border-radius: 50%;
+  background: var(--rule); color: var(--muted); font-size: 0.72rem;
+  font-weight: 700; flex-shrink: 0; margin-top: 1px;
+}
+#practice-question-list li.active .q-num { background: var(--accent); color: #fff; }
+
 
 .q-meta { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
 .q-text { font-size: 1.05rem; font-weight: 600; }
@@ -347,7 +362,6 @@ body {
 @media (max-width: 768px) {
   .input-grid { grid-template-columns: 1fr; }
   .practice-layout { grid-template-columns: 1fr; }
-  .practice-sidebar { order: -1; }
   .nav-tabs { gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .nav-tab { font-size: 0.78rem; padding: 0.3rem 0.6rem; white-space: nowrap; flex-shrink: 0; }
   .chat-msg { max-width: 95%; }

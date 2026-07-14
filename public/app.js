@@ -566,7 +566,11 @@ function renderQuestionList(questions, filterType) {
   $$('.q-item').forEach(item => {
     item.addEventListener('click', () => {
       switchTab('practice');
-      setTimeout(() => selectPracticeQuestion(decodeURIComponent(item.dataset.question)), 100);
+      // 立即滚动到练习区顶部，避免被题目列表拖到底部
+      const practiceArea = document.getElementById('tab-practice');
+      if (practiceArea) practiceArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => selectPracticeQuestion(decodeURIComponent(item.dataset.question)), 150);
     });
   });
 }
@@ -587,11 +591,15 @@ function renderPracticeQuestions() {
   if (!state.analysis?.questions) return;
   const qs = state.analysis.questions;
   $('#practice-question-list').innerHTML = qs.map((q, i) => `
-    <li data-idx="${i}" data-question="${encodeURIComponent(q.question)}">${q.question.slice(0, 40)}...</li>
+    <li data-idx="${i}" data-question="${encodeURIComponent(q.question)}">
+      <span class="q-num">${i + 1}</span> ${q.question}
+    </li>
   `).join('');
   $$('#practice-question-list li').forEach(li => {
     li.addEventListener('click', () => selectPracticeQuestion(decodeURIComponent(li.dataset.question)));
   });
+  const countEl = document.getElementById('practice-q-count');
+  if (countEl) countEl.textContent = qs.length;
   $('#practice-empty').classList.add('hidden');
   $('#practice-area').classList.remove('hidden');
 }
@@ -614,6 +622,11 @@ function selectPracticeQuestion(question) {
   $$('#practice-question-list li').forEach(li => {
     li.classList.toggle('active', decodeURIComponent(li.dataset.question) === question);
   });
+  // 滚动到题目卡片，确保可见
+  const card = document.getElementById('practice-question-card');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // 聚焦回答框
+  setTimeout(() => { const ta = document.getElementById('practice-answer'); if (ta) ta.focus(); }, 200);
 }
 
 $('#btn-practice-submit').addEventListener('click', async () => {
@@ -692,17 +705,23 @@ $('#btn-save-phrase').addEventListener('click', async () => {
     });
     toast('✅ 已存入话术库');
     $('#btn-save-phrase').textContent = '✅ 已保存';
+    // 自动打开话术库面板
+    const pp = document.getElementById('phrase-panel');
+    if (pp) { pp.open = true; pp.classList.remove('hidden'); refreshPhraseList(); }
     setTimeout(() => { $('#btn-save-phrase').classList.add('hidden'); }, 2000);
   } catch (e) { toast('保存失败: ' + e.message); }
 });
 
-// 话术库面板
-$('#show-phrases-btn').addEventListener('click', async () => {
-  $('#phrase-panel').classList.remove('hidden');
-  await refreshPhraseList();
-});
-$('#phrase-score-filter').addEventListener('change', () => refreshPhraseList());
-$('#btn-hide-phrases').addEventListener('click', () => $('#phrase-panel').classList.add('hidden'));
+// 话术库面板（使用 <details> 原生折叠，自动加载）
+(function() {
+  const panel = document.getElementById('phrase-panel');
+  if (panel) {
+    panel.addEventListener('toggle', () => {
+      if (panel.open) refreshPhraseList();
+    });
+  }
+})();
+$('#phrase-score-filter')?.addEventListener('change', () => refreshPhraseList());
 
 async function refreshPhraseList() {
   try {
@@ -1696,8 +1715,8 @@ async function showOnboardingIfNeeded(healthData) {
   $('#onboarding-close').onclick = () => overlay.style.display = 'none';
 
   // 步骤条
-  const STEPS = ['node', 'opencli', 'extension', 'verify'];
-  const LABELS = { node: 'Node.js 20+', opencli: '安装 opencli', extension: 'Chrome 扩展', verify: '验证' };
+  const STEPS = ['node', 'opencli', 'extension', 'login', 'verify'];
+  const LABELS = { node: 'Node.js 20+', opencli: '安装 opencli', extension: 'Chrome 扩展', login: '登录小红书', verify: '验证' };
   const stepStatus = {};
   STEPS.forEach(s => stepStatus[s] = 'pending');
 
@@ -1784,9 +1803,37 @@ async function showOnboardingIfNeeded(healthData) {
     return;
   }
 
-  // ====== 4. 全部通过 ======
-  stepStatus.extension = 'done'; stepStatus.verify = 'done'; renderSteps();
-  detailEl.innerHTML += `<p style="color:var(--green);margin-top:1rem;">✅ 全部就绪！opencli 已连接 (v${oc.version || '?'})，所有功能可用。</p>`;
+  // ====== 4. 小红书扫码登录（保存登录态，后续面经/JD抓取需要） ======
+  if (oc.browser_ready && !state._xhsLoginDone) {
+    stepStatus.extension = 'done'; stepStatus.login = 'active'; renderSteps();
+    detailEl.innerHTML += `<div class="ci-section" style="margin-top:1rem;">
+<div class="ci-section-title">📱 第4步：扫码登录小红书（保存登录态）</div><div class="ci-section-body">
+<p style="margin-bottom:0.8rem;">opencli 通过你的浏览器登录态来<b>搜索面经、扒取JD</b>，因此需要先保存登录状态。</p>
+
+<div style="background:var(--bg2);border:1px solid var(--accent);border-radius:8px;padding:1rem;margin-bottom:0.8rem;">
+<p style="margin:0 0 0.6rem 0;font-weight:bold;">📌 操作步骤：</p>
+<ol style="padding-left:1.3rem;line-height:2.2;margin:0;">
+<li>点击下方按钮，浏览器会自动打开小红书页面</li>
+<li>在浏览器中点击<b>「登录」→ 手机扫码</b>完成登录</li>
+<li>登录成功后页面会显示搜索结果，回到此页面点「已完成登录」</li>
+</ol>
+</div>
+
+<p style="font-size:0.8rem;color:var(--muted);">
+💡 <b>为什么需要这步？</b> JD链接扒取（Boss直聘/51job）和面经采集都需要浏览器已登录才能拿到完整内容。一次登录，全局生效。
+</p>
+
+<div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.8rem;">
+<button class="btn-primary" style="font-size:0.85rem;padding:0.3rem 0.8rem;" onclick="openXhsForLogin()">🌐 打开小红书登录页</button>
+<button class="btn-outline" style="font-size:0.85rem;padding:0.3rem 0.8rem;" onclick="markXhsLoginDone()">✅ 已完成登录</button>
+</div>
+<span id="recheck-login" style="display:block;margin-top:0.4rem;font-size:0.82rem;"></span>
+</div></div>`;
+    return;
+  }
+  // ====== 5. 全部通过 ======
+  stepStatus.login = 'done'; stepStatus.verify = 'done'; renderSteps();
+  detailEl.innerHTML += `<p style="color:var(--green);margin-top:1rem;">✅ 全部就绪！opencli 已连接 (v${oc.version || '?'})，面经搜索 & JD扒取均已可用。</p>`;
 
   const sites = [];
   if (oc.has_xiaohongshu) sites.push('小红书搜索');
@@ -1808,6 +1855,29 @@ async function recheckOpencli() {
   }
 }
 window.recheckOpencli = recheckOpencli;
+
+// 小红书扫码登录
+async function openXhsForLogin() {
+  const el = document.getElementById('recheck-login');
+  if (el) el.textContent = '⏳ 正在打开小红书...';
+  try {
+    const resp = await fetch('/api/open-xhs-login', { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    if (el) el.textContent = '✅ 小红书已打开！请在浏览器中完成扫码登录，登录成功后回到此页面点「已完成登录」';
+  } catch(e) {
+    if (el) el.textContent = '❌ 打开失败: ' + e.message;
+  }
+}
+async function markXhsLoginDone() {
+  state._xhsLoginDone = true;
+  try {
+    const h = await fetch('/api/health').then(r => r.json());
+    await showOnboardingIfNeeded(h);
+  } catch(e) { /* ignore */ }
+}
+window.openXhsForLogin = openXhsForLogin;
+window.markXhsLoginDone = markXhsLoginDone;
 
 (async () => {
   await refreshSessionList();

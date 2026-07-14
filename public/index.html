@@ -123,48 +123,47 @@
     </div>
 
     <div id="practice-area" class="hidden">
-      <div class="practice-layout">
-        <div class="practice-main">
-          <div class="card" id="practice-question-card">
-            <div class="q-meta" id="practice-q-meta"></div>
-            <div class="q-text" id="practice-q-text"></div>
-          </div>
-          <div class="card">
-            <label>你的回答</label>
-            <textarea id="practice-answer" rows="6" placeholder="输入你的回答..."></textarea>
-            <div style="display:flex;gap:0.5rem;align-items:center;">
-              <button id="btn-practice-submit" class="btn-primary">提交评估</button>
-              <button id="btn-save-phrase" class="btn-outline hidden" title="保存当前优质回答到话术库">⭐ 存入话术库</button>
-            </div>
-          </div>
-          <div id="practice-feedback" class="hidden"></div>
-        </div>
-        <aside class="practice-sidebar">
-          <div class="card">
-            <h3>本题押题</h3>
-            <ul id="practice-question-list"></ul>
-          </div>
-          <button id="show-phrases-btn" class="btn-outline" style="width:100%;margin-top:0.5rem;">📚 话术库</button>
-        </aside>
+      <!-- 当前题目卡片（醒目） -->
+      <div class="card" id="practice-question-card" style="border-left:4px solid var(--accent);background:var(--bg0);margin-bottom:0.8rem;">
+        <div class="q-meta" id="practice-q-meta" style="margin-bottom:0.5rem;"></div>
+        <div class="q-text" id="practice-q-text" style="font-size:1.05rem;line-height:1.8;color:var(--fg);font-weight:500;"></div>
       </div>
 
+      <!-- 回答区 -->
+      <div class="card" style="margin-bottom:0.8rem;">
+        <label style="font-weight:600;margin-bottom:0.5rem;display:block;">✍️ 你的回答</label>
+        <textarea id="practice-answer" rows="6" placeholder="输入你的回答..."></textarea>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <button id="btn-practice-submit" class="btn-primary">提交评估</button>
+          <button id="btn-save-phrase" class="btn-outline hidden" title="保存当前优质回答到话术库">⭐ 存入话术库</button>
+        </div>
+      </div>
+
+      <!-- 评估反馈 -->
+      <div id="practice-feedback" class="hidden"></div>
+
+      <!-- 题目列表（紧凑折叠式） -->
+      <details class="card" style="margin-top:0.8rem;" open>
+        <summary style="cursor:pointer;font-weight:600;color:var(--accent);user-select:none;">📋 全部押题清单 (<span id="practice-q-count">0</span>)</summary>
+        <ul id="practice-question-list" style="max-height:300px;overflow-y:auto;margin-top:0.6rem;"></ul>
+      </details>
+
       <!-- 话术库面板 -->
-      <div id="phrase-panel" class="card hidden" style="margin-top:1rem;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
-          <h3 style="margin:0;">📚 个人话术库</h3>
-          <div style="display:flex;gap:0.4rem;align-items:center;">
-            <select id="phrase-score-filter" style="font-size:0.78rem;padding:0.15rem 0.4rem;border:1px solid var(--rule);border-radius:4px;">
-              <option value="">全部分数</option>
-              <option value="90">≥90分</option>
-              <option value="80">≥80分</option>
-              <option value="70">≥70分</option>
-            </select>
+      <details id="phrase-panel" class="card hidden" style="margin-top:0.8rem;">
+        <summary style="cursor:pointer;font-weight:600;color:var(--accent);user-select:none;">📚 个人话术库</summary>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.6rem;margin-bottom:0.8rem;">
+          <select id="phrase-score-filter" style="font-size:0.78rem;padding:0.15rem 0.4rem;border:1px solid var(--rule);border-radius:4px;">
+            <option value="">全部分数</option>
+            <option value="90">≥90分</option>
+            <option value="80">≥80分</option>
+            <option value="70">≥70分</option>
+          </select>
+          <div style="display:flex;gap:0.4rem;">
             <a id="btn-export-phrases" href="/api/export/phrases" class="btn-outline" style="font-size:0.78rem;text-decoration:none;">📥 导出DOCX</a>
-            <button id="btn-hide-phrases" class="btn-outline" style="font-size:0.78rem;">收起</button>
           </div>
         </div>
         <div id="phrase-list"><p style="color:var(--muted);">话术库为空。练习中得分85+的回答会自动存入。</p></div>
-      </div>
+      </details>
     </div>
   </section>
 

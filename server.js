@@ -1179,6 +1179,27 @@ app.get('/api/opencli-check', (req, res) => {
   res.json(detectOpencli());
 });
 
+// 小红书扫码登录 — 使用 opencli 打开小红书搜索页，触发扫码登录
+app.post('/api/open-xhs-login', async (req, res) => {
+  const ocErr = requireOpencli('打开小红书登录');
+  if (ocErr) return res.status(503).json({ error: ocErr });
+  try {
+    // 使用 opencli xiaohongshu search 命令，会自动打开浏览器（让用户扫码登录）
+    execSync('opencli xiaohongshu search "面试经验" --foreground', {
+      shell: true, timeout: 15000, stdio: ['pipe', 'pipe', 'pipe']
+    });
+    res.json({ ok: true });
+  } catch(e) {
+    // opencli 可能返回非0（daemon已在运行等），只要命令执行了就认为成功
+    const msg = e.stderr ? String(e.stderr) : String(e.message || '');
+    if (msg.includes('daemon') || msg.includes('running') || msg.includes('connected')) {
+      res.json({ ok: true, hint: 'daemon 已就绪' });
+    } else {
+      res.status(500).json({ error: '无法打开小红书: ' + msg.slice(0, 120) });
+    }
+  }
+});
+
 // 中间件：检查 opencli 是否就绪
 function requireOpencli(what) {
   const oc = detectOpencli();
