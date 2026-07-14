@@ -44,6 +44,7 @@
       "ai-provider-kit/**/*",
       "node_modules/**/*",
       "!.data",
+      "!.local",
       "!logs",
       "!.env",
       "!*.zip"

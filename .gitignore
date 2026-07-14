@@ -1,4 +1,5 @@
 .data/
+.local/
 logs/
 .env
 *.zip
