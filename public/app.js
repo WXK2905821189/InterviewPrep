@@ -43,6 +43,77 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ===== 版本更新检查 (GitHub Releases API) =====
+$('#btn-check-update')?.addEventListener('click', async () => {
+  const statusEl = document.getElementById('update-status');
+  const detailEl = document.getElementById('update-detail');
+  if (!statusEl || !detailEl) return;
+  statusEl.textContent = '⏳ 查询中...';
+  detailEl.classList.add('hidden');
+
+  try {
+    const currentVer = window.__ELECTRON_VERSION__ || '1.0.0';
+    // GitHub API: 获取最新 Release
+    const resp = await fetch('https://api.github.com/repos/WXK2905821189/InterviewPrep/releases/latest', {
+      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'InterviewPrep' }
+    });
+    if (!resp.ok) {
+      if (resp.status === 403) throw new Error('API 频率限制，请稍后再试');
+      throw new Error('无法获取更新信息 (HTTP ' + resp.status + ')');
+    }
+    const release = await resp.json();
+    const latestVer = (release.tag_name || '').replace(/^v/i, '');
+    const currentClean = currentVer.replace(/^v/i, '');
+
+    if (latestVer === currentClean || latestVer <= currentClean) {
+      statusEl.textContent = '✅ 已是最新版';
+      detailEl.classList.remove('hidden');
+      detailEl.innerHTML = `<p style="color:var(--green);font-size:0.82rem;">当前 v${currentClean} 已是最新版本。</p>
+        <p style="font-size:0.78rem;color:var(--muted);">发布标题：${release.name || latestVer} · ${new Date(release.published_at).toLocaleDateString('zh-CN')}</p>`;
+    } else {
+      statusEl.textContent = `🆕 发现新版本 v${latestVer}`;
+      detailEl.classList.remove('hidden');
+      const body = (release.body || '').slice(0, 500).replace(/\n/g, '<br>');
+      detailEl.innerHTML = `
+        <div style="background:var(--bg2);border:1px solid var(--accent);border-radius:8px;padding:0.8rem;">
+          <p style="font-weight:600;color:var(--accent);margin:0 0 0.5rem 0;">📦 v${latestVer} 更新内容</p>
+          <p style="font-size:0.8rem;color:var(--muted);margin:0 0 0.8rem 0;">${body || '（无详细说明）'}</p>
+          <a href="${release.html_url}" target="_blank" class="btn-primary" style="font-size:0.82rem;text-decoration:none;display:inline-block;">📥 前往下载</a>
+        </div>`;
+    }
+  } catch (e) {
+    statusEl.textContent = '❌ 检查失败';
+    detailEl.classList.remove('hidden');
+    detailEl.innerHTML = `<p style="color:var(--red);font-size:0.82rem;">${e.message}</p>`;
+  }
+});
+
+// 自动检查（静默，启动时）
+(async function autoCheckUpdate() {
+  try {
+    const resp = await fetch('https://api.github.com/repos/WXK2905821189/InterviewPrep/releases/latest', {
+      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'InterviewPrep' }
+    });
+    if (!resp.ok) return;
+    const release = await resp.json();
+    const latestVer = (release.tag_name || '').replace(/^v/i, '');
+    const currentVer = (window.__ELECTRON_VERSION__ || '1.0.0').replace(/^v/i, '');
+    if (latestVer > currentVer) {
+      // 在右上角设置按钮旁显示小红点
+      const btn = document.getElementById('btn-open-settings');
+      if (btn) {
+        const badge = document.createElement('span');
+        badge.className = 'update-badge';
+        badge.title = `新版本 v${latestVer} 可用`;
+        badge.textContent = '🆕';
+        badge.style.cssText = 'font-size:0.7rem;margin-left:2px;animation:pulse 2s infinite;';
+        btn.parentElement.style.position = 'relative';
+        btn.appendChild(badge);
+      }
+    }
+  } catch {} // 静默失败
+})();
+
 // ===== 简历文件上传 =====
 $('#btn-resume-file').addEventListener('click', () => $('#resume-file-input').click());
 $('#resume-file-input').addEventListener('change', async () => {
@@ -281,11 +352,11 @@ async function apiInterviewEvaluate() {
   return resp.json();
 }
 
-async function apiEvaluateSingle(question, answer) {
+async function apiEvaluateSingle(question, answer, jdSummary, resumeText) {
   const resp = await fetch(`${API}/evaluate-single`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, answer, jdSummary: '' })
+    body: JSON.stringify({ question, answer, jdSummary: jdSummary || '', resumeText: resumeText || '' })
   });
   if (!resp.ok) throw new Error((await resp.json()).error);
   return resp.json();
@@ -348,12 +419,15 @@ $('#btn-analyze').addEventListener('click', async () => {
     // resume metadata already in state from upload (or '' from text paste)
     state.resumeFileName = state.resumeFileName || '';
     state.resumeSourceType = state.resumeSourceType || '';
-    renderAnalysisResult(result);
-    refreshSessionList();
-    $('#nav-session-label').textContent = result.jd?.position || result.jd?.company || '当前岗位';
-    $('#phrase-banner').style.display = 'none';
-    setStatus('✅ 分析完成');
+    setStatus('✅ 分析完成，渲染结果...');
     toast('分析完成！查看押题清单');
+    // 延迟渲染，让浏览器先消化最后一条 SSE 事件 + 更新状态文字
+    setTimeout(() => {
+      renderAnalysisResult(result);
+      refreshSessionList();
+      $('#nav-session-label').textContent = result.jd?.position || result.jd?.company || '当前岗位';
+      $('#phrase-banner').style.display = 'none';
+    }, 80);
   } catch (e) {
     toast('分析失败: ' + e.message);
     setStatus('❌ 分析失败');
@@ -519,7 +593,10 @@ function renderAnalysisResult(data) {
     });
   });
 
-  $('#analysis-result').scrollIntoView({ behavior: 'smooth' });
+  // 延迟滚动，避免和渲染竞争
+  setTimeout(() => {
+    $('#analysis-result').scrollIntoView({ behavior: 'smooth' });
+  }, 120);
 }
 
 const PAGE_SIZE = 6; // 默认每页显示条数
@@ -668,6 +745,17 @@ function selectPracticeQuestion(question) {
   setTimeout(() => { const ta = document.getElementById('practice-answer'); if (ta) ta.focus(); }, 200);
 }
 
+// 回答框自动扩高
+(function() {
+  const ta = document.getElementById('practice-answer');
+  if (ta) {
+    ta.addEventListener('input', () => {
+      ta.style.height = 'auto';
+      ta.style.height = Math.max(100, ta.scrollHeight) + 'px';
+    });
+  }
+})();
+
 $('#btn-practice-submit').addEventListener('click', async () => {
   const answer = $('#practice-answer').value.trim();
   const question = state._practiceQuestion;
@@ -679,7 +767,13 @@ $('#btn-practice-submit').addEventListener('click', async () => {
   setStatus('🔄 评估中...');
 
   try {
-    const result = await apiEvaluateSingle(question, answer);
+    // 构建 JD 摘要 + 简历上下文
+    const jd = state.analysis?.jd || {};
+    const jdSummary = jd.position
+      ? `${jd.company || ''} ${jd.position} | ${jd.requirements || jd.responsibilities || ''}`.slice(0, 400)
+      : (jd.requirements || jd.responsibilities || '');
+    const resumeText = state.resumeText || '';
+    const result = await apiEvaluateSingle(question, answer, jdSummary, resumeText.slice(0, 3000));
     state._lastFeedback = result;
     renderSingleFeedback(result);
     if ((result.overall_score || 0) >= 85) {
@@ -1047,6 +1141,10 @@ $('#btn-open-settings').addEventListener('click', () => {
   $('#settings-modal').classList.remove('hidden');
   loadSettingsData();
   loadTemperatures();
+  // 默认显示当前版本号
+  if (window.__ELECTRON_VERSION__) {
+    $('#current-version').textContent = 'v' + window.__ELECTRON_VERSION__;
+  }
 });
 
 // Temperature 滑块
@@ -1872,7 +1970,11 @@ async function showOnboardingIfNeeded(healthData) {
   }
   // ====== 5. 全部通过 ======
   stepStatus.login = 'done'; stepStatus.verify = 'done'; renderSteps();
-  detailEl.innerHTML += `<p style="color:var(--green);margin-top:1rem;">✅ 全部就绪！opencli 已连接 (v${oc.version || '?'})，面经搜索 & JD扒取均已可用。</p>`;
+  detailEl.innerHTML += `
+<p style="color:var(--green);margin-top:1rem;">✅ 全部就绪！opencli 已连接 (v${oc.version || '?'})，面经搜索 & JD扒取均已可用。</p>
+<p style="font-size:0.8rem;color:var(--muted);margin-top:0.3rem;line-height:1.6;">
+💡 <b>说明：</b> 本桌面客户端封装了 Express 后端，但 <b>面经抓取 / JD 链接扒取</b> 仍然通过 opencli 控制你的 Chrome 浏览器完成。请保持 Chrome 已安装 opencli 扩展且处于登录状态。
+</p>`;
 
   const sites = [];
   if (oc.has_xiaohongshu) sites.push('小红书搜索');

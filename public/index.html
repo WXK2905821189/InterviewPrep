@@ -132,7 +132,7 @@
       <!-- 回答区 -->
       <div class="card" style="margin-bottom:0.8rem;">
         <label style="font-weight:600;margin-bottom:0.5rem;display:block;">✍️ 你的回答</label>
-        <textarea id="practice-answer" rows="6" placeholder="输入你的回答..."></textarea>
+        <textarea id="practice-answer" rows="4" placeholder="输入你的回答..." style="min-height:100px;resize:vertical;line-height:1.7;"></textarea>
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <button id="btn-practice-submit" class="btn-primary">提交评估</button>
           <button id="btn-save-phrase" class="btn-outline hidden" title="保存当前优质回答到话术库">⭐ 存入话术库</button>
@@ -326,6 +326,17 @@
       <div class="settings-section">
         <h3>已保存的连接</h3>
         <div id="settings-connections-list"></div>
+      </div>
+
+      <!-- 自动更新 -->
+      <div class="settings-section">
+        <h3>版本更新</h3>
+        <div id="update-section">
+          <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.5rem;">当前版本：<b id="current-version">v1.0.0</b></p>
+          <button id="btn-check-update" class="btn-outline" style="font-size:0.82rem;">🔍 检查更新</button>
+          <span id="update-status" style="font-size:0.82rem;margin-left:0.5rem;"></span>
+          <div id="update-detail" class="hidden" style="margin-top:0.6rem;"></div>
+        </div>
       </div>
     </div>
   </div>

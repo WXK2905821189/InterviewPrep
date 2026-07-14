@@ -193,11 +193,12 @@ async function interviewNextQuestion(session) {
 // ============================================================
 // Chatflow 3: 回答评估
 // ============================================================
-async function evaluateAnswer(question, answer, jdSummary) {
+async function evaluateAnswer(question, answer, jdSummary, resumeText) {
   const evalPrompt = fillTemplate(prompts.EVALUATION_SYSTEM, {
     question,
     candidate_answer: answer,
-    jd_summary: jdSummary
+    jd_summary: jdSummary,
+    resume_summary: resumeText || ''
   });
 
   return await llm(evalPrompt, '', { temperature: 0.3 });

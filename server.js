@@ -516,13 +516,13 @@ app.post('/api/optimize-resume', async (req, res) => {
 // ============================================================
 app.post('/api/evaluate-single', async (req, res) => {
   try {
-    const { question, answer, jdSummary } = req.body;
+    const { question, answer, jdSummary, resumeText } = req.body;
     if (!question || !answer) {
       return res.status(400).json({ error: '请提供题目和回答' });
     }
 
     const { evaluateAnswer } = require('./chatflow/engine');
-    const result = await evaluateAnswer(question, answer, jdSummary || '');
+    const result = await evaluateAnswer(question, answer, jdSummary || '', resumeText || '');
     res.json(result);
   } catch (e) {
     console.error('[API] 单题评估失败:', e);

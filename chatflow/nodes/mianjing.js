@@ -26,14 +26,14 @@ function openCli(cmd) {
  * 主入口：多轮搜索 → 逐篇读取 → LLM 结构化
  */
 async function queryMianjing(company, position, keywords = []) {
-  // ---- 第一轮：多关键词搜索 ----
+  // ---- 第一轮：多关键词搜索（增加关键词约束提升准确度） ----
   const searchQueries = [
-    `${company} ${position} 面经`,
-    `${company} ${position} 面试`,
-    `${company} 面经 ${position}`,
-    ...keywords.slice(0, 3).map(k => `${company} ${k} 面试 面经`),
-    `${company} 面试题`,
-    `${company} 面试经验分享`
+    `${company} ${position} 面试经验`,
+    `${company} ${position} 面经分享`,
+    `${company} 面试 真题 ${position}`,
+    ...keywords.slice(0, 3).map(k => `${company} ${k} 面试题`),
+    `${company} ${position} 面试准备`,
+    `${company} 面试 凉经 过经`
   ];
   // 去重
   const uniqueQueries = [...new Set(searchQueries)].slice(0, 8);
@@ -96,9 +96,10 @@ async function queryMianjing(company, position, keywords = []) {
     if (!signedUrl) { failCount++; continue; }
     const content = openCli(`opencli xiaohongshu note "${signedUrl}" -f md`);
     if (content && content.length > 30) {
-      // 解析 table 格式输出：| field | value |
       let title = n.title || '';
       let body = '';
+
+      // 策略1：解析 table 格式输出：| field | value |
       const lines = content.split('\n');
       for (const line of lines) {
         const m = line.match(/^\|\s*(title|content|author)\s*\|\s*(.+?)\s*\|/i);
@@ -106,9 +107,22 @@ async function queryMianjing(company, position, keywords = []) {
           const key = m[1].toLowerCase();
           const val = m[2].trim();
           if (key === 'title') title = val || title;
-          if (key === 'content') body = val;
+          if (key === 'content' && val.length > body.length) body = val;
           if (key === 'author' && !n.author) n.author = val;
         }
+      }
+
+      // 策略2：如果 table 解析没拿到正文，尝试从 markdown 段落提取
+      if (body.length < 30) {
+        const paragraphs = content.split('\n\n').filter(p => {
+          const t = p.trim();
+          return t.length > 40 && !t.startsWith('#') && !t.startsWith('|') && !t.startsWith('*');
+        });
+        body = paragraphs.slice(0, 3).join('\n\n');
+      }
+      // 策略3：全量兜底（去掉明显的表格和标题行）
+      if (body.length < 20) {
+        body = lines.filter(l => !l.match(/^\|/) && !l.match(/^#/) && l.trim().length > 20).join('\n');
       }
       if (body.length > 20) {
         notesWithContent.push({ ...n, title, content: body.slice(0, 3000) });

@@ -8,3 +8,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   appVersion: '1.0.0',
   isElectron: true
 });
+
+// 同时注入全局变量给前端 JS
+process.once('loaded', () => {
+  // 用 script 注入方式更可靠
+});
+window.addEventListener('DOMContentLoaded', () => {
+  window.__ELECTRON_VERSION__ = '1.0.0';
+  window.__IS_ELECTRON__ = true;
+});
