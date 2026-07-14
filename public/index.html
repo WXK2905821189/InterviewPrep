@@ -68,11 +68,17 @@
       </div>
     </div>
 
-    <div class="action-bar">
-      <label class="switch-label">
-        <input type="checkbox" id="use-mianjing" checked>
-        <span>启用面经采集（增加押题准确率）</span>
-      </label>
+    <div class="action-bar" style="flex-wrap:wrap;gap:0.5rem;">
+      <div style="display:flex;flex-wrap:wrap;gap:0.5rem 1rem;align-items:center;">
+        <label class="switch-label">
+          <input type="checkbox" id="use-mianjing" checked>
+          <span>启用面经采集（增加押题准确率）</span>
+        </label>
+        <label class="switch-label">
+          <input type="checkbox" id="use-quick-mode">
+          <span>⚡ 快速模式（跳过面经+精简题型，约快5倍）</span>
+        </label>
+      </div>
       <button id="btn-analyze" class="btn-primary">开始分析 →</button>
     </div>
 

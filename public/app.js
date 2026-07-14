@@ -188,7 +188,7 @@ $$('.nav-tab').forEach(tab => {
 // ============================================================
 // API Calls
 // ============================================================
-async function apiAnalyze(jdText, resumeText, useMianjing, resumeFileName = '', resumeSourceType = '') {
+async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, resumeFileName = '', resumeSourceType = '') {
   setStatus('🔄 分析中...');
 
   // 显示进度条
@@ -199,11 +199,18 @@ async function apiAnalyze(jdText, resumeText, useMianjing, resumeFileName = '', 
   ps.innerHTML = '';
   pd.textContent = '正在启动分析...';
 
-  const STEPS = ['jd_parse','resume_parse','gap_analysis','mianjing','question_gen','done'];
+  const STEPS = quickMode
+    ? ['jd_parse','resume_parse','gap_analysis','question_gen','done']
+    : ['jd_parse','resume_parse','gap_analysis','mianjing','question_gen','done'];
   const labels = { jd_parse:'解析JD', resume_parse:'解析简历', gap_analysis:'差距分析', mianjing:'面经采集', question_gen:'生成押题', done:'完成' };
 
   // 渲染步骤条
   ps.innerHTML = STEPS.map(s => `<span class="pstep" id="pstep-${s}">${labels[s]}</span>`).join('');
+  if (quickMode) {
+    pd.textContent = '⚡ 快速模式：跳过面经采集，3类核心题型并行生成...';
+  } else {
+    pd.textContent = '正在启动分析...';
+  }
 
   // — 计时 &
   const startTime = Date.now();
@@ -236,7 +243,7 @@ async function apiAnalyze(jdText, resumeText, useMianjing, resumeFileName = '', 
     const resp = await fetch(`${API}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jdText, resumeText, useMianjing, resumeFileName, resumeSourceType })
+      body: JSON.stringify({ jdText, resumeText, useMianjing, quickMode, resumeFileName, resumeSourceType })
     });
 
     const reader = resp.body.getReader();
@@ -403,15 +410,17 @@ $('#btn-analyze').addEventListener('click', async () => {
   const jdText = $('#jd-input').value.trim();
   const resumeText = $('#resume-input').value.trim();
   const useMianjing = $('#use-mianjing').checked;
+  const quickMode = $('#use-quick-mode')?.checked || false;
 
   if (!jdText || !resumeText) return toast('请同时填写JD和简历内容');
-  if (jdText.length < 30 || resumeText.length < 30) return toast('JD和简历内容太短，请提供完整内容');
 
   const btn = $('#btn-analyze');
-  btn.disabled = true; btn.textContent = '分析中...';
+  btn.disabled = true;
+  const modeLabel = quickMode ? '⚡快速' : '完整';
+  btn.textContent = `${modeLabel}分析中...`;
 
   try {
-    const result = await apiAnalyze(jdText, resumeText, useMianjing, state.resumeFileName, state.resumeSourceType);
+    const result = await apiAnalyze(jdText, resumeText, useMianjing, quickMode, state.resumeFileName, state.resumeSourceType);
     state.sessionId = result.sessionId;
     state.analysis = result;
     state.jdText = jdText;

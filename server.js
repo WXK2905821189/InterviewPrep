@@ -170,10 +170,13 @@ async function safeCall(fn, retries = 1) {
 // API 1: 一键分析（SSE 流式 + 进度 + 预估剩余时间）
 // ============================================================
 app.post('/api/analyze', async (req, res) => {
-  const { jdText, resumeText, useMianjing, resumeFileName, resumeSourceType } = req.body;
+  const { jdText, resumeText, useMianjing, quickMode, resumeFileName, resumeSourceType } = req.body;
   if (!jdText || !resumeText) {
     return res.status(400).json({ error: '请同时提供JD文本和简历文本' });
   }
+
+  // 快速模式：跳过面经，只用3类核心题型
+  const effectiveMianjing = quickMode ? false : useMianjing;
 
   sseInit(res);
 
@@ -222,7 +225,7 @@ app.post('/api/analyze', async (req, res) => {
     let mianjingPromise = null;
     let mianjingData = null;
     let mianjingFailed = false;
-    if (useMianjing && company && position) {
+    if (effectiveMianjing && company && position) {
       sseSend(res, { step: 'mianjing', label: '面经采集', detail: '🔍 并行搜索小红书面经...', status: 'running' });
       console.log(`[Analyze] ⚡ 面经采集并行启动: ${company} ${position}`);
       mianjingPromise = (async () => {
@@ -234,7 +237,7 @@ app.post('/api/analyze', async (req, res) => {
           return { ok: false, error: e.message };
         }
       })();
-    } else if (useMianjing) {
+    } else if (effectiveMianjing) {
       stepWarn(res, 'mianjing', '面经采集', '❌ 无法识别公司/岗位，跳过面经');
     } else {
       stepOk(res, 'mianjing', '面经采集', '⏭️ 已跳过');
@@ -282,14 +285,17 @@ app.post('/api/analyze', async (req, res) => {
     }
     if (aborted) return;
 
-    // ---- 步骤5: 押题生成（分题型） ----
-    const questionTypes = ['行为面试', '专业能力', '项目深挖', '压力测试', 'HR面'];
+    // ---- 步骤5: 押题生成（分题型并行） ----
+    const questionTypes = quickMode
+      ? ['行为面试', '专业能力', '项目深挖']  // 快速模式只用3类
+      : ['行为面试', '专业能力', '项目深挖', '压力测试', 'HR面'];
     let allQuestions = [];
     let allInsights = {};
     const totalBatches = questionTypes.length;
-    for (let i = 0; i < totalBatches; i++) {
-      const qType = questionTypes[i];
-      sseSend(res, { step: 'question_gen', label: '生成押题', detail: `「${qType}」(${i+1}/${totalBatches})`, status: 'running' });
+
+    // ⚡ 5个题型互不依赖，全部并行
+    sseSend(res, { step: 'question_gen', label: '生成押题', detail: `⚡ 并行生成 ${totalBatches} 类题目...`, status: 'running' });
+    const qPromises = questionTypes.map(async (qType) => {
       const questionPrompt = fillTemplate(prompts.QUESTION_GEN_SYSTEM, {
         jd_parsed: jdParsed,
         resume_parsed: resumeParsed,
@@ -298,17 +304,22 @@ app.post('/api/analyze', async (req, res) => {
         focus_type: qType
       });
       const qResult = await safeCall(() => llm(questionPrompt, '', { temperature: 0.7 }));
-      if (qResult.error) {
-        console.warn(`[Analyze] 押题生成「${qType}」失败:`, qResult.error);
+      return { type: qType, result: qResult };
+    });
+
+    const qResults = await Promise.all(qPromises);
+    for (const { type, result } of qResults) {
+      if (result.error) {
+        console.warn(`[Analyze] 押题生成「${type}」失败:`, result.error);
         continue;
       }
-      const batch = qResult.value;
+      const batch = result.value;
       if (batch?.questions?.length) allQuestions.push(...batch.questions);
       if (batch?.insights) allInsights = { ...allInsights, ...batch.insights };
-      if (aborted) return;
     }
+    if (aborted) return;
     const questions = { questions: allQuestions, insights: allInsights };
-    sseSend(res, { step: 'question_gen', label: '生成押题', detail: `✅ ${allQuestions.length} 题 · ${questionTypes.length}维度`, status: 'ok' });
+    sseSend(res, { step: 'question_gen', label: '生成押题', detail: `✅ ${allQuestions.length} 题 · ${questionTypes.length}维度 (并行完成)`, status: 'ok' });
 
     // ---- 步骤6: 知识库增强 ----
     const kbQuestions = searchKnowledgeBase({

@@ -13,7 +13,7 @@ function openCli(cmd) {
   try {
     console.log(`[面经] 执行: ${cmd.slice(0, 80)}...`);
     return execSync(cmd, {
-      timeout: 25000, encoding: 'utf-8', maxBuffer: 5 * 1024 * 1024,
+      timeout: 12000, encoding: 'utf-8', maxBuffer: 3 * 1024 * 1024,
       stdio: ['pipe', 'pipe', 'pipe']
     });
   } catch (e) {
@@ -35,11 +35,13 @@ async function queryMianjing(company, position, keywords = []) {
     `${company} ${position} 面试准备`,
     `${company} 面试 凉经 过经`
   ];
-  // 去重
-  const uniqueQueries = [...new Set(searchQueries)].slice(0, 8);
+  // 去重，最多5个搜索词（减少 opencli 调用次数）
+  const uniqueQueries = [...new Set(searchQueries)].slice(0, 5);
 
   const allNotes = [];
-
+  // ⚡ 并行执行搜索（execSync 虽然阻塞，但在 for-of 里也是串行；这里用 Promise.all 包裹以在调用侧提速）
+  // 注意：execSync 是同步的，无法真正并行。用 child_process.spawn 改造后配合 Promise.all 即可，
+  // 这里先保持兼容：限制搜索数量为5个，超时12s → 最坏5×12=60s
   for (const q of uniqueQueries) {
     const raw = openCli(`opencli xiaohongshu search "${q}" -f json --limit 10`);
     if (!raw) continue;
@@ -89,7 +91,7 @@ async function queryMianjing(company, position, keywords = []) {
   let successCount = 0;
   let failCount = 0;
 
-  for (let i = 0; i < Math.min(uniqueNotes.length, 12); i++) {
+  for (let i = 0; i < Math.min(uniqueNotes.length, 8); i++) {
     const n = uniqueNotes[i];
     // noteId 已经是完整的签名 URL
     const signedUrl = n.noteId || n.url || '';
