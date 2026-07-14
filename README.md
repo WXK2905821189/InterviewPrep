@@ -1,8 +1,5 @@
 <div align="center">
 
-<img src="docs/screenshots/01-main.png" alt="InterviewPrep" width="800">
-
-
 # 🎯 InterviewPrep
 
 ### AI 驱动的面试押题与模拟面试官
@@ -52,22 +49,6 @@
 - **🆕 快速模式** — 跳过面经采集，3 类核心题型并行生成，约快 **5 倍**
 - **🔗 手动面经** — 关闭自动搜索后可粘贴小红书帖子链接，手动抓取
 - **⚙️ 多模型** — 支持 DeepSeek / OpenAI / Qwen / Doubao / Ollama 等，随意切换
-
----
-
-## 📸 截图
-
-<div align="center">
-
-| 分析主页 | 快速模式 + 手动URL |
-|:---:|:---:|
-| <img src="docs/screenshots/01-main.png" width="400"> | <img src="docs/screenshots/02-quick-mode.png" width="400"> |
-
-| AI 供应商设置 |
-|:---:|
-| <img src="docs/screenshots/03-settings.png" width="600"> |
-
-</div>
 
 ---
 
@@ -171,8 +152,6 @@ InterviewPrep/
 │   ├── app.js             # 前端逻辑
 │   └── styles.css         # 样式
 ├── knowledge/             # 知识库（高频题库）
-├── docs/                  # 文档 & 截图
-│   └── screenshots/       # 功能截图
 └── package.json
 ```
 
