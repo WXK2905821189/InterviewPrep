@@ -79,6 +79,13 @@
           <span>⚡ 快速模式（跳过面经+精简题型，约快5倍）</span>
         </label>
       </div>
+      <!-- 手动URL粘贴区（关闭面经时显示） -->
+      <div id="manual-urls-wrap" class="hidden" style="width:100%;margin-top:0.5rem;">
+        <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:0.3rem;">📎 粘贴小红书面经链接（一行一个，如：https://www.xiaohongshu.com/explore/xxx）</label>
+        <textarea id="manual-urls" rows="2" placeholder="https://www.xiaohongshu.com/explore/...
+https://www.xiaohongshu.com/explore/..." style="font-size:0.8rem;font-family:monospace;width:100%;resize:vertical;"></textarea>
+        <span style="font-size:0.75rem;color:var(--muted);">最多5条链接，抓取后将提取面经题目并入押题清单</span>
+      </div>
       <button id="btn-analyze" class="btn-primary">开始分析 →</button>
     </div>
 

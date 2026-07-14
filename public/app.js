@@ -188,7 +188,7 @@ $$('.nav-tab').forEach(tab => {
 // ============================================================
 // API Calls
 // ============================================================
-async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, resumeFileName = '', resumeSourceType = '') {
+async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, manualUrls = [], resumeFileName = '', resumeSourceType = '') {
   setStatus('🔄 分析中...');
 
   // 显示进度条
@@ -243,7 +243,7 @@ async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, resumeFile
     const resp = await fetch(`${API}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jdText, resumeText, useMianjing, quickMode, resumeFileName, resumeSourceType })
+      body: JSON.stringify({ jdText, resumeText, useMianjing, quickMode, manualUrls, resumeFileName, resumeSourceType })
     });
 
     const reader = resp.body.getReader();
@@ -412,6 +412,15 @@ $('#btn-analyze').addEventListener('click', async () => {
   const useMianjing = $('#use-mianjing').checked;
   const quickMode = $('#use-quick-mode')?.checked || false;
 
+  // 手动URL：关闭面经时收集用户粘贴的链接
+  let urls = [];
+  if (!useMianjing) {
+    const raw = ($('#manual-urls')?.value || '').trim();
+    if (raw) {
+      urls = raw.split(/[\n\r]+/).map(u => u.trim()).filter(u => u.startsWith('http'));
+    }
+  }
+
   if (!jdText || !resumeText) return toast('请同时填写JD和简历内容');
 
   const btn = $('#btn-analyze');
@@ -420,7 +429,7 @@ $('#btn-analyze').addEventListener('click', async () => {
   btn.textContent = `${modeLabel}分析中...`;
 
   try {
-    const result = await apiAnalyze(jdText, resumeText, useMianjing, quickMode, state.resumeFileName, state.resumeSourceType);
+    const result = await apiAnalyze(jdText, resumeText, useMianjing, quickMode, urls, state.resumeFileName, state.resumeSourceType);
     state.sessionId = result.sessionId;
     state.analysis = result;
     state.jdText = jdText;
@@ -1148,6 +1157,18 @@ function renderResumeOptimization(data) {
 // ============================================================
 // 设置面板 — AI供应商管理
 // ============================================================
+
+// 面经开关 → 显示/隐藏手动URL粘贴框
+$('#use-mianjing').addEventListener('change', function() {
+  const wrap = document.getElementById('manual-urls-wrap');
+  if (wrap) {
+    wrap.classList.toggle('hidden', this.checked);
+    if (this.checked) {
+      const ta = document.getElementById('manual-urls');
+      if (ta) ta.value = '';
+    }
+  }
+});
 
 // 打开/关闭
 $('#btn-open-settings').addEventListener('click', () => {

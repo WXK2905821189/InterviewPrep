@@ -169,4 +169,116 @@ ${n.content}
   };
 }
 
-module.exports = { queryMianjing };
+/**
+ * 批量解析笔记正文（复用策略123）
+ */
+function parseNoteContent(content, fallbackTitle) {
+  let title = fallbackTitle || '';
+  let body = '';
+  const lines = content.split('\n');
+  // 策略1：解析 table 格式
+  for (const line of lines) {
+    const m = line.match(/^\|\s*(title|content|author)\s*\|\s*(.+?)\s*\|/i);
+    if (m) {
+      const key = m[1].toLowerCase();
+      const val = m[2].trim();
+      if (key === 'title') title = val || title;
+      if (key === 'content' && val.length > body.length) body = val;
+      if (key === 'author' && !n?.author) {} // placeholder
+    }
+  }
+  // 策略2：段落提取
+  if (body.length < 30) {
+    const paragraphs = content.split('\n\n').filter(p => {
+      const t = p.trim();
+      return t.length > 40 && !t.startsWith('#') && !t.startsWith('|') && !t.startsWith('*');
+    });
+    body = paragraphs.slice(0, 3).join('\n\n');
+  }
+  // 策略3：全量兜底
+  if (body.length < 20) {
+    body = lines.filter(l => !l.match(/^\|/) && !l.match(/^#/) && l.trim().length > 20).join('\n');
+  }
+  return { title, body: body.slice(0, 3000) };
+}
+
+/**
+ * LLM 清洗所有笔记为结构化面经数据
+ */
+async function cleanNotesToQuestions(notesWithContent) {
+  if (!notesWithContent.length) return { questions: [], sources: [], source_count: 0 };
+
+  const rawText = notesWithContent.map((n, i) =>
+    `### 笔记 ${i + 1}
+标题: ${n.title}
+作者: ${n.author || '未知'}
+点赞: ${n.likes || 0}
+URL: ${n.url || ''}
+
+正文:
+${n.content}
+`
+  ).join('\n---\n');
+
+  const prompt = MIANJING_CLEAN_SYSTEM.replace('{{raw_mianjing}}', rawText.slice(0, 12000));
+
+  let cleaned;
+  try {
+    cleaned = await llm(prompt, '', { temperature: 0.3 });
+  } catch (e) {
+    console.warn('[面经] LLM 清洗失败:', e.message?.slice(0, 60));
+    return {
+      source_count: notesWithContent.length,
+      sources: notesWithContent.map(n => ({
+        title: n.title, url: n.url, platform: '小红书', author: n.author
+      })),
+      questions: [],
+      meta: { raw_notes: notesWithContent.length }
+    };
+  }
+
+  return {
+    source_count: notesWithContent.length,
+    sources: notesWithContent.map(n => ({
+      title: n.title, url: n.url,
+      platform: '小红书', author: n.author, likes: n.likes
+    })),
+    ...cleaned
+  };
+}
+
+/**
+ * 手动URL批量抓取（关面经时用户粘贴链接）
+ * @param {string[]} urls - 小红书帖子链接列表
+ * @returns 结构化面经数据
+ */
+async function fetchNotesFromUrls(urls) {
+  if (!urls || !urls.length) return null;
+
+  const notesWithContent = [];
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < Math.min(urls.length, 5); i++) {
+    const url = urls[i].trim();
+    if (!url) { failCount++; continue; }
+    // 篇与篇之间间隔 2 秒，防反爬
+    if (i > 0) await sleep(2000);
+
+    const content = openCli(`opencli xiaohongshu note "${url}" -f md`);
+    if (content && content.length > 30) {
+      const { title, body } = parseNoteContent(content, url);
+      if (body.length > 20) {
+        notesWithContent.push({ title: title || url, url, content: body, author: '', likes: 0 });
+        successCount++;
+      } else { failCount++; }
+    } else { failCount++; }
+  }
+
+  console.log(`[面经-手动URL] 正文读取: ${successCount} 成功, ${failCount} 失败`);
+  if (notesWithContent.length < 1) return null;
+
+  return await cleanNotesToQuestions(notesWithContent);
+}
+
+module.exports = { queryMianjing, fetchNotesFromUrls };

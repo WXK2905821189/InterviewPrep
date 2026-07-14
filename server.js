@@ -170,7 +170,7 @@ async function safeCall(fn, retries = 1) {
 // API 1: 一键分析（SSE 流式 + 进度 + 预估剩余时间）
 // ============================================================
 app.post('/api/analyze', async (req, res) => {
-  const { jdText, resumeText, useMianjing, quickMode, resumeFileName, resumeSourceType } = req.body;
+  const { jdText, resumeText, useMianjing, quickMode, manualUrls, resumeFileName, resumeSourceType } = req.body;
   if (!jdText || !resumeText) {
     return res.status(400).json({ error: '请同时提供JD文本和简历文本' });
   }
@@ -208,7 +208,7 @@ app.post('/api/analyze', async (req, res) => {
   try {
     const prompts = require('./chatflow/prompts');
     const { llm, fillTemplate } = require('./chatflow/llm-client');
-    const { queryMianjing } = require('./chatflow/nodes/mianjing');
+    const { queryMianjing, fetchNotesFromUrls } = require('./chatflow/nodes/mianjing');
     const { searchKnowledgeBase } = require('./knowledge');
 
     // ---- 步骤1: JD解析 (快速拿到公司/岗位名) ----
@@ -225,6 +225,10 @@ app.post('/api/analyze', async (req, res) => {
     let mianjingPromise = null;
     let mianjingData = null;
     let mianjingFailed = false;
+
+    // 判断用自动搜索还是手动URL
+    const hasManualUrls = manualUrls && Array.isArray(manualUrls) && manualUrls.length > 0;
+
     if (effectiveMianjing && company && position) {
       sseSend(res, { step: 'mianjing', label: '面经采集', detail: '🔍 并行搜索小红书面经...', status: 'running' });
       console.log(`[Analyze] ⚡ 面经采集并行启动: ${company} ${position}`);
@@ -237,10 +241,23 @@ app.post('/api/analyze', async (req, res) => {
           return { ok: false, error: e.message };
         }
       })();
+    } else if (hasManualUrls) {
+      // 手动URL模式：用户粘贴小红书链接
+      sseSend(res, { step: 'mianjing', label: '面经采集', detail: `🔗 抓取 ${manualUrls.length} 个手动链接...`, status: 'running' });
+      console.log(`[Analyze] ⚡ 手动URL面经并行启动: ${manualUrls.length} 个`);
+      mianjingPromise = (async () => {
+        try {
+          const data = await fetchNotesFromUrls(manualUrls);
+          return { ok: true, data };
+        } catch (e) {
+          console.warn('[Analyze] 手动URL面经异常:', e.message);
+          return { ok: false, error: e.message };
+        }
+      })();
     } else if (effectiveMianjing) {
       stepWarn(res, 'mianjing', '面经采集', '❌ 无法识别公司/岗位，跳过面经');
     } else {
-      stepOk(res, 'mianjing', '面经采集', '⏭️ 已跳过');
+      stepOk(res, 'mianjing', '面经采集', hasManualUrls ? '⏭️ 已跳过（将使用手动链接）' : '⏭️ 已跳过');
     }
 
     // ---- 步骤2: 简历解析 (面经采集在后台并行) ----
@@ -273,7 +290,8 @@ app.post('/api/analyze', async (req, res) => {
           mianjingData.questions = relevant;
           const qCount = mianjingData.questions.length;
           const srcCount = mianjingData.source_count || 0;
-          stepOk(res, 'mianjing', '面经采集', `✅ 采集 ${srcCount} 篇 · 过滤后 ${qCount} 道相关真题`);
+          const label = hasManualUrls ? '🔗 链接' : '✅ 采集';
+          stepOk(res, 'mianjing', '面经采集', `${label} ${srcCount} 篇 · 过滤后 ${qCount} 道相关真题`);
         } else {
           mianjingFailed = true;
           stepWarn(res, 'mianjing', '面经采集', '❌ 未采集到面经题目');
