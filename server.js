@@ -10,8 +10,10 @@ const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
 
+// ---- 数据目录 (Electron模式用app.getPath('userData')，普通模式用__dirname) ----
+const DATA_DIR = process.env.DATA_DIR || __dirname;
 // ---- 日志系统（同时输出控制台 + 文件） ----
-const LOG_DIR = path.join(__dirname, 'logs');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
 try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
 const LOG_FILE = path.join(LOG_DIR, 'error.log');
 
@@ -65,7 +67,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // 文件上传
 const upload = multer({
-  dest: path.join(__dirname, '.data', 'uploads'),
+  dest: path.join(DATA_DIR, '.data', 'uploads'),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname || '.txt').toLowerCase();
@@ -75,12 +77,12 @@ const upload = multer({
 });
 
 // ---- 会话存储 ----
-const SESSIONS_FILE = path.join(__dirname, '.data', 'sessions.json');
-const PHRASES_FILE = path.join(__dirname, '.data', 'phrase-library.json');
-const MIANJING_BANK_FILE = path.join(__dirname, '.data', 'mianjing-bank.json');
+const SESSIONS_FILE = path.join(DATA_DIR, '.data', 'sessions.json');
+const PHRASES_FILE = path.join(DATA_DIR, '.data', 'phrase-library.json');
+const MIANJING_BANK_FILE = path.join(DATA_DIR, '.data', 'mianjing-bank.json');
 
 // 确保数据目录存在
-try { fs.mkdirSync(path.join(__dirname, '.data'), { recursive: true }); } catch {}
+try { fs.mkdirSync(path.join(DATA_DIR, '.data'), { recursive: true }); } catch {}
 
 const sessions = new Map();
 let activeSessionId = null;

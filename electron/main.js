@@ -3,81 +3,19 @@
 // ============================================================
 const { app, BrowserWindow, shell, dialog, Menu } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
-const http = require('http');
-
-const PORT = process.env.PORT || 3456;
-const ROOT = path.resolve(__dirname, '..');
+const fs = require('fs');
 
 let mainWindow = null;
-let serverProcess = null;
 let loadingWindow = null;
 
-// ── 启动 Express 后端 ──
-function startBackend() {
-  return new Promise((resolve, reject) => {
-    const serverJs = path.join(ROOT, 'server.js');
-    serverProcess = spawn('node', [serverJs], {
-      cwd: ROOT,
-      env: { ...process.env, ELECTRON_MODE: '1', PORT: String(PORT) },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true
-    });
-
-    let started = false;
-    const timeout = setTimeout(() => {
-      if (!started) reject(new Error('后端启动超时 (30s)'));
-    }, 30000);
-
-    serverProcess.stdout.on('data', (data) => {
-      const msg = data.toString();
-      console.log('[backend]', msg.trim());
-    });
-
-    serverProcess.stderr.on('data', (data) => {
-      console.error('[backend:err]', data.toString().trim());
-    });
-
-    serverProcess.on('exit', (code) => {
-      if (!started) {
-        clearTimeout(timeout);
-        reject(new Error(`后端进程退出，code=${code}`));
-      }
-    });
-
-    // 轮询等待健康检查就绪
-    const poll = (retry = 0) => {
-      const req = http.get(`http://localhost:${PORT}/api/health`, (res) => {
-        if (res.statusCode === 200) {
-          started = true;
-          clearTimeout(timeout);
-          resolve();
-        } else if (retry < 40) {
-          setTimeout(() => poll(retry + 1), 500);
-        } else {
-          clearTimeout(timeout);
-          reject(new Error('后端健康检查失败'));
-        }
-      });
-      req.on('error', () => {
-        if (retry < 40) setTimeout(() => poll(retry + 1), 500);
-        else { clearTimeout(timeout); reject(new Error('后端无响应')); }
-      });
-      req.setTimeout(2000, () => { req.destroy(); if (retry < 40) poll(retry + 1); });
-    };
-    poll();
-  });
-}
-
 // ── 创建主窗口 ──
-function createMainWindow() {
+function createMainWindow(PORT) {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 900,
     minHeight: 640,
     title: 'InterviewPrep MVP — AI面试押题与模拟面试官',
-    icon: path.join(ROOT, 'electron', 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -88,7 +26,6 @@ function createMainWindow() {
     backgroundColor: '#0f172a'
   });
 
-  // 加载应用
   mainWindow.loadURL(`http://localhost:${PORT}`);
 
   mainWindow.once('ready-to-show', () => {
@@ -96,7 +33,6 @@ function createMainWindow() {
     if (loadingWindow) { loadingWindow.close(); loadingWindow = null; }
   });
 
-  // 外部链接在系统浏览器打开
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -108,13 +44,8 @@ function createMainWindow() {
 // ── 启动加载窗口 ──
 function showLoadingWindow() {
   loadingWindow = new BrowserWindow({
-    width: 500,
-    height: 360,
-    frame: false,
-    transparent: false,
-    resizable: false,
-    alwaysOnTop: true,
-    backgroundColor: '#0f172a',
+    width: 500, height: 360, frame: false, transparent: false,
+    resizable: false, alwaysOnTop: true, backgroundColor: '#0f172a',
     webPreferences: { nodeIntegration: false, contextIsolation: true }
   });
   loadingWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
@@ -171,15 +102,9 @@ function buildMenu() {
       ]
     }
   ];
-
-  // macOS 特殊处理
   if (process.platform === 'darwin') {
-    template.unshift({
-      label: app.getName(),
-      submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }]
-    });
+    template.unshift({ label: app.getName(), submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }] });
   }
-
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -189,31 +114,37 @@ app.whenReady().then(async () => {
   showLoadingWindow();
 
   try {
-    await startBackend();
-    createMainWindow();
+    // Electron 模式下，数据目录必须指向真实文件系统（asar 只读）
+    const userDataPath = app.getPath('userData');
+    process.env.DATA_DIR = userDataPath;
+    process.env.ELECTRON_MODE = '1';
+    // 不让 AI_PROVIDER_KIT_PATH 覆盖代码路径 —— 代码在 asar 内，通过 __dirname/../ai-provider-kit 自动找到
+    // 配置文件路径由 ai-provider.js 内部的 DATA_DIR 判断重定向
+
+    // 确保数据目录存在
+    try { fs.mkdirSync(path.join(userDataPath, '.data'), { recursive: true }); } catch {}
+    try { fs.mkdirSync(path.join(userDataPath, 'logs'), { recursive: true }); } catch {}
+    try { fs.mkdirSync(path.join(userDataPath, '.local'), { recursive: true }); } catch {}
+
+    // 直接 require server.js —— Electron 主进程本身就是 Node，无需 spawn 子进程
+    const serverModule = require('../server.js');
+    await serverModule.startServer();
+    createMainWindow(serverModule.PORT || 3456);
   } catch (err) {
     if (loadingWindow) loadingWindow.close();
     dialog.showErrorBox('启动失败',
-      `无法启动后端服务。\n\n错误: ${err.message}\n\n请确认:\n1. Node.js 已安装\n2. npm 依赖已安装 (npm install)`);
+      `无法启动后端服务。\n\n错误: ${err.message}`);
     app.quit();
   }
 });
 
 app.on('window-all-closed', () => {
-  if (serverProcess) {
-    serverProcess.kill('SIGTERM');
-    serverProcess = null;
-  }
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
-  if (serverProcess) {
-    serverProcess.kill('SIGTERM');
-    serverProcess = null;
-  }
-});
-
 app.on('activate', () => {
-  if (mainWindow === null) createMainWindow();
+  if (mainWindow === null) {
+    const serverModule = require('../server.js');
+    createMainWindow(serverModule.PORT || 3456);
+  }
 });

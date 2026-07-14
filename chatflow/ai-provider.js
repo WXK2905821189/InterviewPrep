@@ -14,10 +14,8 @@ let _appConfigFile = null; // initialized after PROVIDER_KIT_PATH
 
 function _appCfgPath() {
   if (_appConfigFile) return _appConfigFile;
-  const p = path.resolve(
-    process.env.AI_PROVIDER_KIT_PATH ||
-    path.join(process.env.LOCALAPPDATA || process.env.HOME || '', 'Codex', 'ai-provider-kit')
-  );
+  // 使用 CONFIG_DIR（Electron 模式下指向用户 AppData）
+  const p = CONFIG_DIR;
   _appConfigFile = path.join(p, '.local', 'app-config.json');
   return _appConfigFile;
 }
@@ -65,6 +63,10 @@ function resolveProviderKitPath() {
 }
 
 const PROVIDER_KIT_PATH = resolveProviderKitPath();
+// Electron 模式下，配置写入 DATA_DIR（真实文件系统）而非 asar
+const CONFIG_DIR = process.env.ELECTRON_MODE === '1'
+  ? (process.env.DATA_DIR || PROVIDER_KIT_PATH)
+  : PROVIDER_KIT_PATH;
 
 // ESM 模块需要在 CJS 中通过 file:// URL 加载
 const PROVIDER_KIT_URL = pathToFileURL(path.join(PROVIDER_KIT_PATH, 'src', 'index.js')).href;
@@ -89,7 +91,7 @@ async function getClient() {
 
   const kit = await loadKit();
   const store = kit.createFileConnectionStore({
-    filePath: path.join(PROVIDER_KIT_PATH, '.local', 'ai-connections.json')
+    filePath: path.join(CONFIG_DIR, '.local', 'ai-connections.json')
   });
 
   _client = kit.createAiClient({
@@ -191,7 +193,7 @@ async function testConnection(input) {
 }
 
 // ---- 删除连接（直接操作JSON文件 + 清除内存缓存） ----
-const CONNECTIONS_FILE = path.join(PROVIDER_KIT_PATH, '.local', 'ai-connections.json');
+const CONNECTIONS_FILE = path.join(CONFIG_DIR, '.local', 'ai-connections.json');
 
 async function deleteConnection(id) {
   try {
@@ -239,7 +241,7 @@ async function startGateway(port = 8787) {
 
   // 创建独立 gateway client（使用文件存储，与主 client 共享连接配置）
   const store = kit.createFileConnectionStore({
-    filePath: path.join(PROVIDER_KIT_PATH, '.local', 'ai-connections.json')
+    filePath: path.join(CONFIG_DIR, '.local', 'ai-connections.json')
   });
   const gatewayClient = kit.createAiClient({
     store,
