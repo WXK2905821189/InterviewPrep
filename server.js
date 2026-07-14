@@ -1217,38 +1217,56 @@ function requireOpencli(what) {
 // ============================================================
 const PORT = process.env.PORT || 3456;
 const GATEWAY_PORT = process.env.GATEWAY_PORT || 8787;
+const IS_ELECTRON = process.env.ELECTRON_MODE === '1';
 
-app.listen(PORT, async () => {
-  logInfo(`服务器已启动 — http://localhost:${PORT}`);
-  logInfo(`AI Provider Kit: ${PROVIDER_KIT_PATH}`);
-  console.log(`\n🎯 InterviewPrep MVP 已启动`);
-  console.log(`   应用地址: http://localhost:${PORT}`);
-  console.log(`   AI Provider Kit: ${PROVIDER_KIT_PATH}`);
+function startServer() {
+  return new Promise((resolve, reject) => {
+    const listener = app.listen(PORT, async () => {
+      logInfo(`服务器已启动 — http://localhost:${PORT}`);
+      logInfo(`AI Provider Kit: ${PROVIDER_KIT_PATH}`);
+      console.log(`\n🎯 InterviewPrep MVP 已启动`);
+      console.log(`   应用地址: http://localhost:${PORT}`);
+      console.log(`   AI Provider Kit: ${PROVIDER_KIT_PATH}`);
 
-  try {
-    const { url } = await startGateway(GATEWAY_PORT);
-    logInfo(`网关已启动: ${url}`);
-    console.log(`   网关地址: ${url} (OpenAI-compatible)`);
-  } catch (e) {
-    logWarn(`网关未启动: ${e.message?.slice(0, 80)}`);
-    console.log(`   网关: 未启动 (${e.message?.slice(0, 80)})`);
-  }
-  console.log();
+      try {
+        const { url } = await startGateway(GATEWAY_PORT);
+        logInfo(`网关已启动: ${url}`);
+        console.log(`   网关地址: ${url} (OpenAI-compatible)`);
+      } catch (e) {
+        logWarn(`网关未启动: ${e.message?.slice(0, 80)}`);
+        console.log(`   网关: 未启动 (${e.message?.slice(0, 80)})`);
+      }
+      console.log();
 
-  // 自动拉起浏览器
-  const appUrl = `http://localhost:${PORT}`;
-  try {
-    const platform = process.platform;
-    if (platform === 'win32') {
-      execSync(`start "" "${appUrl}"`, { shell: true, timeout: 3000 });
-    } else if (platform === 'darwin') {
-      execSync(`open "${appUrl}"`, { timeout: 3000 });
-    } else {
-      execSync(`xdg-open "${appUrl}"`, { timeout: 3000 });
-    }
-    logInfo('浏览器已自动打开: ' + appUrl);
-  } catch { /* 打开浏览器失败不阻塞 */ }
-});
+      // Electron 模式下不打开外部浏览器
+      if (!IS_ELECTRON) {
+        const appUrl = `http://localhost:${PORT}`;
+        try {
+          const platform = process.platform;
+          if (platform === 'win32') {
+            execSync(`start "" "${appUrl}"`, { shell: true, timeout: 3000 });
+          } else if (platform === 'darwin') {
+            execSync(`open "${appUrl}"`, { timeout: 3000 });
+          } else {
+            execSync(`xdg-open "${appUrl}"`, { timeout: 3000 });
+          }
+          logInfo('浏览器已自动打开: ' + appUrl);
+        } catch { /* 打开浏览器失败不阻塞 */ }
+      }
+
+      resolve(listener);
+    });
+    listener.on('error', reject);
+  });
+}
+
+// 直接运行时启动
+if (!IS_ELECTRON || require.main === module) {
+  startServer();
+}
+
+// Electron 主进程引用用
+module.exports = { app, startServer, PORT };
 
 // 优雅退出
 process.on('SIGINT', () => { logInfo('收到 SIGINT，正在关闭...'); process.exit(0); });
