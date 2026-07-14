@@ -5,7 +5,7 @@ const { contextBridge } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
-  appVersion: '1.0.0',
+  appVersion: '1.1.0',
   isElectron: true
 });
 
@@ -14,6 +14,6 @@ process.once('loaded', () => {
   // 用 script 注入方式更可靠
 });
 window.addEventListener('DOMContentLoaded', () => {
-  window.__ELECTRON_VERSION__ = '1.0.0';
+  window.__ELECTRON_VERSION__ = '1.1.0';
   window.__IS_ELECTRON__ = true;
 });
