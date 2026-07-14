@@ -873,10 +873,13 @@ app.post('/api/resume-upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: '请上传文件' });
     const { parseResumeFile } = require('./chatflow/resume-parser');
-    const result = await parseResumeFile(req.file.path, req.file.originalname);
-    // 删临时文件
-    try { fs.unlinkSync(req.file.path); } catch {}
-    res.json(result);
+    try {
+      const result = await parseResumeFile(req.file.path, req.file.originalname);
+      res.json(result);
+    } finally {
+      // 删临时文件
+      try { fs.unlinkSync(req.file.path); } catch {}
+    }
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

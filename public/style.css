@@ -234,6 +234,17 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* 进度条 */
+.progress-bar-wrap {
+  max-width: 360px; margin: 0 auto;
+  height: 6px; background: var(--bg2);
+  border-radius: 3px; overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%; background: linear-gradient(90deg, var(--accent), #10b981);
+  border-radius: 3px; transition: width 0.5s ease;
+}
+
 /* ===== Responsive ===== */
 /* ===== Company Research ===== */
 .ci-summary-box {
@@ -256,6 +267,22 @@ body {
   margin-bottom: 0.5rem; color: var(--fg);
 }
 .ci-section-body { font-size: 0.85rem; line-height: 1.7; color: var(--fg); }
+
+/* Tab 小红点 */
+.nav-tab { position: relative; }
+.tab-dot {
+  position: absolute; top: 4px; right: 4px;
+  width: 8px; height: 8px;
+  background: #e53e3e;
+  border-radius: 50%;
+  display: none;
+  animation: pulse-dot 1.5s infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+.tab-dot.show { display: block; }
 
 /* 命令复制块 */
 .cmd-block {

@@ -25,6 +25,24 @@ function toast(msg, ms = 2500) {
 }
 function setStatus(text) { $('#nav-status').textContent = text; }
 
+// Tab 小红点系统
+function showTabDot(tabName) {
+  const dot = document.querySelector(`.tab-dot[data-dot-tab="${tabName}"]`);
+  if (dot) dot.classList.add('show');
+}
+function hideTabDot(tabName) {
+  const dot = document.querySelector(`.tab-dot[data-dot-tab="${tabName}"]`);
+  if (dot) dot.classList.remove('show');
+}
+// 点击 tab 时自动清除该 tab 的小红点
+document.addEventListener('click', (e) => {
+  const tabBtn = e.target.closest('.nav-tab');
+  if (tabBtn) {
+    const dot = tabBtn.querySelector('.tab-dot.show');
+    if (dot) dot.classList.remove('show');
+  }
+});
+
 // ===== 简历文件上传 =====
 $('#btn-resume-file').addEventListener('click', () => $('#resume-file-input').click());
 $('#resume-file-input').addEventListener('change', async () => {
@@ -42,7 +60,11 @@ $('#resume-file-input').addEventListener('change', async () => {
     state.resumeFileName = data.fileName || '';
     state.resumeSourceType = data.sourceType || '';
     $('#resume-file-name').textContent = `✅ ${data.fileName} (${data.sourceType})`;
-    $('#resume-hint').textContent = `已解析 ${data.sourceType.toUpperCase()} 文件，可手动编辑后再分析`;
+    const hintEl = $('#resume-hint');
+    hintEl.textContent = `已解析 ${data.sourceType.toUpperCase()} 文件，可手动编辑后再分析`;
+    if (data.warnings?.length) {
+      hintEl.innerHTML += `<br><span style="color:#e5a020;font-size:0.8rem;">⚠️ ${data.warnings.join('；')}</span>`;
+    }
     toast(`✅ 已解析: ${data.fileName}`);
   } catch(e) {
     toast('解析失败: ' + e.message);
@@ -112,6 +134,31 @@ async function apiAnalyze(jdText, resumeText, useMianjing, resumeFileName = '', 
   // 渲染步骤条
   ps.innerHTML = STEPS.map(s => `<span class="pstep" id="pstep-${s}">${labels[s]}</span>`).join('');
 
+  // — 计时 &
+  const startTime = Date.now();
+  let completedSteps = 0;
+  const totalSteps = STEPS.length;
+  const etaEl = document.createElement('span');
+  etaEl.id = 'progress-eta';
+  etaEl.style.cssText = 'font-size:0.78rem;color:var(--muted);display:block;margin-top:0.3rem;';
+  pd.after(etaEl);
+
+  function updateEta() {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const el = document.getElementById('progress-eta');
+    if (!el) return;
+    if (completedSteps === 0) {
+      el.textContent = `⏱ 已等待 ${elapsed}s...`;
+    } else if (completedSteps >= totalSteps) {
+      el.textContent = `✅ 完成，总耗时 ${elapsed}s`;
+    } else {
+      const avgPerStep = elapsed / Math.max(1, completedSteps);
+      const remaining = Math.ceil(avgPerStep * (totalSteps - completedSteps));
+      el.textContent = `⏱ 已过 ${elapsed}s · 预计还需 ${remaining}s (${completedSteps}/${totalSteps} 步)`;
+    }
+  }
+  const etaTimer = setInterval(updateEta, 2000);
+
   let result = null;
 
   try {
@@ -143,6 +190,7 @@ async function apiAnalyze(jdText, resumeText, useMianjing, resumeFileName = '', 
             // 更新步骤状态
             if (data.step) {
               const idx = STEPS.indexOf(data.step);
+              completedSteps = Math.max(completedSteps, idx);
               for (let i = 0; i < idx; i++) {
                 const el = document.getElementById(`pstep-${STEPS[i]}`);
                 if (el) el.classList.add('done');
@@ -166,12 +214,15 @@ async function apiAnalyze(jdText, resumeText, useMianjing, resumeFileName = '', 
       }
     }
   } catch(e) {
+    clearInterval(etaTimer);
     pb.classList.add('hidden');
     throw e;
   }
 
-  if (!result) throw new Error('未收到分析结果');
+  if (!result) { clearInterval(etaTimer); throw new Error('未收到分析结果'); }
 
+  clearInterval(etaTimer);
+  updateEta();
   // 标记全部完成
   STEPS.forEach(s => {
     const el = document.getElementById(`pstep-${s}`);
@@ -242,12 +293,14 @@ async function apiEvaluateSingle(question, answer) {
 
 async function apiOptimizeResume() {
   setStatus('🔄 优化中...');
+  // 使用原始简历文本（state.resumeText），而非分析结果
+  const rawResume = state.resumeText || $('#resume-input').value.trim() || '';
   const resp = await fetch(`${API}/optimize-resume`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       sessionId: state.sessionId,
-      resumeText: state.analysis?.resume ? JSON.stringify(state.analysis.resume) : ''
+      resumeText: rawResume
     })
   });
   if (!resp.ok) throw new Error((await resp.json()).error);
@@ -580,6 +633,8 @@ $('#btn-practice-submit').addEventListener('click', async () => {
     if ((result.overall_score || 0) >= 85) {
       $('#btn-save-phrase').classList.remove('hidden');
     }
+    // 小红点标记
+    showTabDot('practice');
     setStatus('✅ 评估完成');
   } catch (e) {
     toast('评估失败: ' + e.message);
@@ -845,12 +900,40 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
   if (!state.sessionId) return toast('请先完成分析');
   const btn = $('#btn-optimize-resume');
   btn.disabled = true; btn.textContent = '优化中...';
+  // 显示进度条
+  const emptyEl = $('#resume-opt-empty');
+  emptyEl.classList.remove('hidden');
+  emptyEl.innerHTML = '<div style="text-align:center;padding:2rem;">'
+    + '<div class="spinner"></div>'
+    + '<p style="margin-top:0.8rem;color:var(--muted);">AI 正在分析简历并生成优化建议…</p>'
+    + '<div class="progress-bar-wrap" style="margin-top:1rem;"><div class="progress-bar-fill" style="width:0%"></div></div>'
+    + '<span class="progress-eta" style="font-size:0.78rem;color:var(--muted);">请耐心等待约 20-40 秒</span>'
+    + '</div>';
+  // 模拟进度条
+  let progressTimer = 0;
+  const progressInterval = setInterval(() => {
+    progressTimer += 1;
+    const pct = Math.min(90, progressTimer * 4);
+    const barEl = document.querySelector('.progress-bar-fill');
+    if (barEl) barEl.style.width = pct + '%';
+    const etaEl = document.querySelector('.progress-eta');
+    if (etaEl && progressTimer > 3) {
+      const remaining = Math.max(0, Math.ceil((90 - pct) / 4));
+      etaEl.textContent = `预计还需 ${remaining} 秒…`;
+    }
+  }, 1000);
   try {
     const result = await apiOptimizeResume();
+    clearInterval(progressInterval);
     renderResumeOptimization(result);
     setStatus('✅ 优化完成');
+    // 小红点标记
+    showTabDot('tab-optimize');
   } catch (e) { toast('优化失败: ' + e.message); }
-  finally { btn.disabled = false; btn.textContent = '重新生成'; }
+  finally {
+    clearInterval(progressInterval);
+    btn.disabled = false; btn.textContent = '重新生成';
+  }
 });
 
 function renderResumeOptimization(data) {
