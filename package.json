@@ -1,0 +1,19 @@
+{
+  "name": "interview-prep-mvp",
+  "version": "1.0.0",
+  "description": "InterviewPrep MVP - AI面试押题与模拟面试官",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "docx": "^9.7.1",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "mammoth": "^1.12.0",
+    "multer": "^2.2.0",
+    "openai": "^4.73.0",
+    "pdf-parse": "^2.4.5"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+.data/
+logs/
+.env
+*.zip
+ai-provider-kit/node_modules/
+ai-provider-kit/.local/
+.DS_Store
+Thumbs.db
