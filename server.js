@@ -1030,8 +1030,12 @@ ${text.slice(0, 8000)}`;
     }
 
     const maxLen = 15000;
+    // 扒取完成后自动关闭 opencli 浏览器窗口
+    try { execSync('opencli close', { timeout: 5000, encoding: 'utf-8', stdio: ['pipe','pipe','pipe'] }); } catch {}
     res.json({ url, text: text.slice(0, maxLen), charCount: Math.min(text.length, maxLen), truncated: text.length > maxLen });
   } catch (e) {
+    // 失败时也尝试关闭浏览器
+    try { execSync('opencli close', { timeout: 5000, encoding: 'utf-8', stdio: ['pipe','pipe','pipe'] }); } catch {}
     res.status(502).json({ error: '扒取失败: ' + (e.message || String(e)).slice(0, 100) });
   }
 });

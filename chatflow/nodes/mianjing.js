@@ -22,6 +22,8 @@ function openCli(cmd) {
   }
 }
 
+async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 /**
  * 主入口：一次关键词搜索 → 逐篇读取 → LLM 结构化
  */
@@ -48,6 +50,9 @@ async function queryMianjing(company, position, keywords = []) {
     }
   }
 
+  // 搜索后等待2秒，避免触发反爬
+  await sleep(2000);
+
   // 去重（用完整 URL 作为唯一键）
   const seenIds = new Set();
   const uniqueNotes = allNotes.filter(n => {
@@ -63,17 +68,17 @@ async function queryMianjing(company, position, keywords = []) {
     return null;
   }
 
-  // ---- 第二轮：逐篇读取笔记正文 ----
-  // 注意：xiaohongshu note 需要完整签名 URL（从搜索结果 url 字段获取），不能只用 note_id
+  // ---- 第二轮：逐篇读取笔记正文（间隔2秒防反爬） ----
   const notesWithContent = [];
   let successCount = 0;
   let failCount = 0;
 
-  for (let i = 0; i < Math.min(uniqueNotes.length, 8); i++) {
+  for (let i = 0; i < Math.min(uniqueNotes.length, 5); i++) {
     const n = uniqueNotes[i];
-    // noteId 已经是完整的签名 URL
     const signedUrl = n.noteId || n.url || '';
     if (!signedUrl) { failCount++; continue; }
+    // 篇与篇之间间隔 2 秒，防小红书 "操作太频繁"
+    if (i > 0) await sleep(2000);
     const content = openCli(`opencli xiaohongshu note "${signedUrl}" -f md`);
     if (content && content.length > 30) {
       let title = n.title || '';

@@ -635,6 +635,7 @@ function renderQuestionList(questions, filterType) {
     const start = (page - 1) * pageSize;
     const pageItems = filtered.slice(start, start + pageSize);
 
+    // 渲染题目卡片
     container.innerHTML = pageItems.map((q, i) => {
       const realIdx = start + i + 1;
       return `
@@ -681,20 +682,23 @@ function renderQuestionList(questions, filterType) {
         switchTab('practice');
         const pa = document.getElementById('tab-practice');
         if (pa) pa.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        window.scrollTo({ top: 0, behavior: 'smooth' });
         setTimeout(() => selectPracticeQuestion(decodeURIComponent(card.dataset.question)), 150);
       });
     });
 
-    // 分页按钮
-    if (pages <= 1) { paginationEl.innerHTML = ''; return; }
+    // 分页：直接用 data-page 属性渲染，用事件委托处理点击
+    if (pages <= 1) { paginationEl.innerHTML = ''; paginationEl.onclick = null; return; }
     let html = `<span class="q-page-info">${total} 道题 · ${page}/${pages} 页</span>`;
     if (page > 1) html += `<button class="q-page-btn" data-page="${page - 1}">◀ 上一页</button>`;
     if (page < pages) html += `<button class="q-page-btn" data-page="${page + 1}">下一页 ▶</button>`;
     paginationEl.innerHTML = html;
-    paginationEl.querySelectorAll('.q-page-btn').forEach(b => {
-      b.addEventListener('click', () => renderPage(parseInt(b.dataset.page)));
-    });
+    // 事件委托：点击分页容器内的按钮统一处理（避免 innerHTML 替换导致监听器丢失）
+    paginationEl.onclick = (e) => {
+      const btn = e.target.closest('.q-page-btn');
+      if (!btn) return;
+      const targetPage = parseInt(btn.dataset.page);
+      if (!isNaN(targetPage)) renderPage(targetPage);
+    };
   }
 
   renderPage(1);
