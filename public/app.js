@@ -522,57 +522,96 @@ function renderAnalysisResult(data) {
   $('#analysis-result').scrollIntoView({ behavior: 'smooth' });
 }
 
+const PAGE_SIZE = 6; // 默认每页显示条数
+
 function renderQuestionList(questions, filterType) {
   const filtered = filterType === 'all'
     ? questions : questions.filter(q => (q.type || '').includes(filterType));
-  $('#questions-list').innerHTML = filtered.map((q, i) => `
-    <div class="q-item" data-idx="${i}" data-question="${encodeURIComponent(q.question)}">
-      <div class="q-header">
-        <span class="q-type ${getTypeClass(q.type)}">${q.type || '其他'}</span>
-        <span class="q-source">${q.source || ''}${q.frequency_in_mianjing ? ' · 🔥面经' + q.frequency_in_mianjing + '次' : ''}</span>
-        <button class="btn-bookmark" data-q="${encodeURIComponent(q.question)}" data-type="${q.type||''}" title="收藏到真题库">⭐ 收藏</button>
+
+  const wrapper = document.getElementById('questions-list');
+  wrapper.innerHTML = '';
+
+  const pageSize = PAGE_SIZE;
+  const total = filtered.length;
+  const pages = Math.ceil(total / pageSize);
+  let currentPage = 1;
+
+  const container = document.createElement('div');
+  container.id = 'questions-grid';
+  wrapper.appendChild(container);
+
+  const paginationEl = document.createElement('div');
+  paginationEl.className = 'q-pagination';
+  wrapper.appendChild(paginationEl);
+
+  function renderPage(page) {
+    currentPage = page;
+    const start = (page - 1) * pageSize;
+    const pageItems = filtered.slice(start, start + pageSize);
+
+    container.innerHTML = pageItems.map((q, i) => {
+      const realIdx = start + i + 1;
+      return `
+    <div class="q-card" data-idx="${start + i}" data-question="${encodeURIComponent(q.question)}">
+      <span class="q-card-num">${realIdx}</span>
+      <div class="q-card-body">
+        <div class="q-card-header">
+          <span class="q-type ${getTypeClass(q.type)}">${q.type || '其他'}</span>
+          ${q.frequency_in_mianjing ? `<span class="q-freq-badge">🔥 ${q.frequency_in_mianjing}次</span>` : ''}
+          ${q.source === '知识库' ? '<span class="q-kb-badge">📚 知识库</span>' : ''}
+        </div>
+        <div class="q-card-q">${q.question}</div>
+        <div class="q-card-intent">🎯 ${q.examiner_intent || '考察综合能力'}</div>
+        <button class="btn-bookmark" data-q="${encodeURIComponent(q.question)}" data-type="${q.type||''}">⭐ 收藏</button>
       </div>
-      <div class="q-text">${q.question}</div>
-      <div class="q-intent">🎯 ${q.examiner_intent || '考察综合能力'}</div>
-    </div>
-  `).join('');
-  // 收藏按钮事件
-  $$('.btn-bookmark').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const question = decodeURIComponent(btn.dataset.q);
-      const type = btn.dataset.type;
-      btn.textContent = '⏳'; btn.disabled = true;
-      try {
-        const analysis = state.analysis || {};
-        const resp = await fetch('/api/bank/bookmark', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            question, type,
-            company: analysis.jd?.company || '',
-            position: analysis.jd?.position || '',
-            sessionId: state.sessionId
-          })
-        });
-        if (!resp.ok) throw new Error((await resp.json()).error);
-        btn.textContent = '✅ 已收藏';
-        toast('已收藏到真题库');
-      } catch(e) {
-        btn.textContent = '⭐ 收藏'; btn.disabled = false;
-        toast('收藏失败: ' + e.message);
-      }
+    </div>`;
+    }).join('');
+
+    // 收藏按钮
+    $$('.q-card .btn-bookmark').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const question = decodeURIComponent(btn.dataset.q);
+        const type = btn.dataset.type;
+        btn.textContent = '⏳'; btn.disabled = true;
+        try {
+          const analysis = state.analysis || {};
+          const resp = await fetch('/api/bank/bookmark', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, type, company: analysis.jd?.company || '', position: analysis.jd?.position || '', sessionId: state.sessionId })
+          });
+          if (!resp.ok) throw new Error((await resp.json()).error);
+          btn.textContent = '✅ 已收藏'; toast('已收藏到真题库');
+        } catch(e) {
+          btn.textContent = '⭐ 收藏'; btn.disabled = false;
+          toast('收藏失败: ' + e.message);
+        }
+      });
     });
-  });
-  $$('.q-item').forEach(item => {
-    item.addEventListener('click', () => {
-      switchTab('practice');
-      // 立即滚动到练习区顶部，避免被题目列表拖到底部
-      const practiceArea = document.getElementById('tab-practice');
-      if (practiceArea) practiceArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      setTimeout(() => selectPracticeQuestion(decodeURIComponent(item.dataset.question)), 150);
+    // 点击卡片跳转练习
+    $$('.q-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        switchTab('practice');
+        const pa = document.getElementById('tab-practice');
+        if (pa) pa.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setTimeout(() => selectPracticeQuestion(decodeURIComponent(card.dataset.question)), 150);
+      });
     });
-  });
+
+    // 分页按钮
+    if (pages <= 1) { paginationEl.innerHTML = ''; return; }
+    let html = `<span class="q-page-info">${total} 道题 · ${page}/${pages} 页</span>`;
+    if (page > 1) html += `<button class="q-page-btn" data-page="${page - 1}">◀ 上一页</button>`;
+    if (page < pages) html += `<button class="q-page-btn" data-page="${page + 1}">下一页 ▶</button>`;
+    paginationEl.innerHTML = html;
+    paginationEl.querySelectorAll('.q-page-btn').forEach(b => {
+      b.addEventListener('click', () => renderPage(parseInt(b.dataset.page)));
+    });
+  }
+
+  renderPage(1);
 }
 
 function getTypeClass(type) {
