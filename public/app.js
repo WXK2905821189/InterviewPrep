@@ -1595,10 +1595,13 @@ function renderCompanyInterviewPrep(data, company) {
   el.scrollIntoView({ behavior: 'smooth' });
 }
 // ============================================================
-// 新手引导 — opencli 环境安装检查
+// 新手引导 — opencli 环境安装检查 (基于 OpenCLI 官方文档)
+// Ref: https://github.com/jackwener/OpenCLI
+// 扩展来源: Chrome Web Store (推荐) 或 GitHub Releases (手动)
 // ============================================================
 async function showOnboardingIfNeeded(healthData) {
   const oc = healthData?.opencli;
+
   // 已安装且就绪 → 不弹窗
   if (oc?.installed && oc?.browser_ready) return;
 
@@ -1610,123 +1613,115 @@ async function showOnboardingIfNeeded(healthData) {
   $('#onboarding-close').onclick = () => overlay.style.display = 'none';
 
   // 步骤条
-  const STEPS = ['node', 'opencli', 'bridge', 'verify'];
-  const LABELS = { node: 'Node.js', opencli: '安装 opencli', bridge: '浏览器绑定', verify: '验证' };
+  const STEPS = ['node', 'opencli', 'extension', 'verify'];
+  const LABELS = { node: 'Node.js 20+', opencli: '安装 opencli', extension: 'Chrome 扩展', verify: '验证' };
   const stepStatus = {};
   STEPS.forEach(s => stepStatus[s] = 'pending');
 
   function renderSteps() {
     stepsEl.innerHTML = `<div class="progress-steps" style="margin-bottom:0.8rem;">` +
       STEPS.map(s => {
-        let cls = '';
-        if (stepStatus[s] === 'done') cls = 'done';
-        else if (stepStatus[s] === 'active') cls = 'active';
-        else if (stepStatus[s] === 'warn') cls = 'warn';
+        let cls = ''; if (stepStatus[s] === 'done') cls = 'done'; else if (stepStatus[s] === 'active') cls = 'active'; else if (stepStatus[s] === 'warn') cls = 'warn';
         return `<span class="pstep ${cls}">${stepStatus[s]==='done'?'✅':stepStatus[s]==='warn'?'❌':''} ${LABELS[s]}</span>`;
       }).join('') + `</div>`;
   }
 
-  // 1. Node.js 检测
-  if (oc?.node_version) {
-    stepStatus.node = 'done';
-  } else {
-    stepStatus.node = 'warn';
-    renderSteps();
-    detailEl.innerHTML = `
-<div class="ci-section">
-  <div class="ci-section-title">❌ 未检测到 Node.js</div>
-  <div class="ci-section-body">
-    <p>本工具需要 Node.js 运行环境。</p>
-    <p><b>安装步骤：</b></p>
-    <ol style="padding-left:1.2rem;line-height:2;">
-      <li>访问 <a href="https://nodejs.org/zh-cn" target="_blank" style="color:var(--accent);">nodejs.org</a></li>
-      <li>下载 <b>LTS 版本</b>（推荐 20.x 或以上）</li>
-      <li>安装时勾选「<b>Add to PATH</b>」</li>
-      <li>安装完成后<b>重启终端</b>，刷新本页面</li>
-    </ol>
-  </div>
-</div>`;
+  // ====== 1. Node.js >= 20 ======
+  const nodeVer = oc?.node_version;
+  if (!nodeVer) {
+    stepStatus.node = 'warn'; renderSteps();
+    detailEl.innerHTML = `<div class="ci-section"><div class="ci-section-title">❌ 未检测到 Node.js</div><div class="ci-section-body">
+<p>本工具需要 Node.js 运行环境（<b>OpenCLI 要求 ≥ 20</b>）。</p>
+<p><b>安装步骤：</b></p><ol style="padding-left:1.2rem;line-height:2;">
+<li>访问 <a href="https://nodejs.org/zh-cn" target="_blank" style="color:var(--accent);">nodejs.org</a></li>
+<li>下载 <b>LTS 版本</b>（20.x 或以上）</li>
+<li>安装时勾选「<b>Add to PATH</b>」</li>
+<li>安装完成后<b>重启终端</b>，刷新本页面</li>
+</ol></div></div>`;
     return;
   }
+  const nodeMajor = parseInt(nodeVer.split('.')[0]);
+  if (nodeMajor < 20) {
+    stepStatus.node = 'warn'; renderSteps();
+    detailEl.innerHTML = `<div class="ci-section"><div class="ci-section-title">⚠️ Node.js 版本过低 (v${nodeVer})</div><div class="ci-section-body">
+<p>OpenCLI 要求 <b>Node.js ≥ 20</b>，当前版本为 v${nodeVer}。</p>
+<p>请到 <a href="https://nodejs.org/zh-cn" target="_blank" style="color:var(--accent);">nodejs.org</a> 下载最新 LTS 版本，安装后刷新页面。</p>
+</div></div>`;
+    return;
+  }
+  stepStatus.node = 'done'; renderSteps();
+  detailEl.innerHTML = `<p style="color:var(--green);">✅ Node.js v${nodeVer} 已就绪</p>`;
 
-  stepStatus.node = 'done';
-  renderSteps();
-  detailEl.innerHTML = `<p style="color:var(--green);">✅ Node.js ${oc.node_version} 已就绪</p>`;
-
-  // 2. opencli 安装
+  // ====== 2. opencli 命令行工具 ======
   if (!oc.installed) {
-    stepStatus.opencli = 'active';
-    renderSteps();
-    detailEl.innerHTML += `
-<div class="ci-section" style="margin-top:1rem;">
-  <div class="ci-section-title">📦 安装 opencli（命令行增强工具）</div>
-  <div class="ci-section-body">
-    <p>复制以下命令，在 <b>终端 / PowerShell</b> 中执行：</p>
-    <div style="background:var(--bg2);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 1rem;font-family:'Consolas',monospace;font-size:0.85rem;cursor:pointer;user-select:all;" onclick="navigator.clipboard.writeText(this.textContent).then(()=>toast('已复制'))">
-npm install -g @jackwener/opencli
-    </div>
-    <p style="margin-top:0.5rem;font-size:0.8rem;color:var(--muted);">
-      ⚠️ 如遇权限错误，Windows 用户请以<b>管理员身份</b>运行终端<br>
-      macOS/Linux 用户请在命令前加 <code>sudo</code>
-    </p>
-    <p style="margin-top:0.8rem;">安装完成后，点击下方按钮验证：</p>
-    <button class="btn-primary" style="font-size:0.85rem;padding:0.3rem 0.8rem;" onclick="recheckOpencli()">🔄 重新检测</button>
-    <span id="recheck-result" style="margin-left:0.5rem;font-size:0.85rem;"></span>
-  </div>
-</div>`;
+    stepStatus.opencli = 'active'; renderSteps();
+    detailEl.innerHTML += `<div class="ci-section" style="margin-top:1rem;">
+<div class="ci-section-title">📦 第2步：安装 opencli</div><div class="ci-section-body">
+<p>opencli 是连接你浏览器的命令行工具。复制以下命令，在<b>终端 (PowerShell)</b> 中执行：</p>
+<div class="cmd-block" onclick="navigator.clipboard.writeText(this.textContent).then(()=>toast('已复制'))">npm install -g @jackwener/opencli</div>
+<p style="margin-top:0.5rem;font-size:0.8rem;color:var(--muted);">⚠️ Windows 用户如遇权限错误，请以<b>管理员身份</b>运行终端。</p>
+<p style="margin-top:0.8rem;">安装完成后，点击验证：</p>
+<button class="btn-primary" style="font-size:0.85rem;padding:0.3rem 0.8rem;" onclick="recheckOpencli()">🔄 重新检测</button>
+<span id="recheck-result" style="margin-left:0.5rem;font-size:0.85rem;"></span>
+</div></div>`;
     return;
   }
+  stepStatus.opencli = 'done'; renderSteps();
 
-  stepStatus.opencli = 'done';
-  renderSteps();
-
-  // 3. browser bridge
+  // ====== 3. Chrome 扩展 (Chrome Web Store 优先, GitHub 手动为备用) ======
   if (!oc.browser_ready) {
-    stepStatus.bridge = 'active';
-    renderSteps();
-    detailEl.innerHTML += `
-<div class="ci-section" style="margin-top:1rem;">
-  <div class="ci-section-title">🌐 绑定浏览器（browser bridge）</div>
-  <div class="ci-section-body">
-    <p>浏览器绑定后，<b>JD链接扒取、公司调研、面经采集</b>等核心功能将自动使用您的浏览器登录态，无需每次手动登录。</p>
-    <p style="margin-top:0.5rem;"><b>在终端执行：</b></p>
-    <div style="background:var(--bg2);border:1px solid var(--rule);border-radius:6px;padding:0.6rem 1rem;font-family:'Consolas',monospace;font-size:0.85rem;cursor:pointer;user-select:all;" onclick="navigator.clipboard.writeText(this.textContent).then(()=>toast('已复制'))">
-opencli daemon restart
-    </div>
-    <p style="margin-top:0.5rem;font-size:0.8rem;color:var(--muted);">
-      执行后会启动后台服务并尝试绑定默认浏览器（Edge / Chrome）。<br>
-      如果失败，请运行 <code>opencli doctor</code> 查看诊断信息。
-    </p>
-    <button class="btn-primary" style="font-size:0.85rem;padding:0.3rem 0.8rem;margin-top:0.5rem;" onclick="recheckOpencli()">🔄 重新检测</button>
-    <span id="recheck-result2" style="margin-left:0.5rem;font-size:0.85rem;"></span>
-  </div>
-</div>`;
+    stepStatus.extension = 'active'; renderSteps();
+    detailEl.innerHTML += `<div class="ci-section" style="margin-top:1rem;">
+<div class="ci-section-title">🧩 第3步：安装 OpenCLI 浏览器扩展</div><div class="ci-section-body">
+<p style="margin-bottom:1rem;">OpenCLI 通过<b>浏览器扩展</b>连接你已登录的 Chrome/Edge，无需重复输入密码。</p>
+
+<div style="background:var(--bg2);border:1px solid var(--accent);border-radius:8px;padding:1rem;margin-bottom:1rem;">
+<p style="margin:0 0 0.6rem 0;"><b>✅ 方式一：Chrome Web Store（推荐）</b></p>
+<ol style="padding-left:1.3rem;line-height:2.2;margin:0;">
+<li>打开 <a href="https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk" target="_blank" style="color:var(--accent);">Chrome 应用商店链接</a>（Chrome / Edge / Brave 均可）</li>
+<li>点击<b>「添加至 Chrome」</b>按钮</li>
+<li>弹出确认框 → 点<b>「添加扩展」</b></li>
+</ol>
+</div>
+
+<div style="background:var(--bg2);border:1px solid var(--rule);border-radius:8px;padding:1rem;margin-bottom:0.8rem;">
+<p style="margin:0 0 0.6rem 0;"><b>🔧 方式二：手动安装（备用）</b></p>
+<ol style="padding-left:1.3rem;line-height:2.2;margin:0;">
+<li>从 <a href="https://github.com/jackwener/opencli/releases" target="_blank" style="color:var(--accent);">GitHub Releases</a> 下载 <code>opencli-extension-v*.zip</code></li>
+<li>解压，打开 <code>chrome://extensions</code>，开启<b>开发者模式</b></li>
+<li>点击<b>「加载已解压的扩展」</b>，选择解压后的文件夹</li>
+</ol>
+</div>
+
+<p style="font-size:0.82rem;color:var(--muted);">💡 扩展安装后，在终端运行 <code>opencli doctor</code> 确认显示 <b>[OK] Extension: connected</b></p>
+<button class="btn-primary" style="font-size:0.85rem;padding:0.3rem 0.8rem;" onclick="recheckOpencli()">✅ 扩展已安装，下一步</button>
+<button class="btn-outline" style="font-size:0.85rem;padding:0.3rem 0.8rem;margin-left:0.5rem;" onclick="recheckOpencli()">🔄 重新检测</button>
+<span id="recheck-ext" style="display:block;margin-top:0.4rem;font-size:0.82rem;"></span>
+</div></div>`;
     return;
   }
 
-  stepStatus.bridge = 'done';
-  stepStatus.verify = 'done';
-  renderSteps();
-  detailEl.innerHTML += `<p style="color:var(--green);margin-top:1rem;">✅ 全部就绪！browser bridge 已连接</p>`;
+  // ====== 4. 全部通过 ======
+  stepStatus.extension = 'done'; stepStatus.verify = 'done'; renderSteps();
+  detailEl.innerHTML += `<p style="color:var(--green);margin-top:1rem;">✅ 全部就绪！opencli 已连接 (v${oc.version || '?'})，所有功能可用。</p>`;
 
-  // 显示关键站点状态
   const sites = [];
   if (oc.has_xiaohongshu) sites.push('小红书搜索');
   if (oc.has_web) sites.push('网页渲染');
   if (oc.has_boss) sites.push('Boss直聘');
-  if (sites.length) {
-    detailEl.innerHTML += `<p style="font-size:0.82rem;color:var(--muted);margin-top:0.3rem;">可用功能：${sites.join(' · ')}</p>`;
-  }
+  if (sites.length) detailEl.innerHTML += `<p style="font-size:0.82rem;color:var(--muted);margin-top:0.3rem;">可用功能：${sites.join(' · ')}</p>`;
 }
 
-// 全局 recheck 函数
+// 全局重新检测函数
 async function recheckOpencli() {
   try {
     const r = await fetch('/api/opencli-check').then(res => res.json());
     const h = await fetch('/api/health').then(res => res.json());
+    window._lastHealthData = h;
     showOnboardingIfNeeded(h);
   } catch (e) {
-    document.getElementById('recheck-result') && (document.getElementById('recheck-result').textContent = '❌ 检测失败，请重试');
+    const el = document.getElementById('recheck-result') || document.getElementById('recheck-ext');
+    if (el) el.textContent = '❌ 检测失败，请重试';
   }
 }
 window.recheckOpencli = recheckOpencli;

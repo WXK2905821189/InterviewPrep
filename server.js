@@ -1103,7 +1103,13 @@ app.get('/api/health', async (req, res) => {
  * 检测 opencli 安装状态和可用站点适配器
  */
 function detectOpencli() {
-  const info = { installed: false, version: '', path: '', browser_ready: false, has_xiaohongshu: false, node_version: process.version };
+  const info = {
+    installed: false, version: '', path: '',
+    daemon_running: false, ext_installed: false,
+    browser_ready: false,
+    has_xiaohongshu: false, has_web: false, has_boss: false,
+    node_version: process.version
+  };
 
   function findOpencliBin() {
     const candidates = [];
@@ -1157,7 +1163,9 @@ function detectOpencli() {
     } catch {}
     try {
       const d = execSync('opencli doctor 2>&1', { shell: true, timeout: 8000, encoding: 'utf-8' });
-      info.browser_ready = d.includes('ok') || d.includes('running') || d.includes('connected');
+      info.daemon_running = d.includes('Daemon: running');
+      info.ext_installed = d.includes('Extension: connected');
+      info.browser_ready = info.daemon_running && info.ext_installed;
     } catch {}
   }
   return info;

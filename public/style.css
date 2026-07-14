@@ -256,6 +256,20 @@ body {
   margin-bottom: 0.5rem; color: var(--fg);
 }
 .ci-section-body { font-size: 0.85rem; line-height: 1.7; color: var(--fg); }
+
+/* 命令复制块 */
+.cmd-block {
+  background: var(--bg2);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.88rem;
+  cursor: pointer;
+  user-select: all;
+  word-break: break-all;
+}
+.cmd-block:hover { background: var(--bg3); }
 .ci-line { margin-bottom: 0.35rem; }
 .ci-meta { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
 .ci-tag {
