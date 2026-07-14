@@ -23,50 +23,28 @@ function openCli(cmd) {
 }
 
 /**
- * 主入口：多轮搜索 → 逐篇读取 → LLM 结构化
+ * 主入口：一次关键词搜索 → 逐篇读取 → LLM 结构化
  */
 async function queryMianjing(company, position, keywords = []) {
-  // ---- 第一轮：多关键词搜索（增加关键词约束提升准确度） ----
-  const searchQueries = [
-    `${company} ${position} 面试经验`,
-    `${company} ${position} 面经分享`,
-    `${company} 面试 真题 ${position}`,
-    ...keywords.slice(0, 3).map(k => `${company} ${k} 面试题`),
-    `${company} ${position} 面试准备`,
-    `${company} 面试 凉经 过经`
-  ];
-  // 去重，最多5个搜索词（减少 opencli 调用次数）
-  const uniqueQueries = [...new Set(searchQueries)].slice(0, 5);
+  // ---- 一次搜索：公司名 + 岗位 + 面经 ----
+  const query = `${company} ${position} 面经`;
 
   const allNotes = [];
-  // ⚡ 并行执行搜索（execSync 虽然阻塞，但在 for-of 里也是串行；这里用 Promise.all 包裹以在调用侧提速）
-  // 注意：execSync 是同步的，无法真正并行。用 child_process.spawn 改造后配合 Promise.all 即可，
-  // 这里先保持兼容：限制搜索数量为5个，超时12s → 最坏5×12=60s
-  for (const q of uniqueQueries) {
-    const raw = openCli(`opencli xiaohongshu search "${q}" -f json --limit 10`);
-    if (!raw) continue;
-
-    // 解析 JSON 搜索结果
+  const raw = openCli(`opencli xiaohongshu search "${query}" -f json --limit 10`);
+  if (raw) {
     try {
       const results = typeof raw === 'string' ? JSON.parse(raw) : raw;
       const items = Array.isArray(results) ? results : (results?.notes || results?.data || []);
       for (const item of items) {
-        const url = item.url || '';  // 完整的签名 URL（带 xsec_token）
+        const url = item.url || '';
         const title = item.title || item.display_title || '';
         if (url && title) {
-          allNotes.push({
-            noteId: url,  // 用完整 URL 作为唯一标识，后续 note 命令也用它
-            title,
-            url,
-            author: item.author || item.nickname || '',
-            likes: item.likes || 0,
-            source: '小红书'
-          });
+          allNotes.push({ noteId: url, title, url, author: item.author || item.nickname || '', likes: item.likes || 0, source: '小红书' });
         }
       }
-      console.log(`[面经] 搜索 "${q.slice(0, 20)}" → ${items.length} 篇`);
+      console.log(`[面经] 搜索 "${query}" → ${items.length} 篇`);
     } catch {
-      console.warn(`[面经] 搜索 "${q.slice(0, 20)}" 返回非JSON，跳过`);
+      console.warn(`[面经] 搜索 "${query}" 返回非JSON，跳过`);
     }
   }
 
