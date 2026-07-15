@@ -1406,6 +1406,49 @@ function renderResumeOptimization(data) {
     $('#resume-opt-list').innerHTML = '<div class="card"><p style="color:var(--muted);">暂无优化建议返回，请尝试重新生成。</p></div>';
   }
 
+  // 添加"下载优化版简历"按钮
+  $('#resume-opt-list').insertAdjacentHTML('beforeend', `
+    <div class="card" style="text-align:center;margin-top:1rem;border:2px dashed var(--accent);">
+      <p style="font-weight:600;margin-bottom:0.5rem;">📥 一键生成优化版简历</p>
+      <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.8rem;">AI 将根据上述建议生成完整优化版简历 DOCX，可直接投递</p>
+      <button id="btn-optimize-docx" class="btn-primary" style="font-size:0.9rem;">⬇️ 下载优化版 DOCX</button>
+      <div id="optimize-docx-status" style="margin-top:0.5rem;font-size:0.78rem;"></div>
+    </div>
+  `);
+
+  // 绑定下载按钮
+  document.getElementById('btn-optimize-docx')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-optimize-docx');
+    const statusEl = document.getElementById('optimize-docx-status');
+    btn.disabled = true;
+    btn.textContent = '⏳ AI 正在生成优化版简历...';
+    statusEl.textContent = '';
+    try {
+      const resp = await fetch('/api/optimize-resume-docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: state.sessionId })
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.error || '生成失败');
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'resume-optimized.docx';
+      a.click();
+      URL.revokeObjectURL(url);
+      statusEl.textContent = '✅ 下载已开始';
+    } catch (e) {
+      statusEl.textContent = '❌ ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⬇️ 下载优化版 DOCX';
+    }
+  });
+
   $('#resume-opt-area').scrollIntoView({ behavior: 'smooth' });
 }
 

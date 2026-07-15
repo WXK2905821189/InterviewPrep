@@ -90,7 +90,80 @@ function bulletPara(text) {
 async function generateResumeDocx(data) {
   const children = [];
 
-  // ── Header: Name & Contact ──
+  // ── If fullText provided (optimized resume), render as paragraphs ──
+  if (data.fullText) {
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+      children: [new TextRun({ text: 'AI 优化版简历', bold: true, size: 36, color: '4F46E5', font: BODY_FONT })]
+    }));
+    children.push(normalPara('由 InterviewPrep 根据目标 JD 自动优化生成', { size: 18, color: '999999', align: AlignmentType.CENTER }));
+    children.push(sectionHr());
+
+    // Split fullText by double newlines as sections, single newlines as paragraphs
+    const sections = data.fullText.split(/\n{2,}/);
+    for (const section of sections) {
+      const trimmed = section.trim();
+      if (!trimmed) continue;
+      // If section starts with a short bold-looking line, treat as heading
+      const lines = trimmed.split('\n');
+      if (lines[0].length < 40 && !lines[0].startsWith('•') && !lines[0].startsWith('-')) {
+        children.push(heading2(lines[0]));
+        for (let i = 1; i < lines.length; i++) {
+          if (lines[i].trim()) {
+            if (lines[i].trim().startsWith('•') || lines[i].trim().startsWith('-')) {
+              children.push(bulletItem(lines[i].trim().replace(/^[•-]\s*/, '')));
+            } else {
+              children.push(normalPara(lines[i].trim()));
+            }
+          }
+        }
+      } else {
+        for (const line of lines) {
+          if (line.trim()) {
+            if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
+              children.push(bulletItem(line.trim().replace(/^[•-]\s*/, '')));
+            } else {
+              children.push(normalPara(line.trim()));
+            }
+          }
+        }
+      }
+    }
+    
+    const doc = new Document({
+      styles: {
+        default: { document: { run: { font: BODY_FONT, size: 22 } } },
+        paragraphStyles: [
+          { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+            run: { size: 24, bold: true, color: '4F46E5', font: BODY_FONT },
+            paragraph: { spacing: { before: 200, after: 100 }, outlineLevel: 1, keepNext: false, keepLines: false } },
+        ]
+      },
+      numbering: {
+        config: [
+          { reference: 'bullets',
+            levels: [{ level: 0, format: require('docx').LevelFormat.BULLET, text: '\u2022', alignment: AlignmentType.LEFT,
+              style: { paragraph: { indent: { left: 720, hanging: 360 } } } }] },
+        ]
+      },
+      sections: [{
+        properties: {
+          page: { size: { width: 11906, height: 16838 }, margin: { top: 1200, right: 1200, bottom: 1200, left: 1200 } }
+        },
+        headers: {
+          default: new Header({ children: [new Paragraph({
+            alignment: AlignmentType.RIGHT,
+            children: [new TextRun({ text: 'InterviewPrep AI 优化生成', font: BODY_FONT, size: 18, color: '999999' })]
+          })] })
+        },
+        children
+      }]
+    });
+    return Packer.toBuffer(doc);
+  }
+
+  // ── Standard template resume (original logic) ──
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { after: 60 },

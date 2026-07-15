@@ -453,6 +453,58 @@ app.post('/api/optimize-resume', async (req, res) => {
   }
 });
 
+// 简历优化 — 生成完整优化版 DOCX 供下载
+app.post('/api/optimize-resume-docx', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.analysis) {
+      return res.status(400).json({ error: '请先完成分析' });
+    }
+
+    const prompts = require('./chatflow/prompts');
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const jdParsed = session.analysis.jd;
+    const resumeText = session.resumeText || '';
+
+    // 1. 调用 LLM 生成全文优化版
+    const optPrompt = fillTemplate(prompts.RESUME_FULL_OPTIMIZE_SYSTEM, {
+      jd_parsed: JSON.stringify(jdParsed, null, 2),
+      resume_text: resumeText
+    });
+    const optimized = await llm(optPrompt, '', { temperature: 0.5 });
+
+    if (!optimized?.optimized_full_text && !optimized?.optimized_sections) {
+      return res.status(500).json({ error: 'AI 未能生成优化版简历，请重试' });
+    }
+
+    // 2. 生成 DOCX
+    const fullText = optimized.optimized_full_text || 
+      Object.values(optimized.optimized_sections || {}).filter(Boolean).join('\n\n');
+    
+    const { generateResumeDocx } = require('./chatflow/nodes/export-resume');
+    const buf = await generateResumeDocx({ 
+      name: jdParsed.position || '简历',
+      email: '',
+      phone: '',
+      location: '',
+      summary: optimized.optimized_sections?.summary || '',
+      experiences: [],
+      educations: [],
+      projects: [],
+      skills: optimized.optimized_sections?.skills || '',
+      fullText
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="resume-${encodeURIComponent(jdParsed.position || 'optimized')}.docx"`);
+    res.send(buf);
+  } catch (e) {
+    console.error('[API] 优化版简历DOCX生成失败:', e);
+    res.status(500).json({ error: '生成失败: ' + e.message });
+  }
+});
+
 // ============================================================
 // API 6b: 简历评分
 // ============================================================

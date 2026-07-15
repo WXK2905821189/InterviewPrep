@@ -66,32 +66,62 @@ function detectOpencli() {
 }
 
 /**
+ * 获取 Windows 系统默认浏览器
+ * 通过注册表读取 HTTP/HTTPS 协议关联的 ProgId
+ */
+function getDefaultBrowserReg() {
+  try {
+    // HKCU takes priority over HKLM
+    for (const hive of ['HKCU', 'HKLM']) {
+      for (const key of ['HTTPS', 'HTTP']) {
+        const out = execSync(`reg query "${hive}\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${key}\\UserChoice" /v ProgId 2>nul`, { shell: true, timeout: 3000, encoding: 'utf-8' }).trim();
+        const m = out.match(/ProgId\s+REG_SZ\s+(.+)/i);
+        if (m) return m[1].toLowerCase();
+      }
+    }
+  } catch {}
+  return '';
+}
+
+/**
  * 查找系统上已安装的 Chromium 系浏览器
+ * 按默认浏览器优先排序
  * 返回 [{ name, path, type: 'chrome'|'edge'|'brave'|'chromium' }]
  */
 function findBrowsers() {
+  const defaultProgId = getDefaultBrowserReg();
+  const isDefaultEdge = defaultProgId && (defaultProgId.includes('edge') || defaultProgId.includes('mse'));
+  const isDefaultChrome = defaultProgId && defaultProgId.includes('chrome');
+
   const browsers = [];
-  const candidates = [
-    { name: 'Google Chrome', paths: [
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-      process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'
-    ], type: 'chrome' },
+  const allCandidates = [
     { name: 'Microsoft Edge', paths: [
       'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
       'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
     ], type: 'edge' },
+    { name: 'Google Chrome', paths: [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      (process.env.LOCALAPPDATA || '') + '\\Google\\Chrome\\Application\\chrome.exe'
+    ], type: 'chrome' },
     { name: 'Brave', paths: [
       'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe',
-      process.env.LOCALAPPDATA + '\\BraveSoftware\\Brave-Browser\\Application\\brave.exe'
+      (process.env.LOCALAPPDATA || '') + '\\BraveSoftware\\Brave-Browser\\Application\\brave.exe'
     ], type: 'brave' },
     { name: 'Chromium', paths: [
       'C:\\Program Files\\Chromium\\Application\\chrome.exe',
-      process.env.LOCALAPPDATA + '\\Chromium\\Application\\chrome.exe'
+      (process.env.LOCALAPPDATA || '') + '\\Chromium\\Application\\chrome.exe'
     ], type: 'chromium' },
   ];
 
-  for (const c of candidates) {
+  // 排序：默认浏览器排到最前面
+  if (isDefaultEdge) {
+    allCandidates.sort((a, b) => a.type === 'edge' ? -1 : b.type === 'edge' ? 1 : 0);
+  } else if (isDefaultChrome) {
+    allCandidates.sort((a, b) => a.type === 'chrome' ? -1 : b.type === 'chrome' ? 1 : 0);
+  }
+
+  for (const c of allCandidates) {
     for (const p of c.paths) {
       if (p && fs.existsSync(p)) {
         browsers.push({ name: c.name, path: p, type: c.type });
@@ -205,7 +235,13 @@ async function setupOpencliExtension(statusCb) {
     return { success: false, message: 'opencli 未安装。请在终端执行: npm install -g @jackwener/opencli，然后重试。', details: initial };
   }
   r('check', `✅ opencli v${initial.version}`, 'ok');
-  await sleep(300);
+
+  // ── 如果已经全部就绪，跳过安装流程 ──
+  if (initial.browser_ready && initial.has_xiaohongshu) {
+    r('verify', '✅ opencli 环境已全部就绪，无需配置', 'ok');
+    r('done', 'Daemon运行中 · 扩展已连接 · 小红书可用', 'ok');
+    return { success: true, message: '环境已就绪', details: initial };
+  }
 
   // ── Step 2: 确保 daemon 运行 ──
   if (!initial.daemon_running) {
