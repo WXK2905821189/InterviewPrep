@@ -370,8 +370,8 @@ async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, manualUrls
 
   const STEPS = quickMode
     ? ['jd_parse','resume_parse','gap_analysis','question_gen','done']
-    : ['jd_parse','resume_parse','gap_analysis','mianjing','question_gen','done'];
-  const labels = { jd_parse:'解析JD', resume_parse:'解析简历', gap_analysis:'差距分析', mianjing:'面经采集', question_gen:'生成押题', done:'完成' };
+    : ['jd_parse','resume_parse','gap_analysis','question_gen','done'];
+  const labels = { jd_parse:'解析JD', resume_parse:'解析简历', gap_analysis:'差距分析', question_gen:'生成押题', done:'完成' };
 
   // 渲染步骤条
   ps.innerHTML = STEPS.map(s => `<span class="pstep" id="pstep-${s}">${labels[s]}</span>`).join('');
@@ -383,7 +383,7 @@ async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, manualUrls
 
   // — 计时 &
   const startTime = Date.now();
-  let completedSteps = 0;
+  let completedSteps = 0; let okSteps = new Set();
   const totalSteps = STEPS.length;
   const etaEl = document.createElement('span');
   etaEl.id = 'progress-eta';
@@ -455,6 +455,10 @@ async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, manualUrls
                 }
               }
               if (data.detail) pd.textContent = data.detail;
+            }
+            if (data.status === 'ok') {
+              okSteps.add(data.step);
+              completedSteps = okSteps.size;
             }
           } catch(e) { /* skip malformed events */ }
         }
@@ -570,6 +574,82 @@ async function apiLoadPhrases() {
 
 async function apiDeletePhrase(id) {
   await fetch(`${API}/phrases/${id}`, { method: 'DELETE' });
+}
+
+// ============================================================
+// 面经采集（独立触发）
+// ============================================================
+async function collectMianjing() {
+  const btn = document.getElementById('btn-collect-mianjing');
+  const progress = document.getElementById('mianjing-progress');
+  if (!btn || !progress) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ 采集中...';
+  progress.textContent = '';
+
+  try {
+    const resp = await fetch('/api/mianjing-collect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: state.sessionId })
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          if (ev.step === 'done') { result = ev.result; }
+          progress.textContent = (ev.detail || '');
+          progress.style.color = ev.status === 'warn' ? '#D97706' : ev.status === 'error' ? '#DC2626' : 'var(--muted)';
+        } catch {}
+      }
+    }
+
+    if (result?.mianjing?.questions?.length) {
+      // Update state
+      state.analysis.mianjing = result.mianjing;
+      // Update the display
+      renderMianjingContent(result.mianjing);
+      btn.textContent = '🔄 重新采集';
+      toast(`采集完成: ${result.mianjing.questions.length} 道真题`);
+    } else {
+      btn.textContent = '🔄 重新采集';
+    }
+  } catch (e) {
+    progress.textContent = '采集失败: ' + e.message;
+    progress.style.color = '#DC2626';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderMianjingContent(mData) {
+  if (!mData?.questions?.length) return;
+  const card = document.getElementById('mianjing-card');
+  if (!card) return;
+  card.style.display = 'block';
+  const el = document.getElementById('mianjing-content');
+  const srcCount = mData.source_count || mData.sources?.length || 0;
+  el.innerHTML = 
+    '<p style="color:var(--green);margin-bottom:0.5rem;">✅ 采集完成：' + srcCount + ' 篇笔记 · ' + mData.questions.length + ' 道真题</p>' +
+    (mData.sources?.length ? '<p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.5rem;">来源: ' + 
+      mData.sources.slice(0, 5).map(s => '<a href="' + (s.url || '#') + '" target="_blank" style="color:var(--accent);">' + (s.title || '链接') + '</a>').join(' · ') + '</p>' : '') +
+    '<details style="font-size:0.82rem;"><summary>查看题目 (' + mData.questions.length + ' 题)</summary>' +
+    mData.questions.map((q, i) => '<div style="margin:4px 0;padding:4px 8px;background:var(--bg1);border-radius:4px;">' + (i+1) + '. ' + (q.question || '') + '</div>').join('') +
+    '</details>' +
+    '<button id="btn-collect-mianjing" class="btn-outline" style="font-size:0.78rem;margin-top:0.5rem;">🔄 重新采集</button>';
+  // Re-bind the button
+  document.getElementById('btn-collect-mianjing')?.addEventListener('click', () => collectMianjing());
 }
 
 // ============================================================
@@ -743,17 +823,19 @@ function renderAnalysisResult(data) {
   if (data.mianjing && data.mianjing.source_count > 0) {
     const mc = $('#mianjing-card');
     mc.style.display = 'block';
-    const qs = (data.mianjing.questions || []).slice(0, 8);
-    $('#mianjing-content').innerHTML = `
-      <div class="mianjing-sources">采集面经 <strong>${data.mianjing.source_count}篇</strong>，提取有效题目<strong>${qs.length}道</strong></div>
-      ${qs.map(q => `
-        <div class="mianjing-q">
-          <span class="freq">${q.frequency || 1}次</span>
-          ${q.question}
-          <span style="color:var(--muted);font-size:0.72rem;">（${q.type || ''}）</span>
-        </div>
-      `).join('')}
-    `;
+    renderMianjingContent(data.mianjing);
+  } else {
+    // 面经数据尚未采集，显示采集按钮
+    const mc = $('#mianjing-card');
+    mc.style.display = 'block';
+    $('#mianjing-content').innerHTML = 
+      '<p style="color:var(--muted);margin-bottom:0.8rem;">面经数据尚未采集。采集后可用于增强押题质量。</p>' +
+      '<button id="btn-collect-mianjing" class="btn-outline" style="font-size:0.82rem;">🔍 开始采集面经</button>' +
+      '<div id="mianjing-progress" style="margin-top:0.5rem;font-size:0.78rem;color:var(--muted);"></div>';
+    
+    document.getElementById('btn-collect-mianjing')?.addEventListener('click', async () => {
+      await collectMianjing();
+    });
   }
 
   const questions = data.questions || [];
@@ -896,8 +978,10 @@ function getTypeClass(type) {
 // ============================================================
 function renderPracticeQuestions() {
   if (!state.analysis?.questions) return;
-  const qs = state.analysis.questions;
-  $('#practice-question-list').innerHTML = qs.map((q, i) => `
+  const qs = state.analysis.questions || [];
+  const kb = state.analysis.kb_supplement || [];
+  const allQs = [...qs, ...kb];
+  $('#practice-question-list').innerHTML = allQs.map((q, i) => `
     <li data-idx="${i}" data-question="${encodeURIComponent(q.question)}">
       <span class="q-num">${i + 1}</span> ${q.question}
     </li>
@@ -906,14 +990,16 @@ function renderPracticeQuestions() {
     li.addEventListener('click', () => selectPracticeQuestion(decodeURIComponent(li.dataset.question)));
   });
   const countEl = document.getElementById('practice-q-count');
-  if (countEl) countEl.textContent = qs.length;
+  if (countEl) countEl.textContent = allQs.length;
   $('#practice-empty').classList.add('hidden');
   $('#practice-area').classList.remove('hidden');
 }
 
 function selectPracticeQuestion(question) {
   const qs = state.analysis.questions || [];
-  const found = qs.find(q => q.question === question);
+  const kb = state.analysis.kb_supplement || [];
+  const allQs = [...qs, ...kb];
+  const found = allQs.find(q => q.question === question);
   if (!found) return;
 
   $('#practice-q-meta').innerHTML = `
@@ -1403,7 +1489,7 @@ $('#use-mianjing').addEventListener('change', function() {
 });
 
 // 打开/关闭
-$('#btn-open-settings').addEventListener('click', () => {
+$('#btn-open-settings').addEventListener('click', async () => {
   $('#settings-modal').classList.remove('hidden');
   loadSettingsData();
   loadTemperatures();
@@ -1411,6 +1497,11 @@ $('#btn-open-settings').addEventListener('click', () => {
   if (window.__ELECTRON_VERSION__) {
     $('#current-version').textContent = 'v' + window.__ELECTRON_VERSION__;
   }
+  // 同时加载 opencli 环境状态
+  try {
+    const h = await fetch('/api/health').then(r => r.json());
+    renderEnvPanel(h);
+  } catch {}
 });
 
 // Temperature 滑块
@@ -1439,6 +1530,7 @@ $('#btn-close-settings').addEventListener('click', () => $('#settings-modal').cl
 $('#settings-modal').addEventListener('click', (e) => {
   if (e.target === $('#settings-modal')) $('#settings-modal').classList.add('hidden');
 });
+$('#btn-opencli-setup-settings').onclick = () => startOpencliSetup();
 
 async function loadSettingsData() {
   // 加载供应商预设
@@ -2110,9 +2202,8 @@ function statusIcon(ok) { return ok ? '🟢' : '🔴'; }
  */
 function renderEnvPanel(healthData) {
   const oc = healthData?.opencli || {};
-  const panel = $('#env-panel');
-  if (!panel) return;
-  panel.classList.remove('hidden');
+  const itemsContainer = $('#settings-env-items');
+  if (!itemsContainer) return;
 
   const items = [
     { label: 'Node.js', ok: true, detail: oc.node_version || '未知', fix: null },
@@ -2123,9 +2214,7 @@ function renderEnvPanel(healthData) {
   ];
 
   const allOk = oc.installed && oc.browser_ready && oc.has_xiaohongshu;
-  const overallEl = $('#env-overall-status');
-  overallEl.textContent = allOk ? '✅ 全部就绪' : (oc.installed ? '⚠️ 部分就绪' : '🔴 需要配置');
-  overallEl.style.color = allOk ? 'var(--green)' : (oc.installed ? '#e6a817' : 'var(--red)');
+  const overallStatus = allOk ? '✅ 全部就绪' : (oc.installed ? '⚠️ 部分就绪' : '🔴 需要配置');
 
   const itemsHtml = items.map(it => '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;">' +
     '<span>' + statusIcon(it.ok) + '</span>' +
@@ -2133,22 +2222,19 @@ function renderEnvPanel(healthData) {
     (it.fix ? '<span style="color:var(--accent);cursor:pointer;font-size:0.78rem;" data-fix="' + it.fix + '">🔧 修复</span>' : '') +
     '</div>').join('');
 
-  const itemsEl = $('#env-items');
-  itemsEl.innerHTML = itemsHtml;
+  itemsContainer.innerHTML = '<div style="margin-bottom:0.4rem;"><b>' + overallStatus + '</b></div>' + itemsHtml;
 
-  itemsEl.querySelectorAll('[data-fix]').forEach(el => {
+  itemsContainer.querySelectorAll('[data-fix]').forEach(el => {
     el.addEventListener('click', () => startOpencliSetup());
   });
-
-  $('#btn-opencli-setup').onclick = () => startOpencliSetup();
 }
 
 /**
  * 一键安装 opencli（SSE 流式进度）
  */
 async function startOpencliSetup() {
-  const progressEl = $('#env-setup-progress');
-  const btn = $('#btn-opencli-setup');
+  const progressEl = $('#settings-env-progress');
+  const btn = $('#btn-opencli-setup-settings');
   if (!progressEl || !btn) return;
 
   btn.disabled = true;
@@ -2395,9 +2481,6 @@ function initTemplates() {
 
   try {
     const h = await fetch('/api/health').then(r => r.json());
-
-    // opencli 检测 — 弹新手引导
-    await renderEnvPanel(h);
 
     // 状态栏 — 同步更新 opencli 状态
     const oc = h.opencli || {};

@@ -176,7 +176,6 @@ app.post('/api/analyze', async (req, res) => {
   }
 
   // 快速模式：跳过面经，只用3类核心题型
-  const effectiveMianjing = quickMode ? false : useMianjing;
 
   sseInit(res);
 
@@ -185,7 +184,7 @@ app.post('/api/analyze', async (req, res) => {
 
   // 步骤耗时追踪（用于预估剩余时间）
   const stepTimes = {};
-  const totalSteps = 7; // jd_parse, resume_parse, gap, mianjing, question_gen(视为1步), kb, done
+  const totalSteps = 6; // jd_parse, resume_parse, gap, question_gen(视为1步), kb, done
   const t0 = Date.now();
 
   function eta(completedSteps) {
@@ -208,7 +207,6 @@ app.post('/api/analyze', async (req, res) => {
   try {
     const prompts = require('./chatflow/prompts');
     const { llm, fillTemplate } = require('./chatflow/llm-client');
-    const { queryMianjing, fetchNotesFromUrls } = require('./chatflow/nodes/mianjing');
     const { searchKnowledgeBase } = require('./knowledge');
 
     // ---- 步骤1: JD解析 (快速拿到公司/岗位名) ----
@@ -221,46 +219,7 @@ app.post('/api/analyze', async (req, res) => {
     stepOk(res, 'jd_parse', '解析JD', `识别到: ${position || '未知'} · ${company || '未知'}`);
     if (aborted) return;
 
-    // ---- ⚡ 面经采集立即并行启动 (与简历解析+差距分析同时进行) ----
-    let mianjingPromise = null;
-    let mianjingData = null;
-    let mianjingFailed = false;
-
-    // 判断用自动搜索还是手动URL
-    const hasManualUrls = manualUrls && Array.isArray(manualUrls) && manualUrls.length > 0;
-
-    if (effectiveMianjing && company && position) {
-      sseSend(res, { step: 'mianjing', label: '面经采集', detail: '🔍 并行搜索小红书面经...', status: 'running' });
-      console.log(`[Analyze] ⚡ 面经采集并行启动: ${company} ${position}`);
-      mianjingPromise = (async () => {
-        try {
-          const data = await queryMianjing(company, position, jdParsed.keywords || []);
-          return { ok: true, data };
-        } catch (e) {
-          console.warn('[Analyze] 面经采集异常:', e.message);
-          return { ok: false, error: e.message };
-        }
-      })();
-    } else if (hasManualUrls) {
-      // 手动URL模式：用户粘贴小红书链接
-      sseSend(res, { step: 'mianjing', label: '面经采集', detail: `🔗 抓取 ${manualUrls.length} 个手动链接...`, status: 'running' });
-      console.log(`[Analyze] ⚡ 手动URL面经并行启动: ${manualUrls.length} 个`);
-      mianjingPromise = (async () => {
-        try {
-          const data = await fetchNotesFromUrls(manualUrls);
-          return { ok: true, data };
-        } catch (e) {
-          console.warn('[Analyze] 手动URL面经异常:', e.message);
-          return { ok: false, error: e.message };
-        }
-      })();
-    } else if (effectiveMianjing) {
-      stepWarn(res, 'mianjing', '面经采集', '❌ 无法识别公司/岗位，跳过面经');
-    } else {
-      stepOk(res, 'mianjing', '面经采集', hasManualUrls ? '⏭️ 已跳过（将使用手动链接）' : '⏭️ 已跳过');
-    }
-
-    // ---- 步骤2: 简历解析 (面经采集在后台并行) ----
+    // ---- 步骤2: 简历解析 ----
     sseSend(res, { step: 'resume_parse', label: '解析简历', detail: '正在提取经历/技能...', status: 'running' });
     const resumeResult = await safeCall(() => llm(prompts.RESUME_PARSE_SYSTEM, resumeText, { temperature: 0.3 }));
     if (resumeResult.error) { sseError(res, `简历解析失败: ${resumeResult.error}`); return; }
@@ -277,33 +236,7 @@ app.post('/api/analyze', async (req, res) => {
     stepOk(res, 'gap_analysis', '差距分析', `匹配度 ${gapAnalysis.match_score || '--'} 分`);
     if (aborted) return;
 
-    // ---- 等待面经采集完成 (如果还在跑) ----
-    if (mianjingPromise) {
-      sseSend(res, { step: 'mianjing', label: '面经采集', detail: '⏳ 等待面经采集完成...', status: 'running' });
-      const mResult = await mianjingPromise;
-      await new Promise(r => setTimeout(r, 100)); // 给 SSE 一个 tick 刷新
-      if (mResult.ok && mResult.data) {
-        mianjingData = mResult.data;
-        // ---- 面经相关性过滤：只保留和当前岗位相关的 ----
-        if (mianjingData?.questions?.length) {
-          const relevant = await filterRelevantQuestions(mianjingData.questions, jdParsed);
-          mianjingData.questions = relevant;
-          const qCount = mianjingData.questions.length;
-          const srcCount = mianjingData.source_count || 0;
-          const label = hasManualUrls ? '🔗 链接' : '✅ 采集';
-          stepOk(res, 'mianjing', '面经采集', `${label} ${srcCount} 篇 · 过滤后 ${qCount} 道相关真题`);
-        } else {
-          mianjingFailed = true;
-          stepWarn(res, 'mianjing', '面经采集', '❌ 未采集到面经题目');
-        }
-      } else {
-        mianjingFailed = true;
-        stepWarn(res, 'mianjing', '面经采集', `❌ 采集异常: ${mResult.error || '未知'}`);
-      }
-    }
-    if (aborted) return;
-
-    // ---- 步骤5: 押题生成（分题型并行） ----
+    // ---- 步骤4: 押题生成（分题型并行） ----
     const questionTypes = quickMode
       ? ['行为面试', '专业能力', '项目深挖']  // 快速模式只用3类
       : ['行为面试', '专业能力', '项目深挖', '压力测试', 'HR面'];
@@ -319,7 +252,7 @@ app.post('/api/analyze', async (req, res) => {
         resume_parsed: resumeParsed,
         gap_analysis: gapAnalysis,
         position: jdParsed.position || '',
-        mianjing_data: mianjingData?.questions?.length ? `面经数据: ${JSON.stringify(mianjingData.questions.slice(0, 10))}` : '无面经数据',
+        mianjing_data: '无面经数据',
         focus_type: qType
       });
       const qResult = await safeCall(() => llm(questionPrompt, '', { temperature: 0.7 }));
@@ -351,7 +284,7 @@ app.post('/api/analyze', async (req, res) => {
     // ---- 构建结果 ----
     const result = { jd: jdParsed, resume: resumeParsed, gap: gapAnalysis,
       questions: questions.questions || [], insights: questions.insights || {},
-      mianjing: mianjingData, kb_supplement: kbQuestions.slice(0, 5) };
+      mianjing: null, kb_supplement: kbQuestions.slice(0, 5) };
 
     const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const label = jdParsed.position || jdParsed.company || '未命名';
@@ -360,27 +293,6 @@ app.post('/api/analyze', async (req, res) => {
       label, createdAt: Date.now() });
     activeSessionId = sessionId;
     saveSessions();
-
-    // 真题库写入：仅收录面经采集到的真实题目
-    if (mianjingData?.questions?.length) {
-      const bank = loadMianjingBank();
-      for (const q of mianjingData.questions) {
-        bank.unshift({
-          ...q,
-          company: jdParsed.company || '',
-          position: jdParsed.position || '',
-          sourceLabel: label,
-          source: '小红书面经',
-          sourceUrls: (mianjingData.sources || []).slice(0, 5).map(s => ({ title: s.title, url: s.url, platform: s.platform || '小红书' })),
-          sessionId,
-          collectedAt: new Date().toISOString()
-        });
-      }
-      const seen = new Set();
-      const deduped = bank.filter(b => { const k = (b.company||'') + '|' + (b.position||'') + '|' + (b.question||''); if (seen.has(k)) return false; seen.add(k); return true; });
-      saveMianjingBank(deduped.slice(0, 500));
-      console.log(`[Analyze] 真题库归档: ${mianjingData.questions.length} 条面经题, 题库总量 ${deduped.length}`);
-    }
 
     sseDone(res, { step: 'done', sessionId, jd: result.jd, resume: result.resume,
       gap: result.gap, questions: result.questions, insights: result.insights,
@@ -1287,6 +1199,90 @@ ${questionsText}
     return questions;
   }
 }
+
+// ============================================================
+// 面经采集 — 独立触发
+// ============================================================
+app.post('/api/mianjing-collect', async (req, res) => {
+  const { sessionId, jdText, resumeText } = req.body;
+  const session = sessions.get(sessionId);
+  if (!session?.analysis) {
+    return res.status(400).json({ error: '请先完成分析（调用 /api/analyze）' });
+  }
+  
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  function sse(data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
+
+  try {
+    const jdParsed = session.analysis.jd;
+    const company = jdParsed.company || '';
+    const position = jdParsed.position || '';
+    
+    if (!company && !position) {
+      sse({ step: 'error', detail: '无法识别公司/岗位，请确保JD已解析' });
+      res.end();
+      return;
+    }
+
+    sse({ step: 'mianjing', detail: '🔍 搜索小红书面经...', status: 'running' });
+    
+    const { queryMianjing } = require('./chatflow/nodes/mianjing');
+    const mResult = await queryMianjing(company, position, 8, 25000);
+    
+    if (mResult.success && mResult.data?.questions?.length) {
+      // 相关性过滤
+      const qCount = mResult.data.questions.length;
+      sse({ step: 'mianjing', detail: `📝 采集到 ${qCount} 道题，正在过滤...`, status: 'running' });
+      
+      const relevant = await filterRelevantQuestions(mResult.data.questions, jdParsed);
+      mResult.data.questions = relevant;
+      
+      // 更新session中的面经数据
+      session.analysis.mianjing = mResult.data;
+      saveSessions();
+      
+      // 真题库写入
+      const label = session.label || (jdParsed.position || jdParsed.company || '未命名');
+      if (mResult.data.questions?.length) {
+        const bank = loadMianjingBank();
+        for (const q of mResult.data.questions) {
+          bank.unshift({
+            ...q,
+            company: jdParsed.company || '',
+            position: jdParsed.position || '',
+            sourceLabel: label,
+            source: '小红书面经',
+            sourceUrls: (mResult.data.sources || []).slice(0, 5).map(s => ({ title: s.title, url: s.url, platform: s.platform || '小红书' })),
+            sessionId,
+            collectedAt: new Date().toISOString()
+          });
+        }
+        const seen = new Set();
+        const deduped = bank.filter(b => { const k = (b.company||'') + '|' + (b.position||'') + '|' + (b.question||''); if (seen.has(k)) return false; seen.add(k); return true; });
+        saveMianjingBank(deduped.slice(0, 500));
+        console.log(`[Mianjing] 真题库归档: ${mResult.data.questions.length} 条面经题, 题库总量 ${deduped.length}`);
+      }
+      
+      sse({
+        step: 'done',
+        detail: `✅ 采集完成：${mResult.data.source_count || 0} 篇笔记 · ${relevant.length} 道真题`,
+        status: 'ok',
+        result: { mianjing: mResult.data }
+      });
+    } else {
+      sse({ step: 'done', detail: '❌ 未采集到面经题目', status: 'warn' });
+    }
+    res.end();
+  } catch (e) {
+    sse({ step: 'error', detail: '采集异常: ' + (e.message || '未知'), status: 'error' });
+    res.end();
+  }
+});
 
 // ============================================================
 // 健康检查（含 opencli 环境检测）
