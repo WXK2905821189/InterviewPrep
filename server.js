@@ -542,6 +542,36 @@ app.post('/api/optimize-resume', async (req, res) => {
 });
 
 // ============================================================
+// API 6b: 简历评分
+// ============================================================
+app.post('/api/score-resume', async (req, res) => {
+  try {
+    const { resumeText } = req.body;
+    if (!resumeText || resumeText.trim().length < 50) {
+      return res.status(400).json({ error: '请提供至少50字的简历内容' });
+    }
+    const prompts = require('./chatflow/prompts');
+    const { llm } = require('./chatflow/llm-client');
+    const result = await llm(prompts.RESUME_SCORE_SYSTEM, resumeText, { temperature: 0.3 });
+    // Normalize: ensure overall_score is average of scores
+    if (result.scores) {
+      const scores = result.scores;
+      const vals = [scores.format, scores.completeness, scores.quantification, scores.star_structure, scores.position_alignment];
+      const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+      result.overall_score = result.overall_score || avg;
+    }
+    // Validate suggestion length
+    if (result.suggestion && result.suggestion.length > 300) {
+      result.suggestion = result.suggestion.slice(0, 300);
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[API] 简历评分失败:', e);
+    res.status(500).json({ error: '评分失败: ' + e.message });
+  }
+});
+
+// ============================================================
 // API 7: 单题评估（不依赖面试会话）
 // ============================================================
 app.post('/api/evaluate-single', async (req, res) => {
@@ -756,6 +786,123 @@ app.get('/api/sessions', (req, res) => {
   res.json({ sessions: list, activeSessionId });
 });
 
+// ---- Dashboard stats endpoint ----
+app.get('/api/dashboard/stats', (req, res) => {
+  try {
+    // Read phrase library
+    const phrasesPath = path.join(DATA_DIR, '.data', 'phrase-library.json');
+    let phrases = [];
+    try { phrases = JSON.parse(fs.readFileSync(phrasesPath, 'utf8')); } catch {}
+    if (!Array.isArray(phrases)) phrases = [];
+
+    // Read sessions
+    const sessionsPath = path.join(DATA_DIR, '.data', 'sessions.json');
+    let sessionsData = [];
+    try { sessionsData = JSON.parse(fs.readFileSync(sessionsPath, 'utf8')); } catch {}
+    if (!Array.isArray(sessionsData)) sessionsData = [];
+
+    // --- Practice stats from phrase library ---
+    const totalPractices = phrases.length;
+
+    // Average score
+    const scores = phrases.map(p => p.score || 0).filter(s => s > 0);
+    const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+
+    // Type coverage
+    const typeCoverage = { behavioral: 0, technical: 0, project: 0, stress: 0, hr: 0, total: 0 };
+    phrases.forEach(p => {
+      const t = p.type;
+      if (t && typeCoverage.hasOwnProperty(t)) typeCoverage[t]++;
+      typeCoverage.total++;
+    });
+
+    // Radar scores - average dimension scores from phrases that have evaluations
+    const dimKeys = ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'];
+    const radarScores = { star_completeness: 0, quantification: 0, position_match: 0, structure: 0, highlight: 0 };
+    const dimCounts = { star_completeness: 0, quantification: 0, position_match: 0, structure: 0, highlight: 0 };
+    phrases.forEach(p => {
+      if (p.evaluation && typeof p.evaluation === 'object') {
+        dimKeys.forEach(k => {
+          if (typeof p.evaluation[k] === 'number') {
+            radarScores[k] += p.evaluation[k];
+            dimCounts[k]++;
+          }
+        });
+      }
+    });
+    dimKeys.forEach(k => {
+      if (dimCounts[k] > 0) radarScores[k] = Math.round(radarScores[k] / dimCounts[k]);
+    });
+
+    // Recent practices (last 10)
+    const recentPractices = [...phrases]
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .slice(0, 10)
+      .map(p => ({
+        date: p.createdAt ? new Date(p.createdAt).toISOString().slice(0, 10) : '',
+        question: p.question || '',
+        score: p.score || 0,
+        type: p.type || ''
+      }));
+
+    // Calendar: date -> count for last 60 days
+    const calendar = {};
+    const now = new Date();
+    const sixtyDaysAgo = new Date(now);
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+    phrases.forEach(p => {
+      if (p.createdAt) {
+        const d = new Date(p.createdAt);
+        if (d >= sixtyDaysAgo && d <= now) {
+          const key = d.toISOString().slice(0, 10);
+          calendar[key] = (calendar[key] || 0) + 1;
+        }
+      }
+    });
+
+    // --- Interview reports from sessions ---
+    const interviewReports = [];
+    let totalInterviews = 0;
+    sessionsData.forEach(s => {
+      const interview = s.interview;
+      if (interview && interview.stage === 'done') {
+        totalInterviews++;
+        let reportScore = '-';
+        if (interview.askedQuestions && interview.askedQuestions.length > 0) {
+          const qScores = interview.askedQuestions
+            .map(q => q.score || q.evaluation?.score)
+            .filter(v => typeof v === 'number');
+          if (qScores.length > 0) {
+            reportScore = Math.round(qScores.reduce((a, b) => a + b, 0) / qScores.length);
+          }
+        }
+        interviewReports.push({
+          label: s.label || s.position || s.company || '面试',
+          company: s.company || '',
+          position: s.position || '',
+          date: s.createdAt ? new Date(s.createdAt).toISOString() : '',
+          score: reportScore
+        });
+      }
+    });
+    interviewReports.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    res.json({
+      totalPractices,
+      totalInterviews,
+      avgScore,
+      radarScores,
+      typeCoverage,
+      recentPractices,
+      interviewReports: interviewReports.slice(0, 10),
+      calendar
+    });
+  } catch (e) {
+    console.error('Dashboard stats error:', e);
+    res.status(500).json({ error: 'Failed to load dashboard stats' });
+  }
+});
+
 app.post('/api/sessions/switch', (req, res) => {
   const { sessionId } = req.body;
   if (!sessions.has(sessionId)) return res.status(404).json({ error: '会话不存在' });
@@ -948,6 +1095,35 @@ app.get('/api/export/mianjing', async (req, res) => {
     res.send(buffer);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Export resume as DOCX
+app.post('/api/export-resume-docx', async (req, res) => {
+  try {
+    const { data, template } = req.body;
+    const { generateResumeDocx } = require('./chatflow/nodes/export-resume');
+    const buf = await generateResumeDocx(data);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename="resume.docx"');
+    res.send(buf);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Export resume as PDF
+app.post('/api/export-resume-pdf', async (req, res) => {
+  try {
+    const { data, template } = req.body;
+    const { generateResumePdf } = require('./chatflow/nodes/export-resume');
+    const buf = await generateResumePdf(data, template);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="resume.pdf"');
+    res.send(buf);
+  } catch (e) {
+    console.error('PDF export error:', e);
+    res.status(500).json({ error: 'PDF导出失败: ' + e.message });
   }
 });
 

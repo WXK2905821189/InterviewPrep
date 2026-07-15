@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>InterviewPrep - AI面试押题与模拟面试官</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="resume-templates.css">
 </head>
 <body>
 
@@ -14,10 +15,12 @@
   <div class="nav-inner">
     <div class="nav-brand">InterviewPrep</div>
     <div class="nav-tabs" id="nav-tabs">
-      <button class="nav-tab active" data-tab="analyze">分析 & 押题<span class="tab-dot" data-dot-tab="analyze"></span></button>
+      <button class="nav-tab active" data-tab="dashboard">📊 仪表盘</button>
+      <button class="nav-tab" data-tab="analyze">分析 & 押题<span class="tab-dot" data-dot-tab="analyze"></span></button>
       <button class="nav-tab" data-tab="practice">单题练习<span class="tab-dot" data-dot-tab="practice"></span></button>
       <button class="nav-tab" data-tab="interview">全真模拟<span class="tab-dot" data-dot-tab="interview"></span></button>
       <button class="nav-tab" data-tab="resume">简历优化<span class="tab-dot" data-dot-tab="resume"></span></button>
+      <button class="nav-tab" data-tab="templates">📄 简历模板</button>
       <button class="nav-tab" data-tab="bank">真题库</button>
       <button class="nav-tab" data-tab="company">公司调研</button>
     </div>
@@ -36,8 +39,52 @@
 
 <main class="container">
 
+  <!-- ====== Tab 0: 仪表盘 ====== -->
+  <section id="tab-dashboard" class="tab-content active">
+    <div class="card hero-card">
+      <h1>📊 面试仪表盘</h1>
+      <p class="subtitle">追踪练习进度，发现薄弱环节，见证成长轨迹</p>
+    </div>
+
+    <!-- Stats row -->
+    <div id="dash-stats" style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;"></div>
+
+    <!-- Charts row -->
+    <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
+      <div class="card" style="flex:1;min-width:320px;">
+        <h3 style="margin-bottom:0.8rem;">5维能力雷达</h3>
+        <div id="dash-radar" style="height:300px;"></div>
+      </div>
+      <div class="card" style="flex:1;min-width:320px;">
+        <h3 style="margin-bottom:0.8rem;">题型覆盖</h3>
+        <div id="dash-pie" style="height:260px;"></div>
+      </div>
+    </div>
+
+    <!-- Practice calendar -->
+    <div class="card" style="margin-bottom:1rem;">
+      <h3 style="margin-bottom:0.8rem;">练习日历（近60天）</h3>
+      <div id="dash-calendar" style="display:flex;flex-wrap:wrap;gap:3px;"></div>
+      <div style="display:flex;gap:0.8rem;align-items:center;margin-top:0.6rem;font-size:0.72rem;color:var(--muted);">
+        <span>🟩 少量</span><span>🟩🟩 中等</span><span>🟩🟩🟩 较多</span>
+      </div>
+    </div>
+
+    <!-- Recent practices -->
+    <div class="card" style="margin-bottom:1rem;">
+      <h3 style="margin-bottom:0.8rem;">📝 最近练习</h3>
+      <div id="dash-recent"></div>
+    </div>
+
+    <!-- Interview report history -->
+    <div class="card">
+      <h3 style="margin-bottom:0.8rem;">📋 模拟面试历史</h3>
+      <div id="dash-interviews"></div>
+    </div>
+  </section>
+
   <!-- ====== Tab 1: 分析 & 押题 ====== -->
-  <section id="tab-analyze" class="tab-content active">
+  <section id="tab-analyze" class="tab-content">
     <div class="card hero-card">
       <h1>上传JD+简历，AI一键押题</h1>
       <p class="subtitle">自动解析岗位要求，对比你的简历，生成针对性面试题 — 含面经数据驱动的高频押题</p>
@@ -214,6 +261,16 @@ https://www.xiaohongshu.com/explore/..." style="font-size:0.8rem;font-family:mon
       <p>基于目标JD，逐段优化简历表述 — 对齐关键词、强化量化、优化STAR结构</p>
     </div>
 
+    <!-- 简历评分卡片 -->
+    <div class="card" id="resume-score-card" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;">📊 简历评分</h3>
+        <button id="btn-score-resume" class="btn-outline" style="font-size:0.78rem;">🔄 重新评分</button>
+      </div>
+      <div id="resume-score-detail" style="margin-top:0.8rem;"></div>
+      <div id="resume-score-overall" style="margin-top:0.5rem;font-size:0.85rem;"></div>
+    </div>
+
     <div id="resume-opt-empty" class="empty-state">
       <p>请先在「分析 & 押题」页完成分析，然后在下方点击生成优化建议</p>
       <button id="btn-optimize-resume" class="btn-primary">生成优化建议</button>
@@ -251,6 +308,34 @@ https://www.xiaohongshu.com/explore/..." style="font-size:0.8rem;font-family:mon
         <div class="progress-detail" id="company-progress-detail"></div>
       </div>
       <div id="company-result" style="margin-top:1rem;"></div>
+    </div>
+  </section>
+
+  <!-- ====== Tab: 简历模板 ====== -->
+  <section id="tab-templates" class="tab-content">
+    <div style="display:flex;gap:1rem;">
+      <!-- Left: Template selector + edit form -->
+      <div style="width:340px;flex-shrink:0;">
+        <div class="card">
+          <h3 style="margin-bottom:0.8rem;">模板选择</h3>
+          <div id="template-selector" style="display:flex;flex-direction:column;gap:0.5rem;"></div>
+          <button id="btn-import-from-session" class="btn-outline" style="width:100%;margin-top:0.8rem;">📥 从当前岗位导入</button>
+        </div>
+        <div class="card" style="margin-top:0.8rem;">
+          <h3 style="margin-bottom:0.8rem;">导出</h3>
+          <div style="display:flex;flex-direction:column;gap:0.5rem;">
+            <button id="btn-export-docx" class="btn-primary" style="font-size:0.85rem;">📥 导出 DOCX</button>
+            <button id="btn-export-pdf" class="btn-outline" style="font-size:0.85rem;">📥 导出 PDF</button>
+            <button id="btn-save-template" class="btn-outline" style="font-size:0.85rem;">💾 保存草稿</button>
+          </div>
+        </div>
+      </div>
+      <!-- Right: Live preview -->
+      <div style="flex:1;">
+        <div class="card" style="padding:0;overflow:hidden;">
+          <div id="resume-preview" style="background:white;color:#1a1a2e;font-family:Arial,'Microsoft YaHei';min-height:600px;padding:2rem;font-size:14px;line-height:1.6;"></div>
+        </div>
+      </div>
     </div>
   </section>
 

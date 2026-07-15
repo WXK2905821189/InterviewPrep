@@ -1,0 +1,300 @@
+/* ============================================================
+   Resume Templates CSS
+   Three templates: clean, business, creative
+   ============================================================ */
+
+/* ---- clean (简洁版): Single column, left-aligned, black+grey ---- */
+.template-clean {
+  max-width: 750px;
+  margin: 0 auto;
+  color: #1a1a2e;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.template-clean h1 {
+  text-align: center;
+  font-size: 22px;
+  margin: 0 0 4px;
+  color: #1a1a2e;
+  font-weight: 700;
+}
+
+.template-clean h3 {
+  border-bottom: 1.5px solid #333;
+  padding-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a2e;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.template-clean .contact-line {
+  text-align: center;
+  color: #666;
+  font-size: 11px;
+  margin: 0 0 16px;
+}
+
+.template-clean .section-block {
+  margin-bottom: 14px;
+}
+
+.template-clean .entry-item {
+  margin: 6px 0;
+}
+
+.template-clean .entry-item p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.template-clean .entry-item .role {
+  font-weight: 600;
+}
+
+.template-clean .entry-item .duration {
+  color: #888;
+  font-size: 11px;
+}
+
+.template-clean ul {
+  margin: 2px 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #444;
+}
+
+.template-clean ul li {
+  margin-bottom: 1px;
+}
+
+/* ---- business (商务版): Two-column, dark sidebar ---- */
+.template-business {
+  display: flex;
+  min-height: 500px;
+  max-width: 800px;
+  margin: 0 auto;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.template-business .sidebar {
+  width: 220px;
+  background: #1e3a5f;
+  color: #c8d6e5;
+  padding: 24px 16px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.template-business .sidebar h2 {
+  color: #fff;
+  font-size: 18px;
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+
+.template-business .sidebar .contact-info {
+  color: #a0b8d0;
+  font-size: 11px;
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.template-business .sidebar h4 {
+  color: #fff;
+  font-size: 11px;
+  border-bottom: 1px solid #3a5a80;
+  padding-bottom: 3px;
+  margin: 12px 0 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.template-business .sidebar .skill-list {
+  line-height: 1.7;
+}
+
+.template-business .sidebar .edu-item {
+  margin: 3px 0;
+  line-height: 1.5;
+}
+
+.template-business .sidebar .edu-item .school-name {
+  color: #e0e8f0;
+  font-weight: 600;
+}
+
+.template-business .main-content {
+  flex: 1;
+  padding: 24px 20px;
+  font-size: 12px;
+  background: #fff;
+}
+
+.template-business .main-content h4 {
+  color: #1e3a5f;
+  font-size: 13px;
+  border-bottom: 2px solid #1e3a5f;
+  padding-bottom: 3px;
+  margin: 0 0 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.template-business .main-content .summary-text {
+  color: #555;
+  margin: 0 0 16px;
+  line-height: 1.7;
+}
+
+.template-business .main-content .exp-item {
+  margin: 0 0 10px;
+}
+
+.template-business .main-content .exp-item .exp-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.template-business .main-content .exp-item .exp-date {
+  color: #888;
+  margin: 0;
+  font-size: 10px;
+}
+
+.template-business .main-content .exp-item ul {
+  margin: 3px 0;
+  padding-left: 18px;
+  color: #555;
+}
+
+.template-business .main-content .exp-item ul li {
+  margin-bottom: 1px;
+}
+
+.template-business .main-content .proj-item {
+  margin: 0 0 6px;
+}
+
+.template-business .main-content .proj-item b {
+  color: #1a1a2e;
+}
+
+.template-business .main-content .proj-item .proj-tech {
+  color: #1e3a5f;
+  font-size: 11px;
+}
+
+.template-business .main-content .proj-item .proj-desc {
+  color: #555;
+}
+
+/* ---- creative (设计版): Card-based, rounded corners, purple+gold ---- */
+.template-creative {
+  max-width: 700px;
+  margin: 0 auto;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.template-creative .header-banner {
+  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  color: #fff;
+  padding: 28px 24px;
+  border-radius: 12px 12px 0 0;
+}
+
+.template-creative .header-banner h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.template-creative .header-banner .contact-line {
+  margin: 6px 0 0;
+  opacity: 0.85;
+  font-size: 12px;
+}
+
+.template-creative .body-area {
+  padding: 20px;
+  border: 2px solid #e8e0f0;
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: #faf8ff;
+}
+
+.template-creative .card-block {
+  background: #fff;
+  border: 1px solid #e8e0f0;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.template-creative .card-block h3 {
+  color: #7c3aed;
+  font-size: 13px;
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+
+.template-creative .card-block .card-desc {
+  color: #555;
+  margin: 4px 0 0;
+}
+
+.template-creative .exp-item {
+  margin: 0 0 8px;
+}
+
+.template-creative .exp-item .exp-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.template-creative .exp-item .exp-date {
+  color: #999;
+  font-size: 10px;
+}
+
+.template-creative .exp-item .exp-detail {
+  margin: 2px 0 0;
+  color: #555;
+  font-size: 11px;
+}
+
+.template-creative .edu-item {
+  margin: 2px 0;
+  color: #555;
+}
+
+.template-creative .skill-tag {
+  display: inline-block;
+  background: #ede9fe;
+  color: #6d28d9;
+  padding: 2px 10px;
+  border-radius: 12px;
+  margin: 2px;
+  font-size: 11px;
+}
+
+/* ---- Template selector ---- */
+.template-option {
+  transition: all 0.2s ease;
+}
+
+.template-option:hover {
+  border-color: var(--accent) !important;
+  background: var(--tag-bg);
+}
+
+.template-option.selected {
+  background: var(--tag-bg);
+}

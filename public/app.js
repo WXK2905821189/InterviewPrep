@@ -25,6 +25,132 @@ function toast(msg, ms = 2500) {
 }
 function setStatus(text) { $('#nav-status').textContent = text; }
 
+// Resize event
+window.addEventListener('resize', resizeAllCharts);
+
+// Tab 小红点系统
+async function loadDashboard() {
+  try {
+    const data = await fetch('/api/dashboard/stats').then(r => r.json());
+    renderDashStats(data);
+    renderRadarChart(data.radarScores || {});
+    renderPieChart(data.typeCoverage || {});
+    renderCalendar(data.calendar || {});
+    renderRecentPractices(data.recentPractices || []);
+    renderInterviewHistory(data.interviewReports || []);
+  } catch (e) {
+    console.warn('Dashboard load failed:', e);
+    $('#dash-stats').innerHTML = '<p style="color:var(--muted);">暂无数据，完成一次练习或模拟面试后开始追踪</p>';
+  }
+}
+
+function renderDashStats(data) {
+  const stats = [
+    { label: '练习次数', value: data.totalPractices || 0, icon: '📝' },
+    { label: '模拟面试', value: data.totalInterviews || 0, icon: '🎤' },
+    { label: '平均得分', value: (data.avgScore || 0) + '分', icon: '⭐' },
+  ];
+  $('#dash-stats').innerHTML = stats.map(s =>
+    '<div class="card" style="flex:1;min-width:150px;text-align:center;padding:1rem;">' +
+    '<div style="font-size:2rem;">' + s.icon + '</div>' +
+    '<div style="font-size:1.5rem;font-weight:700;">' + s.value + '</div>' +
+    '<div style="font-size:0.78rem;color:var(--muted);">' + s.label + '</div>' +
+    '</div>'
+  ).join('');
+}
+
+function renderRadarChart(scores) {
+  const el = document.getElementById('dash-radar');
+  if (!el) return;
+  const keys = ['star_completeness','quantification','position_match','structure','highlight'];
+  const labels = ['STAR完整度','量化程度','岗位匹配','结构逻辑','亮点突出'];
+  const values = keys.map(k => scores[k] || 0);
+  if (values.every(v => v === 0)) { el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem;">完成练习后显示</p>'; return; }
+
+  const chart = echarts.init(el);
+  chart.setOption({
+    tooltip: {},
+    radar: {
+      indicator: labels.map((l,i) => ({ name: l, max: 100 })),
+      center: ['50%','55%'],
+      radius: '65%'
+    },
+    series: [{ type: 'radar', data: [{ value: values, name: '平均得分', areaStyle: { color: 'rgba(79,70,229,0.15)' },
+      lineStyle: { color: '#4F46E5', width: 2 }, itemStyle: { color: '#4F46E5' } }] }]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+function renderPieChart(data) {
+  const el = document.getElementById('dash-pie');
+  if (!el) return;
+  const types = [
+    { key: 'behavioral', name: '行为面试', color: '#4F46E5' },
+    { key: 'technical', name: '专业能力', color: '#10B981' },
+    { key: 'project', name: '项目深挖', color: '#F59E0B' },
+    { key: 'stress', name: '压力测试', color: '#EF4444' },
+    { key: 'hr', name: 'HR面', color: '#8B5CF6' }
+  ];
+  const hasData = types.some(t => (data[t.key] || 0) > 0);
+  if (!hasData) { el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem;">完成练习后显示</p>'; return; }
+
+  const chart = echarts.init(el);
+  chart.setOption({
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0, textStyle: { fontSize: 11 } },
+    series: [{
+      type: 'pie', radius: ['45%','70%'], center: ['50%','50%'],
+      data: types.filter(t => (data[t.key]||0) > 0).map(t => ({ value: data[t.key], name: t.name, itemStyle: { color: t.color } })),
+      label: { show: false }
+    }]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+function renderCalendar(calData) {
+  const el = $('#dash-calendar');
+  if (!el) return;
+  const now = new Date();
+  let html = '';
+  for (let i = 59; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0,10);
+    const count = calData[key] || 0;
+    let bg = '#1e293b';
+    if (count >= 5) bg = '#10B981';
+    else if (count >= 3) bg = '#34D399';
+    else if (count >= 1) bg = '#6EE7B7';
+    html += '<div title="' + key + ': ' + count + '次" style="width:14px;height:14px;border-radius:3px;background:' + bg + ';"></div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderRecentPractices(items) {
+  const el = $('#dash-recent');
+  if (!items.length) { el.innerHTML = '<p style="color:var(--muted);">暂无练习记录</p>'; return; }
+  el.innerHTML = items.slice(0, 10).map(p =>
+    '<div style="display:flex;align-items:center;gap:0.8rem;padding:0.5rem 0;border-bottom:1px solid var(--rule);">' +
+    '<span style="font-size:0.78rem;color:var(--muted);white-space:nowrap;">' + (p.date || '').slice(5) + '</span>' +
+    '<span style="flex:1;font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (p.question || p.type || '练习') + '</span>' +
+    '<span style="font-weight:600;color:' + (p.score >= 80 ? 'var(--green)' : p.score >= 60 ? '#F59E0B' : 'var(--red)') + ';">' + (p.score || 0) + '分</span>' +
+    '</div>'
+  ).join('');
+}
+
+function renderInterviewHistory(reports) {
+  const el = $('#dash-interviews');
+  if (!reports.length) { el.innerHTML = '<p style="color:var(--muted);">暂无模拟面试记录</p>'; return; }
+  el.innerHTML = reports.slice(0, 10).map(r =>
+    '<div style="display:flex;align-items:center;gap:0.8rem;padding:0.5rem 0;border-bottom:1px solid var(--rule);">' +
+    '<span>🎤</span>' +
+    '<span style="flex:1;font-size:0.85rem;">' + (r.label || r.position || '面试') + '</span>' +
+    '<span style="font-size:0.78rem;color:var(--muted);">' + (r.date || '').slice(0,10) + '</span>' +
+    '<span style="font-weight:600;color:var(--accent);">' + (r.score || '-') + '分</span>' +
+    '</div>'
+  ).join('');
+}
+
 // Tab 小红点系统
 function showTabDot(tabName) {
   const dot = document.querySelector(`.tab-dot[data-dot-tab="${tabName}"]`);
@@ -210,8 +336,15 @@ function switchTab(tabName) {
   const content = document.getElementById(`tab-${tabName}`);
   if (content) content.classList.add('active');
 
+  if (tabName === 'dashboard') loadDashboard();
   if (tabName === 'practice' && state.analysis) renderPracticeQuestions();
-  if (tabName === 'resume' && state.analysis) $('#resume-opt-empty').classList.remove('hidden');
+  if (tabName === 'resume' && state.analysis) {
+    $('#resume-opt-empty').classList.remove('hidden');
+    checkAndAutoScore();
+  }
+  if (tabName === 'templates') {
+    initTemplates();
+  }
 }
 
 $$('.nav-tab').forEach(tab => {
@@ -1188,6 +1321,69 @@ function renderResumeOptimization(data) {
 }
 
 // ============================================================
+// 📊 简历评分
+// ============================================================
+
+async function scoreResume() {
+  const resumeText = $('#resume-input').value.trim() || state.resumeText || '';
+  if (!resumeText) return toast('请先在分析页输入简历内容');
+  const btn = $('#btn-score-resume');
+  btn.disabled = true; btn.textContent = '⏳ 评分中...';
+  try {
+    const resp = await fetch('/api/score-resume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resumeText })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    renderResumeScore(data);
+  } catch (e) { toast('评分失败: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '🔄 重新评分'; }
+}
+
+function renderResumeScore(data) {
+  const card = $('#resume-score-card');
+  card.style.display = 'block';
+
+  const scores = data.scores || {};
+  const bars = [
+    { key: 'format', label: '格式规范', color: '#4F46E5' },
+    { key: 'completeness', label: '内容完整', color: '#10B981' },
+    { key: 'quantification', label: '量化程度', color: '#F59E0B' },
+    { key: 'star_structure', label: 'STAR结构', color: '#8B5CF6' },
+    { key: 'position_alignment', label: '岗位对齐', color: '#EC4899' },
+  ];
+
+  $('#resume-score-detail').innerHTML = bars.map(b => {
+    const v = scores[b.key] || 0;
+    return '<div style="display:flex;align-items:center;gap:0.5rem;margin:0.4rem 0;">' +
+      '<span style="width:80px;font-size:0.8rem;">' + b.label + '</span>' +
+      '<div style="flex:1;height:10px;background:var(--bg2);border-radius:5px;overflow:hidden;">' +
+      '<div style="height:100%;width:' + v + '%;background:' + b.color + ';border-radius:5px;transition:width 0.5s;"></div></div>' +
+      '<span style="width:35px;font-size:0.8rem;text-align:right;">' + v + '</span></div>';
+  }).join('');
+
+  $('#resume-score-overall').innerHTML = '<strong>综合评分：' + data.overall_score + '分</strong>' +
+    (data.suggestion ? '<p style="margin-top:0.3rem;color:var(--muted);font-size:0.82rem;">💡 ' + data.suggestion + '</p>' : '');
+}
+
+$('#btn-score-resume').addEventListener('click', scoreResume);
+
+async function checkAndAutoScore() {
+  const card = $('#resume-score-card');
+  const resumeText = $('#resume-input').value.trim() || state.resumeText || '';
+  if (!resumeText) {
+    card.style.display = 'none';
+    return;
+  }
+  // If card is already populated, don't re-score
+  const detail = $('#resume-score-detail');
+  if (detail.innerHTML.trim() && card.style.display !== 'none') return;
+  card.style.display = 'block';
+}
+
+// ============================================================
 // 设置面板 — AI供应商管理
 // ============================================================
 
@@ -2022,6 +2218,170 @@ async function markXhsLoginDone() {
 }
 window.openXhsForLogin = openXhsForLogin;
 window.markXhsLoginDone = markXhsLoginDone;
+
+// ============================================================
+// 📄 简历模板
+// ============================================================
+
+const RESUME_TEMPLATES = {
+  clean: { name: '简洁版', desc: '单栏左对齐，经典黑白' },
+  business: { name: '商务版', desc: '双栏布局，深蓝侧栏' },
+  creative: { name: '设计版', desc: '卡片式，圆角+色彩' },
+};
+
+let resumeFormData = {
+  name: '', email: '', phone: '', location: '',
+  summary: '',
+  educations: [{ school: '', major: '', degree: '', years: '' }],
+  experiences: [{ company: '', role: '', duration: '', highlights: '' }],
+  projects: [{ name: '', desc: '', tech: '' }],
+  skills: ''
+};
+let activeTemplate = 'clean';
+
+function renderTemplateSelector() {
+  const el = $('#template-selector');
+  el.innerHTML = Object.entries(RESUME_TEMPLATES).map(([id, t]) => {
+    const active = id === activeTemplate;
+    return '<div class="template-option ' + (active ? 'selected' : '') + '" data-tpl="' + id + '" style="padding:0.6rem;border:2px solid ' + (active ? 'var(--accent)' : 'var(--rule)') + ';border-radius:8px;cursor:pointer;margin-bottom:0.3rem;">' +
+      '<div style="font-weight:600;">' + t.name + '</div>' +
+      '<div style="font-size:0.72rem;color:var(--muted);">' + t.desc + '</div></div>';
+  }).join('');
+
+  el.querySelectorAll('.template-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+      activeTemplate = opt.dataset.tpl;
+      renderTemplateSelector();
+      renderResumePreview();
+    });
+  });
+}
+
+function renderResumePreview() {
+  const data = resumeFormData;
+  let html = '';
+
+  if (activeTemplate === 'clean') {
+    html = '<div class="template-clean">' +
+      '<h1>' + (data.name || '姓名') + '</h1>' +
+      '<p class="contact-line">' + [data.email, data.phone, data.location].filter(Boolean).join(' · ') + '</p>' +
+      (data.summary ? '<div class="section-block"><h3>个人简介</h3><p style="font-size:12px;color:#444;">' + data.summary + '</p></div>' : '') +
+      (data.educations.some(e => e.school) ? '<div class="section-block"><h3>教育经历</h3>' + data.educations.filter(e => e.school).map(e => '<div class="entry-item"><p><b class="role">' + e.school + '</b> · ' + e.major + ' · ' + e.degree + ' <span class="duration">' + e.years + '</span></p></div>').join('') + '</div>' : '') +
+      (data.experiences.some(e => e.company) ? '<div class="section-block"><h3>工作/实习经历</h3>' + data.experiences.filter(e => e.company).map(e => '<div class="entry-item"><p><b class="role">' + e.role + '</b> @ ' + e.company + ' <span class="duration">' + e.duration + '</span></p>' + (e.highlights ? '<ul>' + e.highlights.split('\n').filter(Boolean).map(h => '<li>' + h + '</li>').join('') + '</ul>' : '') + '</div>').join('') + '</div>' : '') +
+      (data.projects.some(p => p.name) ? '<div class="section-block"><h3>项目经历</h3>' + data.projects.filter(p => p.name).map(p => '<div class="entry-item"><p><b>' + p.name + '</b>' + (p.tech ? ' · ' + p.tech : '') + '</p><p style="font-size:12px;color:#444;">' + (p.desc || '') + '</p></div>').join('') + '</div>' : '') +
+      (data.skills ? '<div class="section-block"><h3>技能</h3><p style="font-size:12px;color:#444;">' + data.skills + '</p></div>' : '') +
+      '</div>';
+  } else if (activeTemplate === 'business') {
+    html = '<div class="template-business">' +
+      '<div class="sidebar">' +
+      '<h2>' + (data.name || '姓名') + '</h2>' +
+      '<p class="contact-info">' + [data.email, data.phone, data.location].filter(Boolean).join('<br>') + '</p>' +
+      (data.skills ? '<h4>技能</h4><p class="skill-list">' + data.skills.split(',').map(s => '· ' + s.trim()).join('<br>') + '</p>' : '') +
+      (data.educations.some(e => e.school) ? '<h4>教育</h4>' + data.educations.filter(e => e.school).map(e => '<div class="edu-item"><p class="school-name">' + e.school + '</p><p>' + e.major + '</p><p>' + e.years + '</p></div>').join('') : '') +
+      '</div>' +
+      '<div class="main-content">' +
+      (data.summary ? '<h4>个人简介</h4><p class="summary-text">' + data.summary + '</p>' : '') +
+      (data.experiences.some(e => e.company) ? '<h4>工作经历</h4>' + data.experiences.filter(e => e.company).map(e => '<div class="exp-item"><p class="exp-title"><b>' + e.role + '</b> · ' + e.company + '</p><p class="exp-date">' + e.duration + '</p>' + (e.highlights ? '<ul>' + e.highlights.split('\n').filter(Boolean).map(h => '<li>' + h + '</li>').join('') + '</ul>' : '') + '</div>').join('') : '') +
+      (data.projects.some(p => p.name) ? '<h4>项目经历</h4>' + data.projects.filter(p => p.name).map(p => '<div class="proj-item"><p><b>' + p.name + '</b>' + (p.tech ? ' <span class="proj-tech">(' + p.tech + ')</span>' : '') + '</p><p class="proj-desc">' + (p.desc || '') + '</p></div>').join('') : '') +
+      '</div></div>';
+  } else {
+    // creative
+    html = '<div class="template-creative">' +
+      '<div class="header-banner">' +
+      '<h1>' + (data.name || '姓名') + '</h1>' +
+      '<p class="contact-line">' + [data.email, data.phone, data.location].filter(Boolean).join(' · ') + '</p></div>' +
+      '<div class="body-area">' +
+      (data.summary ? '<div class="card-block"><h3>关于我</h3><p class="card-desc">' + data.summary + '</p></div>' : '') +
+      (data.experiences.some(e => e.company) ? '<div class="card-block"><h3>经历</h3>' + data.experiences.filter(e => e.company).map(e => '<div class="exp-item"><p class="exp-title"><b>' + e.role + '</b> @ ' + e.company + '</p><p class="exp-date">' + e.duration + '</p>' + (e.highlights ? '<p class="exp-detail">' + e.highlights.split('\n').filter(Boolean).join('<br>· ') + '</p>' : '') + '</div>').join('') + '</div>' : '') +
+      (data.educations.some(e => e.school) ? '<div class="card-block"><h3>教育</h3>' + data.educations.filter(e => e.school).map(e => '<p class="edu-item">' + e.school + ' · ' + e.major + ' · ' + e.years + '</p>').join('') + '</div>' : '') +
+      (data.skills ? '<div class="card-block"><h3>技能</h3><p style="margin:0;">' + data.skills.split(',').map(s => '<span class="skill-tag">' + s.trim() + '</span>').join('') + '</p></div>' : '') +
+      '</div></div>';
+  }
+
+  const preview = $('#resume-preview');
+  preview.innerHTML = html;
+}
+
+// Import from current session
+$('#btn-import-from-session').addEventListener('click', async () => {
+  if (!state.sessionId || !state.analysis) return toast('请先完成一次分析');
+  try {
+    const resp = await fetch('/api/sessions');
+    const data = await resp.json();
+    const sess = data.sessions.find(s => s.id === state.sessionId);
+    if (!sess) return toast('未找到会话数据');
+
+    // Load full session data
+    const fullResp = await fetch('/api/sessions/' + state.sessionId);
+    const full = await fullResp.json();
+    const a = full.analysis || {};
+    const resume = a.resume || {};
+
+    resumeFormData.name = resume.name || resumeFormData.name;
+    resumeFormData.email = resume.email || resumeFormData.email;
+    resumeFormData.phone = resume.phone || resumeFormData.phone;
+    if (resume.education) {
+      resumeFormData.educations = [{ school: resume.education.school || '', major: resume.education.major || '', degree: resume.education.degree || '', years: resume.education.year || '' }];
+    }
+    if (resume.internships) {
+      resumeFormData.experiences = resume.internships.map(i => ({ company: i.company || '', role: i.role || '', duration: i.duration || '', highlights: (i.highlights || []).join('\n') }));
+    }
+    if (resume.projects) {
+      resumeFormData.projects = resume.projects.map(p => ({ name: p.name || '', desc: p.description || '', tech: '' }));
+    }
+    if (resume.skills) {
+      resumeFormData.skills = resume.skills.join(', ');
+    }
+    if (resume.strengths && resume.strengths.length) {
+      resumeFormData.summary = resume.strengths.join('; ');
+    }
+
+    renderResumePreview();
+    toast('已从分析结果导入');
+  } catch (e) { toast('导入失败'); }
+});
+
+// Export DOCX
+$('#btn-export-docx').addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/export-resume-docx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: resumeFormData, template: activeTemplate })
+    });
+    if (!resp.ok) throw new Error('Export failed');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'resume-' + (resumeFormData.name || 'untitled') + '.docx';
+    a.click(); URL.revokeObjectURL(url);
+    toast('已导出 DOCX');
+  } catch (e) { toast('导出失败: ' + e.message); }
+});
+
+// Export PDF
+$('#btn-export-pdf').addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/export-resume-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: resumeFormData, template: activeTemplate })
+    });
+    if (!resp.ok) throw new Error('Export failed');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'resume-' + (resumeFormData.name || 'untitled') + '.pdf';
+    a.click(); URL.revokeObjectURL(url);
+    toast('已导出 PDF');
+  } catch (e) { toast('导出失败: ' + e.message); }
+});
+
+// Initialize templates
+function initTemplates() {
+  renderTemplateSelector();
+  renderResumePreview();
+}
 
 (async () => {
   await refreshSessionList();
