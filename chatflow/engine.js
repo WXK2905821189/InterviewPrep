@@ -204,7 +204,7 @@ async function evaluateAnswer(question, answer, jdSummary, resumeText) {
   return await llm(evalPrompt, '', { temperature: 0.3 });
 }
 
-async function evaluateFullSession(session) {
+async function evaluateFullSession(session, resumeText) {
   const evaluations = [];
   let i = 0;
   for (const entry of session.history) {
@@ -214,7 +214,7 @@ async function evaluateFullSession(session) {
         .filter(h => h.role === 'interviewer').length - 1;
       const question = session.askedQuestions[Math.max(0, qIdx)] || '自我介绍';
       try {
-        const eval_ = await evaluateAnswer(question, entry.content, session.jdSummary);
+        const eval_ = await evaluateAnswer(question, entry.content, session.jdSummary, resumeText || session.resumeSummary || '');
         evaluations.push(eval_);
       } catch (e) {
         console.warn('评估失败:', e.message);

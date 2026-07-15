@@ -318,6 +318,7 @@ app.post('/api/analyze', async (req, res) => {
         jd_parsed: jdParsed,
         resume_parsed: resumeParsed,
         gap_analysis: gapAnalysis,
+        position: jdParsed.position || '',
         mianjing_data: mianjingData?.questions?.length ? `面经数据: ${JSON.stringify(mianjingData.questions.slice(0, 10))}` : '无面经数据',
         focus_type: qType
       });
@@ -505,7 +506,7 @@ app.post('/api/interview/evaluate', async (req, res) => {
     }
 
     session.interview.stage = 'done';
-    const report = await evaluateFullSession(session.interview);
+    const report = await evaluateFullSession(session.interview, session.resumeText || '');
 
     res.json({
       stage: 'done',

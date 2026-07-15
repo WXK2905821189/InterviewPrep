@@ -1,12 +1,15 @@
 // ============================================================
 // InterviewPrep MVP — Electron Preload
 // ============================================================
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   appVersion: '1.1.0',
-  isElectron: true
+  isElectron: true,
+  // 一键更新：下载 → 解压 → 安装
+  installUpdate: (downloadUrl) => ipcRenderer.invoke('install-update', downloadUrl),
+  restartApp: () => ipcRenderer.send('restart-app')
 });
 
 // 同时注入全局变量给前端 JS

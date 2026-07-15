@@ -52,8 +52,7 @@ $('#btn-check-update')?.addEventListener('click', async () => {
   detailEl.classList.add('hidden');
 
   try {
-    const currentVer = window.__ELECTRON_VERSION__ || '1.0.0';
-    // GitHub API: 获取最新 Release
+    const currentVer = window.__ELECTRON_VERSION__ || '1.1.0';
     const resp = await fetch('https://api.github.com/repos/WXK2905821189/InterviewPrep/releases/latest', {
       headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'InterviewPrep' }
     });
@@ -74,12 +73,46 @@ $('#btn-check-update')?.addEventListener('click', async () => {
       statusEl.textContent = `🆕 发现新版本 v${latestVer}`;
       detailEl.classList.remove('hidden');
       const body = (release.body || '').slice(0, 500).replace(/\n/g, '<br>');
+      const asset = (release.assets || []).find(a => a.name.endsWith('.zip'));
+      const downloadUrl = asset?.browser_download_url || release.html_url;
+      const isElectron = window.__IS_ELECTRON__ && window.electronAPI?.installUpdate;
+
       detailEl.innerHTML = `
         <div style="background:var(--bg2);border:1px solid var(--accent);border-radius:8px;padding:0.8rem;">
           <p style="font-weight:600;color:var(--accent);margin:0 0 0.5rem 0;">📦 v${latestVer} 更新内容</p>
           <p style="font-size:0.8rem;color:var(--muted);margin:0 0 0.8rem 0;">${body || '（无详细说明）'}</p>
-          <a href="${release.html_url}" target="_blank" class="btn-primary" style="font-size:0.82rem;text-decoration:none;display:inline-block;">📥 前往下载</a>
+          ${isElectron
+            ? `<button id="btn-install-update" class="btn-primary" style="font-size:0.82rem;" data-url="${downloadUrl}">⬇️ 一键安装更新</button>`
+            : `<a href="${release.html_url}" target="_blank" class="btn-primary" style="font-size:0.82rem;text-decoration:none;display:inline-block;">📥 前往下载</a>`}
         </div>`;
+
+      setTimeout(() => {
+        const installBtn = document.getElementById('btn-install-update');
+        if (!installBtn) return;
+        installBtn.addEventListener('click', async () => {
+          installBtn.disabled = true;
+          installBtn.textContent = '⏳ 下载中...';
+          statusEl.textContent = '⏳ 正在下载更新...';
+          try {
+            const result = await window.electronAPI.installUpdate(installBtn.dataset.url);
+            if (result.success) {
+              statusEl.textContent = '✅ 更新已就绪';
+              detailEl.innerHTML = `<p style="color:var(--green);font-size:0.82rem;">${result.message}</p>
+                <button id="btn-restart-update" class="btn-primary" style="font-size:0.82rem;margin-top:0.5rem;">🔄 立即重启</button>`;
+              setTimeout(() => {
+                const restartBtn = document.getElementById('btn-restart-update');
+                if (restartBtn) restartBtn.addEventListener('click', () => window.electronAPI.restartApp());
+              }, 100);
+            } else {
+              statusEl.textContent = '❌ 更新失败';
+              detailEl.innerHTML = `<p style="color:var(--red);font-size:0.82rem;">${result.message}</p>`;
+            }
+          } catch (e) {
+            statusEl.textContent = '❌ 安装失败';
+            detailEl.innerHTML = `<p style="color:var(--red);font-size:0.82rem;">${e.message}</p>`;
+          }
+        });
+      }, 100);
     }
   } catch (e) {
     statusEl.textContent = '❌ 检查失败';
@@ -97,7 +130,7 @@ $('#btn-check-update')?.addEventListener('click', async () => {
     if (!resp.ok) return;
     const release = await resp.json();
     const latestVer = (release.tag_name || '').replace(/^v/i, '');
-    const currentVer = (window.__ELECTRON_VERSION__ || '1.0.0').replace(/^v/i, '');
+    const currentVer = (window.__ELECTRON_VERSION__ || '1.1.0').replace(/^v/i, '');
     if (latestVer > currentVer) {
       // 在右上角设置按钮旁显示小红点
       const btn = document.getElementById('btn-open-settings');

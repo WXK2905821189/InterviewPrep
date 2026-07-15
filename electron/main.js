@@ -1,7 +1,7 @@
 // ============================================================
 // InterviewPrep MVP — Electron Main Process
 // ============================================================
-const { app, BrowserWindow, shell, dialog, Menu } = require('electron');
+const { app, BrowserWindow, shell, dialog, Menu, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -136,6 +136,80 @@ app.whenReady().then(async () => {
       `无法启动后端服务。\n\n错误: ${err.message}`);
     app.quit();
   }
+});
+
+// ── 一键更新：IPC 处理 ──
+const UPDATE_TEMP_DIR = path.join(require('os').tmpdir(), 'interviewprep-update');
+
+// 每次启动时检查是否有待安装的更新
+app.whenReady().then(() => {
+  try {
+    if (fs.existsSync(UPDATE_TEMP_DIR)) {
+      const appRoot = path.dirname(path.dirname(__dirname)); // electron/ → mvp root
+      copyDirSync(UPDATE_TEMP_DIR, appRoot);
+      fs.rmSync(UPDATE_TEMP_DIR, { recursive: true, force: true });
+      console.log('[Update] 已安装待处理更新');
+    }
+  } catch (e) { console.warn('[Update] 安装待处理更新失败:', e.message); }
+});
+
+function copyDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name);
+    const d = path.join(dest, entry.name);
+    if (entry.isDirectory()) { copyDirSync(s, d); }
+    else { try { fs.copyFileSync(s, d); } catch {} }
+  }
+}
+
+ipcMain.handle('install-update', async (_event, downloadUrl) => {
+  try {
+    const https = require('https');
+    const { spawnSync } = require('child_process');
+    const zipPath = path.join(require('os').tmpdir(), 'InterviewPrep-update.zip');
+
+    // 1. 下载 zip
+    await new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(zipPath);
+      https.get(downloadUrl, (resp) => {
+        if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+          // Follow redirect
+          https.get(resp.headers.location, (r2) => {
+            r2.pipe(file);
+            file.on('finish', () => { file.close(); resolve(); });
+          }).on('error', reject);
+          return;
+        }
+        resp.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+      }).on('error', reject);
+    });
+
+    // 2. 解压到临时目录
+    if (fs.existsSync(UPDATE_TEMP_DIR)) fs.rmSync(UPDATE_TEMP_DIR, { recursive: true, force: true });
+    fs.mkdirSync(UPDATE_TEMP_DIR, { recursive: true });
+    spawnSync('7z', ['x', zipPath, `-o${UPDATE_TEMP_DIR}`, '-y'], { stdio: 'pipe' });
+
+    // 3. 查找解压后的实际内容目录 (可能是 win-unpacked 子目录)
+    const extractedDirs = fs.readdirSync(UPDATE_TEMP_DIR, { withFileTypes: true }).filter(d => d.isDirectory());
+    let contentDir = UPDATE_TEMP_DIR;
+    if (extractedDirs.length === 1 && extractedDirs[0].name === 'win-unpacked') {
+      contentDir = path.join(UPDATE_TEMP_DIR, 'win-unpacked');
+    }
+
+    // 4. 清理下载文件
+    try { fs.unlinkSync(zipPath); } catch {}
+
+    return { success: true, message: '更新已下载，重启后生效。是否立即重启？', contentDir };
+  } catch (e) {
+    return { success: false, message: '更新失败: ' + (e.message || '未知错误') };
+  }
+});
+
+ipcMain.on('restart-app', () => {
+  app.relaunch();
+  app.exit(0);
 });
 
 app.on('window-all-closed', () => {
