@@ -181,7 +181,7 @@ $('#btn-check-update')?.addEventListener('click', async () => {
   detailEl.classList.add('hidden');
 
   try {
-    const currentVer = window.__ELECTRON_VERSION__ || '1.1.0';
+    const currentVer = window.__ELECTRON_VERSION__ || '1.2.0';
     const resp = await fetch('https://api.github.com/repos/WXK2905821189/InterviewPrep/releases/latest', {
       headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'InterviewPrep' }
     });
@@ -259,7 +259,7 @@ $('#btn-check-update')?.addEventListener('click', async () => {
     if (!resp.ok) return;
     const release = await resp.json();
     const latestVer = (release.tag_name || '').replace(/^v/i, '');
-    const currentVer = (window.__ELECTRON_VERSION__ || '1.1.0').replace(/^v/i, '');
+    const currentVer = (window.__ELECTRON_VERSION__ || '1.2.0').replace(/^v/i, '');
     if (latestVer > currentVer) {
       // 在右上角设置按钮旁显示小红点
       const btn = document.getElementById('btn-open-settings');
