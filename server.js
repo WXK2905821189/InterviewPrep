@@ -1215,6 +1215,28 @@ app.get('/api/opencli-check', (req, res) => {
   res.json(detectOpencli());
 });
 
+// ── opencli 一键安装（SSE 流式进度） ──
+app.post('/api/opencli-setup', async (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  function sse(data) {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  }
+  try {
+    const { setupOpencliExtension } = require('./chatflow/nodes/opencli-setup');
+    const result = await setupOpencliExtension((ev) => sse(ev));
+    sse({ step: 'done', detail: result.message, status: result.success ? 'ok' : 'warn', result });
+    res.end();
+  } catch (e) {
+    sse({ step: 'error', detail: '安装异常: ' + (e.message || '未知'), status: 'error' });
+    res.end();
+  }
+});
+
 // 小红书扫码登录 — 使用 opencli 打开小红书搜索页，触发扫码登录
 app.post('/api/open-xhs-login', async (req, res) => {
   const ocErr = requireOpencli('打开小红书登录');
