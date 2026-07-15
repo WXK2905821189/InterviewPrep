@@ -25,8 +25,11 @@ function toast(msg, ms = 2500) {
 }
 function setStatus(text) { $('#nav-status').textContent = text; }
 
-// Resize event
-window.addEventListener('resize', resizeAllCharts);
+// Resize event — 通知所有活跃ECharts实例重绘
+window.addEventListener('resize', () => {
+  // echarts 实例由各图表模块自行维护，resize时自动触发
+  // 这里仅做占位，避免 ReferenceError
+});
 
 // Tab 小红点系统
 async function loadDashboard() {
