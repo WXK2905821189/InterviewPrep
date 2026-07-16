@@ -3,6 +3,28 @@
 // ============================================================
 
 const API = '/api';
+
+// 全局 fetch 重试包装器（LLM API 错误时自动处理）
+async function fetchRetry(url, options = {}, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const resp = await fetch(url, options);
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+        throw new Error(err.error || `请求失败 (${resp.status})`);
+      }
+      return resp;
+    } catch (e) {
+      if (i < retries && (e.message.includes('网络') || e.message.includes('Network') || e.message.includes('fetch'))) {
+        toast(`⏳ 第 ${i+1} 次重试...`);
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 let state = {
   sessionId: null,
   analysis: null,
@@ -760,6 +782,20 @@ function renderAnalysisResult(data) {
   setTimeout(() => {
     $('#analysis-result').scrollIntoView({ behavior: 'smooth' });
   }, 120);
+
+  // 下一步引导卡片
+  const actions = $('#analysis-result');
+  const actionCard = document.createElement('div');
+  actionCard.className = 'card';
+  actionCard.style.cssText = 'text-align:center;margin-top:1.5rem;border:2px dashed var(--accent2);background:linear-gradient(135deg, rgba(6,182,212,0.05), rgba(79,70,229,0.05));';
+  actionCard.innerHTML = 
+    '<h3 style="margin-bottom:0.8rem;">🎯 接下来做什么？</h3>' +
+    '<div style="display:flex;gap:0.6rem;justify-content:center;flex-wrap:wrap;">' +
+    '<button onclick="switchTab(\'practice\')" class="btn-primary" style="font-size:0.82rem;">💪 开始单题练习</button>' +
+    '<button onclick="switchTab(\'mianjing\')" class="btn-outline" style="font-size:0.82rem;">📡 采集面经真题</button>' +
+    '<button onclick="switchTab(\'interview\')" class="btn-outline" style="font-size:0.82rem;">🎤 全真模拟面试</button>' +
+    '</div>';
+  actions.appendChild(actionCard);
 }
 
 const PAGE_SIZE = 6; // 默认每页显示条数
@@ -871,15 +907,50 @@ function getTypeClass(type) {
 // Tab 2: 单题练习 + 话术库
 // ============================================================
 function renderPracticeQuestions() {
-  if (!state.analysis?.questions) return;
+  if (!state.analysis) return;
   const qs = state.analysis.questions || [];
   const kb = state.analysis.kb_supplement || [];
-  const allQs = [...qs, ...kb];
-  $('#practice-question-list').innerHTML = allQs.map((q, i) => `
-    <li data-idx="${i}" data-question="${encodeURIComponent(q.question)}">
-      <span class="q-num">${i + 1}</span> ${q.question}
-    </li>
-  `).join('');
+  const mj = state.analysis.mianjing || [];
+  
+  // Build combined list with source labels
+  const allQs = [];
+  qs.forEach(q => allQs.push({ ...q, _source: '' }));
+  kb.forEach(q => allQs.push({ ...q, _source: '📚知识库' }));
+  mj.forEach(q => allQs.push({ ...q, _source: '📡面经' }));
+  
+  if (allQs.length === 0) return;
+  
+  // Render two sections: 押题 + 面经采集(分开标题)
+  const qSection = qs.length + kb.length;
+  const mjSection = mj.length;
+  
+  if (mjSection > 0) {
+    // Two-section layout
+    const renderList = (items, startIdx) => items.map((q, i) => `
+      <li data-idx="${startIdx + i}" data-question="${encodeURIComponent(q.question||'')}" style="${q._source ? 'background:var(--tag-bg);border-radius:4px;margin:2px 0;' : ''}">
+        <span class="q-num">${startIdx + i + 1}</span>
+        ${q._source ? `<span style="font-size:0.65rem;color:var(--accent);margin-right:4px;">${q._source}</span>` : ''}
+        ${q.question || ''}
+      </li>
+    `).join('');
+    
+    const practiceItems = [...qs, ...kb];
+    $('#practice-question-list').innerHTML = 
+      '<div style="margin-bottom:0.5rem;font-weight:600;font-size:0.85rem;">📋 押题清单 (' + (qSection) + '题)</div>' +
+      renderList(practiceItems, 0) +
+      '<div style="margin:0.8rem 0 0.5rem;font-weight:600;font-size:0.85rem;border-top:1px dashed var(--rule);padding-top:0.5rem;">📡 面经采集 (' + mjSection + '题)</div>' +
+      renderList(mj, qSection);
+  } else {
+    // Single section
+    $('#practice-question-list').innerHTML = allQs.map((q, i) => `
+      <li data-idx="${i}" data-question="${encodeURIComponent(q.question||'')}">
+        <span class="q-num">${i + 1}</span>
+        ${q._source ? `<span style="font-size:0.65rem;color:var(--accent);margin-right:4px;">${q._source}</span>` : ''}
+        ${q.question || ''}
+      </li>
+    `).join('');
+  }
+  
   $$('#practice-question-list li').forEach(li => {
     li.addEventListener('click', () => selectPracticeQuestion(decodeURIComponent(li.dataset.question)));
   });
@@ -892,7 +963,8 @@ function renderPracticeQuestions() {
 function selectPracticeQuestion(question) {
   const qs = state.analysis.questions || [];
   const kb = state.analysis.kb_supplement || [];
-  const allQs = [...qs, ...kb];
+  const mj = state.analysis.mianjing || [];
+  const allQs = [...qs, ...kb, ...mj];
   const found = allQs.find(q => q.question === question);
   if (!found) return;
 
@@ -1063,7 +1135,10 @@ async function refreshPhraseList() {
 // Tab 3: 全真模拟面试
 // ============================================================
 $('#btn-interview-start').addEventListener('click', async () => {
-  if (!state.sessionId) return toast('请先完成分析');
+  if (!state.sessionId) {
+    toast('⚠️ 请先在「分析 & 押题」完成JD分析，或在「单题练习」中逐题练习');
+    return;
+  }
   const btn = $('#btn-interview-start');
   btn.disabled = true; btn.textContent = '启动中...';
   try {
@@ -2010,7 +2085,13 @@ function addMjToPractice(q) {
   if (!state.analysis) state.analysis = { questions:[],mianjing:[],kb_supplement:[],jd:{},resume:{} };
   state.analysis.mianjing = state.analysis.mianjing || [];
   if (state.analysis.mianjing.find(mq => mq.question === q.question)) return toast('已在练习列表中');
-  state.analysis.mianjing.push({ question: q.question||'', type: q.type||'面经', tags: q.tags||[] });
+  state.analysis.mianjing.push({ 
+    question: q.question||'', type: q.type||'面经', tags: q.tags||[],
+    _source: '📡面经',
+    sample_answer_points: q.sample_answer_points || [],
+    examiner_intent: q.examiner_intent || '',
+    tips: q.tips || []
+  });
   toast('已加入练习'); updateMjButtonStates();
   if (document.getElementById('tab-practice').classList.contains('active')) renderPracticeQuestions();
 }

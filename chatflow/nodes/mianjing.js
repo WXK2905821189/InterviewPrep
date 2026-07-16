@@ -135,7 +135,13 @@ async function ocrNote(noteUrl, noteId) {
     // 2. tesseract OCR (中文+英文)
     console.log(`[OCR] tesseract 识别中...`);
     const { data } = await T.recognize(screenshotPath, 'chi_sim+eng', {
-      tessedit_pageseg_mode: '6'  // 统一文本块
+      tessedit_pageseg_mode: '6',
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          const pct = Math.round((m.progress || 0) * 100);
+          console.log(`[OCR] 识别进度: ${pct}%`);
+        }
+      }
     });
     const text = (data?.text || '').trim().replace(/\n{3,}/g, '\n\n');
 
