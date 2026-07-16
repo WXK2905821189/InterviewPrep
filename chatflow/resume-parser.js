@@ -28,9 +28,16 @@ async function parseResumeFile(filePath, originalName) {
       const result = await mammoth.extractRawText({ path: filePath });
       text = result.value || '';
       if (result.messages?.length) {
-        const msgs = result.messages.slice(0, 3).map(m => m.message);
-        warnings.push(...msgs);
-        console.warn('[简历解析] mammoth 警告:', msgs.join('; '));
+        // 过滤 mammoth 的无害警告（矢量图形/图像关系ID等）
+        const harmless = /unrecognised element|imagedata.*without a relationship|unrecognised attribute/i;
+        const msgs = result.messages
+          .filter(m => m.type !== 'warning' || !harmless.test(m.message))
+          .slice(0, 3)
+          .map(m => m.message);
+        if (msgs.length) {
+          warnings.push(...msgs);
+          console.warn('[简历解析] mammoth 警告:', msgs.join('; '));
+        }
       }
       sourceType = 'docx';
 
