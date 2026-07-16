@@ -575,82 +575,6 @@ async function apiDeletePhrase(id) {
 }
 
 // ============================================================
-// 面经采集（独立触发）
-// ============================================================
-async function collectMianjing() {
-  const btn = document.getElementById('btn-collect-mianjing');
-  const progress = document.getElementById('mianjing-progress');
-  if (!btn || !progress) return;
-  btn.disabled = true;
-  btn.textContent = '⏳ 采集中...';
-  progress.textContent = '';
-
-  try {
-    const resp = await fetch('/api/mianjing-collect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: state.sessionId })
-    });
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let result = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const ev = JSON.parse(line.slice(6));
-          if (ev.step === 'done') { result = ev.result; }
-          progress.textContent = (ev.detail || '');
-          progress.style.color = ev.status === 'warn' ? '#D97706' : ev.status === 'error' ? '#DC2626' : 'var(--muted)';
-        } catch {}
-      }
-    }
-
-    if (result?.mianjing?.questions?.length) {
-      // Update state
-      state.analysis.mianjing = result.mianjing;
-      // Update the display
-      renderMianjingContent(result.mianjing);
-      btn.textContent = '🔄 重新采集';
-      toast(`采集完成: ${result.mianjing.questions.length} 道真题`);
-    } else {
-      btn.textContent = '🔄 重新采集';
-    }
-  } catch (e) {
-    progress.textContent = '采集失败: ' + e.message;
-    progress.style.color = '#DC2626';
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function renderMianjingContent(mData) {
-  if (!mData?.questions?.length) return;
-  const card = document.getElementById('mianjing-card');
-  if (!card) return;
-  card.style.display = 'block';
-  const el = document.getElementById('mianjing-content');
-  const srcCount = mData.source_count || mData.sources?.length || 0;
-  el.innerHTML = 
-    '<p style="color:var(--green);margin-bottom:0.5rem;">✅ 采集完成：' + srcCount + ' 篇笔记 · ' + mData.questions.length + ' 道真题</p>' +
-    (mData.sources?.length ? '<p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.5rem;">来源: ' + 
-      mData.sources.slice(0, 5).map(s => '<a href="' + (s.url || '#') + '" target="_blank" style="color:var(--accent);">' + (s.title || '链接') + '</a>').join(' · ') + '</p>' : '') +
-    '<details style="font-size:0.82rem;"><summary>查看题目 (' + mData.questions.length + ' 题)</summary>' +
-    mData.questions.map((q, i) => '<div style="margin:4px 0;padding:4px 8px;background:var(--bg1);border-radius:4px;">' + (i+1) + '. ' + (q.question || '') + '</div>').join('') +
-    '</details>' +
-    '<button id="btn-collect-mianjing" class="btn-outline" style="font-size:0.78rem;margin-top:0.5rem;">🔄 重新采集</button>';
-  // Re-bind the button
-  document.getElementById('btn-collect-mianjing')?.addEventListener('click', () => collectMianjing());
-}
-
-// ============================================================
 // Tab 1: 分析 & 押题
 // ============================================================
 $('#btn-analyze').addEventListener('click', async () => {
@@ -806,24 +730,6 @@ function renderAnalysisResult(data) {
       </div>
       ${gap.interview_strategy ? `<p style="font-size:0.85rem;color:var(--muted);">💡 ${gap.interview_strategy}</p>` : ''}
     `;
-  }
-
-  if (data.mianjing && data.mianjing.source_count > 0) {
-    const mc = $('#mianjing-card');
-    mc.style.display = 'block';
-    renderMianjingContent(data.mianjing);
-  } else {
-    // 面经数据尚未采集，显示采集按钮
-    const mc = $('#mianjing-card');
-    mc.style.display = 'block';
-    $('#mianjing-content').innerHTML = 
-      '<p style="color:var(--muted);margin-bottom:0.8rem;">面经数据尚未采集。采集后可用于增强押题质量。</p>' +
-      '<button id="btn-collect-mianjing" class="btn-outline" style="font-size:0.82rem;">🔍 开始采集面经</button>' +
-      '<div id="mianjing-progress" style="margin-top:0.5rem;font-size:0.78rem;color:var(--muted);"></div>';
-    
-    document.getElementById('btn-collect-mianjing')?.addEventListener('click', async () => {
-      await collectMianjing();
-    });
   }
 
   const questions = data.questions || [];
