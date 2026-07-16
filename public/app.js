@@ -345,6 +345,7 @@ function switchTab(tabName) {
     $('#resume-opt-empty').classList.remove('hidden');
     checkAndAutoScore();
   }
+  if (tabName === 'mianjing') autoFillMianjingFields();
 }
 
 $$('.nav-tab').forEach(tab => {
@@ -655,17 +656,7 @@ function renderMianjingContent(mData) {
 $('#btn-analyze').addEventListener('click', async () => {
   const jdText = $('#jd-input').value.trim();
   const resumeText = $('#resume-input').value.trim();
-  const useMianjing = $('#use-mianjing').checked;
   const quickMode = $('#use-quick-mode')?.checked || false;
-
-  // 手动URL：关闭面经时收集用户粘贴的链接
-  let urls = [];
-  if (!useMianjing) {
-    const raw = ($('#manual-urls')?.value || '').trim();
-    if (raw) {
-      urls = raw.split(/[\n\r]+/).map(u => u.trim()).filter(u => u.startsWith('http'));
-    }
-  }
 
   if (!jdText || !resumeText) return toast('请同时填写JD和简历内容');
 
@@ -675,7 +666,7 @@ $('#btn-analyze').addEventListener('click', async () => {
   btn.textContent = `${modeLabel}分析中...`;
 
   try {
-    const result = await apiAnalyze(jdText, resumeText, useMianjing, quickMode, urls, state.resumeFileName, state.resumeSourceType);
+    const result = await apiAnalyze(jdText, resumeText, false, quickMode, [], state.resumeFileName, state.resumeSourceType);
     state.sessionId = result.sessionId;
     state.analysis = result;
     state.jdText = jdText;
@@ -1543,19 +1534,7 @@ async function checkAndAutoScore() {
 // 设置面板 — AI供应商管理
 // ============================================================
 
-// 面经开关 → 显示/隐藏手动URL粘贴框
-$('#use-mianjing').addEventListener('change', function() {
-  const wrap = document.getElementById('manual-urls-wrap');
-  if (wrap) {
-    wrap.classList.toggle('hidden', this.checked);
-    if (this.checked) {
-      const ta = document.getElementById('manual-urls');
-      if (ta) ta.value = '';
-    }
-  }
-});
-
-// 打开/关闭
+// 打开/关闭设置
 $('#btn-open-settings').addEventListener('click', async () => {
   $('#settings-modal').classList.remove('hidden');
   loadSettingsData();
@@ -2041,6 +2020,130 @@ $$('.nav-tab').forEach(tab => {
     if (tab.dataset.tab === 'bank') loadBank({});
   });
 });
+
+// ============================================================
+// 📡 面经采集
+// ============================================================
+$('#btn-mj-search').addEventListener('click', async () => {
+  let company = $('#mj-company-input').value.trim();
+  let position = $('#mj-position-input').value.trim();
+  if ((!company || !position) && state.analysis?.jd) {
+    company = company || state.analysis.jd.company || '';
+    position = position || state.analysis.jd.position || '';
+    $('#mj-company-input').value = company;
+    $('#mj-position-input').value = position;
+  }
+  if (!company && !position) return toast('请输入公司名或岗位，或先完成分析');
+
+  const pw = $('#mj-progress-wrap'); const pd = $('#mj-progress-detail');
+  pw.style.display = 'block'; pd.innerHTML = '';
+  const btn = $('#btn-mj-search'); btn.disabled = true; btn.textContent = '⏳ 采集中...';
+
+  try {
+    const manualUrls = ($('#mj-manual-urls').value || '').trim().split(/[\n\r]+/).map(u => u.trim()).filter(Boolean);
+    const resp = await fetch('/api/mianjing-collect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: state.sessionId, company, position, manualUrls })
+    });
+    const reader = resp.body.getReader(); const decoder = new TextDecoder();
+    let buffer = '', result = null;
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n'); buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          pd.innerHTML += '🟢 ' + (ev.detail || '') + '<br>';
+          pd.parentElement.scrollTop = pd.parentElement.scrollHeight;
+          if (ev.step === 'done') result = ev.result;
+          if (ev.step === 'error') throw new Error(ev.detail);
+        } catch {}
+      }
+    }
+    if (result?.mianjing?.questions?.length) {
+      window._mjQuestions = result.mianjing.questions;
+      renderMianjingResults(result.mianjing);
+      toast(`采集完成: ${result.mianjing.questions.length} 题`);
+      showTabDot('mianjing');
+    } else { renderMianjingResults({ questions: [], sources: [] }); toast('未采集到面经题目'); }
+  } catch (e) { pd.innerHTML += '<br>❌ 采集失败: ' + (e.message || '未知'); toast('采集失败'); }
+  finally { btn.disabled = false; btn.textContent = '🔍 开始采集'; }
+});
+
+function renderMianjingResults(mData) {
+  $('#mj-result').style.display = 'block';
+  const qs = mData.questions || [];
+  $('#mj-q-count').textContent = qs.length;
+  $('#mj-question-list').innerHTML = qs.map((q, i) => `
+    <div class="card" style="padding:0.8rem;margin-bottom:0.5rem;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
+        <div style="flex:1;">
+          <span style="font-size:0.75rem;color:var(--accent);background:var(--tag-bg);padding:1px 6px;border-radius:3px;">${q.type || '未知'}</span>
+          <span style="margin-left:0.5rem;font-size:0.85rem;">${i+1}. ${q.question || ''}</span>
+          ${q.sample_answer_points?.length ? '<div style="font-size:0.75rem;color:var(--muted);margin-top:0.3rem;">💡 ' + q.sample_answer_points.join(' / ') + '</div>' : ''}
+        </div>
+        <div style="display:flex;gap:0.3rem;flex-shrink:0;">
+          <button class="btn-outline mj-add-practice" data-idx="${i}" style="font-size:0.7rem;padding:0.15rem 0.4rem;">➕练习</button>
+          <button class="btn-outline mj-add-bank" data-idx="${i}" style="font-size:0.7rem;padding:0.15rem 0.4rem;">📚入库</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  document.querySelectorAll('.mj-add-practice').forEach(b => b.addEventListener('click', () => {
+    const q = window._mjQuestions?.[parseInt(b.dataset.idx)]; if (q) addMjToPractice(q);
+  }));
+  document.querySelectorAll('.mj-add-bank').forEach(b => b.addEventListener('click', () => {
+    const q = window._mjQuestions?.[parseInt(b.dataset.idx)]; if (q) addMjToBank(q);
+  }));
+  updateMjButtonStates();
+}
+
+function addMjToPractice(q) {
+  if (!state.analysis) state.analysis = { questions:[],mianjing:[],kb_supplement:[],jd:{},resume:{} };
+  state.analysis.mianjing = state.analysis.mianjing || [];
+  if (state.analysis.mianjing.find(mq => mq.question === q.question)) return toast('已在练习列表中');
+  state.analysis.mianjing.push({ question: q.question||'', type: q.type||'面经', tags: q.tags||[] });
+  toast('已加入练习'); updateMjButtonStates();
+  if (document.getElementById('tab-practice').classList.contains('active')) renderPracticeQuestions();
+}
+
+async function addMjToBank(q) {
+  try {
+    const resp = await fetch('/api/bank/bookmark', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q.question, type: q.type, company: state.analysis?.jd?.company||'', position: state.analysis?.jd?.position||'', sessionId: state.sessionId })
+    });
+    const data = await resp.json();
+    toast(resp.ok ? '已加入真题库' : (data.error || '添加失败'));
+    updateMjButtonStates();
+  } catch { toast('添加失败'); }
+}
+
+$('#btn-mj-add-all-practice').addEventListener('click', () => {
+  if (!window._mjQuestions?.length) return toast('无题目');
+  window._mjQuestions.forEach(q => addMjToPractice(q));
+});
+$('#btn-mj-add-all-bank').addEventListener('click', async () => {
+  if (!window._mjQuestions?.length) return toast('无题目');
+  for (const q of window._mjQuestions) await addMjToBank(q);
+  toast('全部加入真题库');
+});
+
+function updateMjButtonStates() {
+  document.querySelectorAll('.mj-add-practice').forEach(b => {
+    const q = window._mjQuestions?.[parseInt(b.dataset.idx)];
+    if (q && (state.analysis?.mianjing||[]).find(mq => mq.question===q.question)) { b.textContent='✅'; b.disabled=true; b.style.opacity='0.5'; }
+  });
+}
+
+function autoFillMianjingFields() {
+  if (state.analysis?.jd) {
+    if (!$('#mj-company-input').value) $('#mj-company-input').value = state.analysis.jd.company||'';
+    if (!$('#mj-position-input').value) $('#mj-position-input').value = state.analysis.jd.position||'';
+  }
+}
 
 // ============================================================
 // 公司调研 — 面试导向 · 进度条 + 知识图谱

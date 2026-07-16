@@ -270,6 +270,46 @@
     </div>
   </section>
 
+  <!-- ====== Tab: 面经采集 ====== -->
+  <section id="tab-mianjing" class="tab-content">
+    <div class="card hero-card">
+      <h1>📡 面经采集</h1>
+      <p>搜索小红书面经，提取真实面试题 — 支持关键词搜索 + 手动链接 + 截图OCR识别</p>
+    </div>
+
+    <div class="card">
+      <h3>🔍 搜索面经</h3>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <input id="mj-company-input" type="text" placeholder="公司名（自动从JD读取）" style="flex:1;min-width:160px;font-size:0.85rem;padding:0.5rem;border:1px solid var(--rule);border-radius:6px;">
+        <input id="mj-position-input" type="text" placeholder="岗位（自动从JD读取）" style="flex:1;min-width:160px;font-size:0.85rem;padding:0.5rem;border:1px solid var(--rule);border-radius:6px;">
+        <button id="btn-mj-search" class="btn-primary" style="font-size:0.9rem;white-space:nowrap;">🔍 开始采集</button>
+      </div>
+      <p style="font-size:0.75rem;color:var(--muted);margin-top:0.5rem;">💡 完成后对题目进行「加入练习 / 加入真题库」</p>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary style="cursor:pointer;font-weight:600;color:var(--accent);">📎 手动粘贴小红书面经链接（可选）</summary>
+        <textarea id="mj-manual-urls" rows="2" placeholder="https://www.xiaohongshu.com/explore/xxx&#10;https://www.xiaohongshu.com/explore/yyy" style="width:100%;font-size:0.78rem;font-family:monospace;margin-top:0.5rem;"></textarea>
+      </details>
+    </div>
+
+    <div id="mj-progress-wrap" style="display:none;margin:1rem 0;">
+      <div id="mj-progress-detail" style="font-size:0.82rem;color:var(--muted);line-height:1.8;"></div>
+    </div>
+
+    <div id="mj-result" style="display:none;">
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+        <h3 style="margin:0;">📋 采集结果 (<span id="mj-q-count">0</span>题)</h3>
+        <div style="display:flex;gap:0.4rem;">
+          <button id="btn-mj-add-all-practice" class="btn-outline" style="font-size:0.78rem;">➕ 全部加入练习</button>
+          <button id="btn-mj-add-all-bank" class="btn-outline" style="font-size:0.78rem;">📚 全部加入真题库</button>
+        </div>
+      </div>
+      <div id="mj-question-list" style="margin-top:0.5rem;"></div>
+    </div>
+  </section>
+
   <!-- ====== Tab 5: 真题库 ====== -->
   <section id="tab-bank" class="tab-content">
     <div class="card hero-card">
