@@ -872,7 +872,7 @@ function renderQuestionList(questions, filterType) {
         switchTab('practice');
         const pa = document.getElementById('tab-practice');
         if (pa) pa.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        setTimeout(() => selectPracticeQuestion(decodeURIComponent(card.dataset.question)), 150);
+        setTimeout(() => selectPracticeQuestion(decodeURIComponent(card.dataset.question)), 300);
       });
     });
 
@@ -966,7 +966,27 @@ function selectPracticeQuestion(question) {
   const mj = state.analysis.mianjing || [];
   const allQs = [...qs, ...kb, ...mj];
   const found = allQs.find(q => q.question === question);
-  if (!found) return;
+  if (!found) {
+    // Fallback: if question is in mianjing array but allQs didn't capture it
+    const mj = state.analysis?.mianjing || [];
+    const mjMatch = mj.find(q => q.question === question);
+    if (mjMatch) {
+      $('#practice-q-meta').innerHTML = `<span class="q-type mianjing">📡面经</span>`;
+      $('#practice-q-text').textContent = question;
+      $('#practice-answer').value = '';
+      $('#practice-feedback').classList.add('hidden');
+      $('#btn-save-phrase').classList.add('hidden');
+      state._practiceQuestion = question;
+      state._lastFeedback = null;
+      $('#practice-empty').classList.add('hidden');
+      $('#practice-area').classList.remove('hidden');
+    }
+    console.warn('[练习] 未在题库中找到题目:', question?.slice(0,40));
+    return;
+  }
+
+  $('#practice-empty').classList.add('hidden');
+  $('#practice-area').classList.remove('hidden');
 
   $('#practice-q-meta').innerHTML = `
     <span class="q-type ${getTypeClass(found.type)}">${found.type || ''}</span>
@@ -1206,10 +1226,78 @@ $('#btn-interview-skip').addEventListener('click', async () => {
 });
 
 $('#btn-interview-end').addEventListener('click', async () => {
-  state.interviewActive = false;
-  addChatMsg('system', '你结束了面试');
-  try { await loadInterviewReport(); } catch (e) { toast('生成报告失败: ' + e.message); }
+  if (!state.sessionId) return;
+  
+  // Check if there are answered questions
+  const interview = state._interviewState;
+  const hasAnswers = interview?.history?.some(m => m.role === 'candidate');
+  
+  if (!hasAnswers) {
+    // No answers yet - just reset
+    resetInterviewUI();
+    toast('面试已取消');
+    return;
+  }
+  
+  // Show graceful transition UI
+  const chat = $('#interview-chat');
+  const inputArea = document.querySelector('.interview-input');
+  if (inputArea) inputArea.style.display = 'none';
+  
+  chat.innerHTML += `
+    <div class="card" style="text-align:center;padding:2rem;border:2px dashed var(--accent2);">
+      <div class="spinner" style="margin:0 auto 1rem;"></div>
+      <p style="font-size:1rem;font-weight:600;">面试结束 · AI 正在整理评估报告...</p>
+      <p style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;">
+        已回答 ${interview?.askedQuestions?.length || 0} 题，即将生成五维能力雷达图与逐题点评
+      </p>
+    </div>
+  `;
+  chat.scrollTop = chat.scrollHeight;
+  
+  try {
+    const resp = await fetch('/api/interview/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: state.sessionId })
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error);
+    const data = await resp.json();
+    
+    // Replace spinner with report
+    setTimeout(() => {
+      chat.innerHTML = '';
+      chat.insertAdjacentHTML('beforeend', `
+        <div class="card" style="text-align:center;padding:1rem;background:linear-gradient(135deg, rgba(79,70,229,0.08), rgba(6,182,212,0.08));border:1px solid var(--accent);">
+          <p style="font-size:1.05rem;font-weight:600;">面试完毕</p>
+          <p style="font-size:0.85rem;color:var(--muted);">共回答 ${interview?.askedQuestions?.length || '?'} 题 · 综合评分 ${data.report?.overall_score || '--'}</p>
+        </div>
+      `);
+      renderInterviewReport(data);
+      if (inputArea) inputArea.style.display = '';
+      resetInterviewUI(true);
+    }, 800);
+    
+  } catch (e) { 
+    toast('评估失败: ' + e.message); 
+    if (inputArea) inputArea.style.display = '';
+  }
 });
+
+function resetInterviewUI(keepReport = false) {
+  const chat = $('#interview-chat');
+  chat.innerHTML = '';
+  const inputArea = document.querySelector('.interview-input');
+  if (inputArea) inputArea.style.display = 'none';
+  if (!keepReport) {
+    $('#interview-report').classList.add('hidden');
+    $('#interview-report').innerHTML = '';
+  }
+  $('#interview-area').classList.add('hidden');
+  $('#interview-empty').classList.remove('hidden');
+  $('#btn-interview-start').disabled = false;
+  $('#btn-interview-start').textContent = '开始模拟面试';
+}
 
 async function loadInterviewReport() {
   try {
@@ -1386,12 +1474,12 @@ function renderResumeOptimization(data) {
       <div class="opt-row">
         <div class="opt-col">
           <div class="opt-label">原文</div>
-          <div class="opt-text original">${o.original || ''}</div>
+          <div class="opt-text original" style="max-height:none;white-space:pre-wrap;word-break:break-word;">${o.original || ''}</div>
         </div>
         <div class="opt-arrow">→</div>
         <div class="opt-col">
           <div class="opt-label">优化后</div>
-          <div class="opt-text improved">${o.suggestion || ''}</div>
+          <div class="opt-text improved" style="max-height:none;white-space:pre-wrap;word-break:break-word;line-height:1.8;">${o.suggestion || ''}</div>
         </div>
       </div>
       <div class="opt-reason">💡 ${o.reason || ''}</div>
@@ -1401,49 +1489,6 @@ function renderResumeOptimization(data) {
   if (opts.length === 0) {
     $('#resume-opt-list').innerHTML = '<div class="card"><p style="color:var(--muted);">暂无优化建议返回，请尝试重新生成。</p></div>';
   }
-
-  // 添加"下载优化版简历"按钮
-  $('#resume-opt-list').insertAdjacentHTML('beforeend', `
-    <div class="card" style="text-align:center;margin-top:1rem;border:2px dashed var(--accent);">
-      <p style="font-weight:600;margin-bottom:0.5rem;">📥 一键生成优化版简历</p>
-      <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.8rem;">AI 将根据上述建议生成完整优化版简历 DOCX，可直接投递</p>
-      <button id="btn-optimize-docx" class="btn-primary" style="font-size:0.9rem;">⬇️ 下载优化版 DOCX</button>
-      <div id="optimize-docx-status" style="margin-top:0.5rem;font-size:0.78rem;"></div>
-    </div>
-  `);
-
-  // 绑定下载按钮
-  document.getElementById('btn-optimize-docx')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-optimize-docx');
-    const statusEl = document.getElementById('optimize-docx-status');
-    btn.disabled = true;
-    btn.textContent = '⏳ AI 正在生成优化版简历...';
-    statusEl.textContent = '';
-    try {
-      const resp = await fetch('/api/optimize-resume-docx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: state.sessionId })
-      });
-      if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.error || '生成失败');
-      }
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'resume-optimized.docx';
-      a.click();
-      URL.revokeObjectURL(url);
-      statusEl.textContent = '✅ 下载已开始';
-    } catch (e) {
-      statusEl.textContent = '❌ ' + e.message;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '⬇️ 下载优化版 DOCX';
-    }
-  });
 
   $('#resume-opt-area').scrollIntoView({ behavior: 'smooth' });
 }
@@ -1964,6 +2009,7 @@ async function loadBank(filters = {}) {
         <span class="q-type ${getTypeClass(q.type)}">${q.type || ''}</span>
         <span class="q-source">${q.company || ''} · ${q.position || ''}${q.frequency ? ' · 出现'+q.frequency+'次' : ''}</span>
         <button class="btn-bank-delete" title="删除此题">✕</button>
+        <button class="btn-outline bank-practice-btn" data-q="${encodeURIComponent(q.question || '')}" style="font-size:0.72rem;padding:0.15rem 0.5rem;margin-left:0.5rem;">练习</button>
       </div>
       <div class="q-text">${q.question}</div>
       <div class="q-intent" style="font-size:0.72rem;color:var(--muted);">📅 ${new Date(q.collectedAt || '').toLocaleDateString('zh-CN')} · 轮次: ${q.round || '未知'} · 来源: ${q.source || ''}${q.source_platforms?.length ? ' · ' + q.source_platforms.map(s => '📎 ' + s).join(' ') : ''}</div>
@@ -1990,6 +2036,28 @@ async function loadBank(filters = {}) {
       } catch(e) {
         toast('删除失败: ' + e.message);
       }
+    });
+  });
+
+  // 练习按钮事件
+  document.querySelectorAll('.bank-practice-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const question = decodeURIComponent(btn.dataset.q);
+      // Add to practice list if not already there
+      if (!state.analysis) state.analysis = { questions:[], mianjing:[], kb_supplement:[], jd:{}, resume:{} };
+      state.analysis.mianjing = state.analysis.mianjing || [];
+      if (!state.analysis.mianjing.find(mq => mq.question === question)) {
+        // Find the full question object from bank data
+        const fullQ = data.questions.find(q => q.question === question);
+        state.analysis.mianjing.push({ 
+          question, type: fullQ?.type || '真题库', 
+          _source: '题库', sample_answer_points: fullQ?.sample_answer_points || [],
+          examiner_intent: fullQ?.examiner_intent || '', tags: fullQ?.tags || []
+        });
+      }
+      switchTab('practice');
+      setTimeout(() => selectPracticeQuestion(question), 300);
     });
   });
 }
