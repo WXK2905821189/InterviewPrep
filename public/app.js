@@ -56,13 +56,73 @@ window.addEventListener('resize', () => {
 // Tab 小红点系统
 async function loadDashboard() {
   try {
-    const data = await fetch('/api/dashboard/stats').then(r => r.json());
+    const data = await fetchRetry('/api/dashboard/stats').then(r => r.json()).catch(() => null);
+    if (!data || (data.totalPractices === 0 && data.totalInterviews === 0)) {
+      // New user — show onboarding
+      const dash = document.getElementById('tab-dashboard');
+      const welcome = document.getElementById('welcome-hero');
+      if (!welcome && dash) {
+        const el = document.createElement('div');
+        el.id = 'welcome-hero';
+        el.className = 'card';
+        el.style.cssText = 'text-align:center;padding:2.5rem;border:2px dashed var(--accent2);background:linear-gradient(135deg, rgba(79,70,229,0.06), rgba(6,182,212,0.06));';
+        el.innerHTML = `
+          <h2 style="margin-bottom:0.8rem;">👋 欢迎使用 InterviewPrep</h2>
+          <p style="color:var(--muted);margin-bottom:1.2rem;">AI 驱动的面试准备工具，三步开始你的面试备战之旅</p>
+          <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;">
+            <div style="flex:1;min-width:140px;max-width:200px;padding:1rem;background:var(--bg1);border-radius:8px;">
+              <div style="font-size:1.5rem;margin-bottom:0.3rem;">1️⃣</div>
+              <div style="font-weight:600;font-size:0.85rem;">填写 JD + 简历</div>
+              <div style="font-size:0.72rem;color:var(--muted);">在「分析 & 押题」页输入岗位描述和你的简历</div>
+            </div>
+            <div style="flex:1;min-width:140px;max-width:200px;padding:1rem;background:var(--bg1);border-radius:8px;">
+              <div style="font-size:1.5rem;margin-bottom:0.3rem;">2️⃣</div>
+              <div style="font-weight:600;font-size:0.85rem;">AI 自动押题</div>
+              <div style="font-size:0.72rem;color:var(--muted);">点击分析，AI 生成 5 类面题 + 差距分析</div>
+            </div>
+            <div style="flex:1;min-width:140px;max-width:200px;padding:1rem;background:var(--bg1);border-radius:8px;">
+              <div style="font-size:1.5rem;margin-bottom:0.3rem;">3️⃣</div>
+              <div style="font-weight:600;font-size:0.85rem;">逐题练习 + 模拟</div>
+              <div style="font-size:0.72rem;color:var(--muted);">在「单题练习」打磨每道题，或「全真模拟」1v1 面试</div>
+            </div>
+          </div>
+          <button onclick="switchTab('analyze')" class="btn-primary" style="margin-top:1.2rem;">🚀 开始分析</button>
+        `;
+        dash.prepend(el);
+      }
+      return;
+    }
+    // Remove welcome hero if stats exist
+    const welcome = document.getElementById('welcome-hero');
+    if (welcome) welcome.remove();
+
     renderDashStats(data);
     renderRadarChart(data.radarScores || {});
     renderPieChart(data.typeCoverage || {});
     renderCalendar(data.calendar || {});
     renderRecentPractices(data.recentPractices || []);
     renderInterviewHistory(data.interviewReports || []);
+
+    // Quick summary card
+    const container = document.getElementById('tab-dashboard');
+    if (data && container) {
+      let card = document.getElementById('dashboard-summary-card');
+      if (!card) {
+        card = document.createElement('div');
+        card.id = 'dashboard-summary-card';
+        card.className = 'card';
+        card.style.cssText = 'text-align:center;margin-top:1rem;';
+        container.appendChild(card);
+      }
+      card.innerHTML = `
+        <h3 style="margin-bottom:0.5rem;">📈 练习概览</h3>
+        <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;">
+          <div><span style="font-size:1.5rem;font-weight:700;">${data.totalPractices || 0}</span><br><span style="font-size:0.78rem;color:var(--muted);">总练习</span></div>
+          <div><span style="font-size:1.5rem;font-weight:700;">${data.totalInterviews || 0}</span><br><span style="font-size:0.78rem;color:var(--muted);">模拟面试</span></div>
+          <div><span style="font-size:1.5rem;font-weight:700;color:var(--accent);">${data.avgScore || 0}</span><br><span style="font-size:0.78rem;color:var(--muted);">平均分</span></div>
+        </div>
+      `;
+    }
   } catch (e) {
     console.warn('Dashboard load failed:', e);
     $('#dash-stats').innerHTML = '<p style="color:var(--muted);">暂无数据，完成一次练习或模拟面试后开始追踪</p>';
@@ -174,6 +234,24 @@ function renderInterviewHistory(reports) {
     '<span style="font-weight:600;color:var(--accent);">' + (r.score || '-') + '分</span>' +
     '</div>'
   ).join('');
+}
+
+function renderInterviewTabHistory() {
+  const el = $('#interview-history-list');
+  if (!el) return;
+  try {
+    const history = JSON.parse(localStorage.getItem('interview_history') || '[]');
+    if (!history.length) {
+      el.innerHTML = '暂无面试记录。完成一次模拟面试后会显示。';
+      return;
+    }
+    el.innerHTML = history.map((h, i) => `
+      <div style="padding:0.5rem;margin:4px 0;background:var(--tag-bg);border-radius:4px;display:flex;justify-content:space-between;align-items:center;">
+        <span>${new Date(h.date).toLocaleDateString('zh-CN')} · ${h.position}</span>
+        <span style="font-weight:600;">${h.score}分 · ${h.questions}题</span>
+      </div>
+    `).join('');
+  } catch { el.innerHTML = '加载失败'; }
 }
 
 // Tab 小红点系统
@@ -308,7 +386,7 @@ $('#resume-file-input').addEventListener('change', async () => {
   try {
     const form = new FormData();
     form.append('file', file);
-    const resp = await fetch('/api/resume-upload', { method: 'POST', body: form });
+    const resp = await fetchRetry('/api/resume-upload', { method: 'POST', body: form });
     if (!resp.ok) throw new Error((await resp.json()).error);
     const data = await resp.json();
     $('#resume-input').value = data.text;
@@ -337,7 +415,7 @@ $('#btn-jd-fetch').addEventListener('click', async () => {
   const btn = $('#btn-jd-fetch');
   btn.disabled = true; btn.textContent = '⏳ 扒取中...';
   try {
-    const resp = await fetch('/api/jd-fetch', {
+    const resp = await fetchRetry('/api/jd-fetch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
     });
@@ -362,6 +440,7 @@ function switchTab(tabName) {
   if (content) content.classList.add('active');
 
   if (tabName === 'dashboard') loadDashboard();
+  if (tabName === 'interview') renderInterviewTabHistory();
   if (tabName === 'practice' && state.analysis) renderPracticeQuestions();
   if (tabName === 'resume' && state.analysis) {
     $('#resume-opt-empty').classList.remove('hidden');
@@ -512,7 +591,7 @@ async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, manualUrls
 
 async function apiInterviewStart() {
   setStatus('🔄 面试启动中...');
-  const resp = await fetch(`${API}/interview/start`, {
+  const resp = await fetchRetry(`${API}/interview/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId: state.sessionId })
@@ -522,7 +601,7 @@ async function apiInterviewStart() {
 }
 
 async function apiInterviewAnswer(answer) {
-  const resp = await fetch(`${API}/interview/answer`, {
+  const resp = await fetchRetry(`${API}/interview/answer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId: state.sessionId, answer })
@@ -532,7 +611,7 @@ async function apiInterviewAnswer(answer) {
 }
 
 async function apiInterviewSkip() {
-  const resp = await fetch(`${API}/interview/skip`, {
+  const resp = await fetchRetry(`${API}/interview/skip`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId: state.sessionId })
@@ -543,7 +622,7 @@ async function apiInterviewSkip() {
 
 async function apiInterviewEvaluate() {
   setStatus('🔄 生成报告...');
-  const resp = await fetch(`${API}/interview/evaluate`, {
+  const resp = await fetchRetry(`${API}/interview/evaluate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId: state.sessionId })
@@ -553,7 +632,7 @@ async function apiInterviewEvaluate() {
 }
 
 async function apiEvaluateSingle(question, answer, jdSummary, resumeText) {
-  const resp = await fetch(`${API}/evaluate-single`, {
+  const resp = await fetchRetry(`${API}/evaluate-single`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question, answer, jdSummary: jdSummary || '', resumeText: resumeText || '' })
@@ -566,7 +645,7 @@ async function apiOptimizeResume() {
   setStatus('🔄 优化中...');
   // 使用原始简历文本（state.resumeText），而非分析结果
   const rawResume = state.resumeText || $('#resume-input').value.trim() || '';
-  const resp = await fetch(`${API}/optimize-resume`, {
+  const resp = await fetchRetry(`${API}/optimize-resume`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -579,7 +658,7 @@ async function apiOptimizeResume() {
 }
 
 async function apiSavePhrase(data) {
-  const resp = await fetch(`${API}/phrases`, {
+  const resp = await fetchRetry(`${API}/phrases`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -588,12 +667,12 @@ async function apiSavePhrase(data) {
 }
 
 async function apiLoadPhrases() {
-  const resp = await fetch(`${API}/phrases`);
+  const resp = await fetchRetry(`${API}/phrases`);
   return resp.json();
 }
 
 async function apiDeletePhrase(id) {
-  await fetch(`${API}/phrases/${id}`, { method: 'DELETE' });
+  await fetchRetry(`${API}/phrases/${id}`, { method: 'DELETE' });
 }
 
 // ============================================================
@@ -629,9 +708,13 @@ $('#btn-analyze').addEventListener('click', async () => {
       $('#nav-session-label').textContent = result.jd?.position || result.jd?.company || '当前岗位';
       $('#phrase-banner').style.display = 'none';
     }, 80);
-  } catch (e) {
-    toast('分析失败: ' + e.message);
-    setStatus('❌ 分析失败');
+  } catch (e) { 
+    toast('❌ 分析失败: ' + e.message); 
+    $('#analysis-result').innerHTML = '<div class="card" style="text-align:center;padding:2rem;color:var(--red);">' +
+      '<p style="font-size:1.1rem;font-weight:600;margin-bottom:0.5rem;">❌ 分析请求失败</p>' +
+      '<p style="color:var(--muted);margin-bottom:1rem;">' + e.message + '</p>' +
+      '<p style="font-size:0.82rem;color:var(--muted);">💡 请检查：<br>1) AI 供应商是否已在⚙️设置中连接<br>2) 网络是否正常<br>3) API Key 是否有效</p>' +
+      '</div>';
   } finally {
     btn.disabled = false; btn.textContent = '重新分析 →';
   }
@@ -675,7 +758,7 @@ function reformatJdInTextarea() {
   if (!raw) return toast('请先粘贴JD文本');
   $('#btn-jd-format').disabled = true; $('#btn-jd-format').textContent = '⏳';
   
-  fetch('/api/jd-format', {
+  fetchRetry('/api/jd-format', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text: raw })
   }).then(r => r.json()).then(data => {
@@ -856,7 +939,7 @@ function renderQuestionList(questions, filterType) {
         btn.textContent = '⏳'; btn.disabled = true;
         try {
           const analysis = state.analysis || {};
-          const resp = await fetch('/api/bank/bookmark', {
+          const resp = await fetchRetry('/api/bank/bookmark', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question, type, company: analysis.jd?.company || '', position: analysis.jd?.position || '', sessionId: state.sessionId })
           });
@@ -872,10 +955,14 @@ function renderQuestionList(questions, filterType) {
     $$('.q-card').forEach(card => {
       card.addEventListener('click', (e) => {
         if (e.target.closest('button')) return;
+        const question = decodeURIComponent(card.dataset.question);
         switchTab('practice');
-        const pa = document.getElementById('tab-practice');
-        if (pa) pa.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        setTimeout(() => selectPracticeQuestion(decodeURIComponent(card.dataset.question)), 300);
+        // Ensure practice area is visible before selecting question
+        setTimeout(() => {
+          $('#practice-area').classList.remove('hidden');
+          $('#practice-empty').classList.add('hidden');
+          selectPracticeQuestion(question);
+        }, 400);
       });
     });
 
@@ -964,51 +1051,56 @@ function renderPracticeQuestions() {
 }
 
 function selectPracticeQuestion(question) {
+  if (!state.analysis) state.analysis = { questions:[], mianjing:[], kb_supplement:[], jd:{}, resume:{} };
   const qs = state.analysis.questions || [];
   const kb = state.analysis.kb_supplement || [];
   const mj = state.analysis.mianjing || [];
-  const allQs = [...qs, ...kb, ...mj];
-  const found = allQs.find(q => q.question === question);
-  if (!found) {
-    // Fallback: if question is in mianjing array but allQs didn't capture it
-    const mj = state.analysis?.mianjing || [];
-    const mjMatch = mj.find(q => q.question === question);
-    if (mjMatch) {
-      $('#practice-q-meta').innerHTML = `<span class="q-type mianjing">📡面经</span>`;
-      $('#practice-q-text').textContent = question;
-      $('#practice-answer').value = '';
-      $('#practice-feedback').classList.add('hidden');
-      $('#btn-save-phrase').classList.add('hidden');
-      state._practiceQuestion = question;
-      state._lastFeedback = null;
-      $('#practice-empty').classList.add('hidden');
-      $('#practice-area').classList.remove('hidden');
-    }
-    console.warn('[练习] 未在题库中找到题目:', question?.slice(0,40));
-    return;
+  
+  // Ensure renderPracticeQuestions has completed
+  if (!document.getElementById('practice-area')?.classList.contains('hidden') === false) {
+    renderPracticeQuestions();
   }
-
-  $('#practice-empty').classList.add('hidden');
-  $('#practice-area').classList.remove('hidden');
-
-  $('#practice-q-meta').innerHTML = `
-    <span class="q-type ${getTypeClass(found.type)}">${found.type || ''}</span>
-    <span style="font-size:0.78rem;color:var(--muted);">🎯 ${found.examiner_intent || ''}</span>
-  `;
-  $('#practice-q-text').textContent = question;
+  
+  const allQs = [...qs, ...kb, ...mj];
+  let found = allQs.find(q => q && q.question === question);
+  
+  // Fallback: partial match (question text might differ slightly)
+  if (!found && allQs.length > 0) {
+    found = allQs.find(q => q && q.question && q.question.includes(question) || (question && question.includes(q.question)));
+  }
+  
+  if (!found) {
+    console.warn('[练习] 未找到题目:', question?.slice(0,50));
+    $('#practice-q-text').textContent = question || '';
+    $('#practice-q-meta').innerHTML = '<span class="q-type">题目</span>';
+  } else {
+    $('#practice-q-meta').innerHTML = `
+      <span class="q-type ${getTypeClass(found.type)}">${found.type || ''}</span>
+      <span style="font-size:0.78rem;color:var(--muted);">${found._source || ''} 🎯 ${found.examiner_intent || ''}</span>
+    `;
+    $('#practice-q-text').textContent = found.question || question;
+  }
+  
   $('#practice-answer').value = '';
   $('#practice-feedback').classList.add('hidden');
   $('#btn-save-phrase').classList.add('hidden');
   state._practiceQuestion = question;
   state._lastFeedback = null;
+  $('#practice-empty').classList.add('hidden');
+  $('#practice-area').classList.remove('hidden');
+  
+  // Highlight the correct item in the list
   $$('#practice-question-list li').forEach(li => {
-    li.classList.toggle('active', decodeURIComponent(li.dataset.question) === question);
+    const liQ = decodeURIComponent(li.dataset.question || '');
+    li.classList.toggle('active', liQ === question || liQ.includes(question) || (question && question.includes(liQ)));
   });
-  // 滚动到题目卡片，确保可见
-  const card = document.getElementById('practice-question-card');
-  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  // 聚焦回答框
-  setTimeout(() => { const ta = document.getElementById('practice-answer'); if (ta) ta.focus(); }, 200);
+  
+  setTimeout(() => { 
+    const card = document.getElementById('practice-question-card');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const ta = document.getElementById('practice-answer'); 
+    if (ta) ta.focus(); 
+  }, 200);
 }
 
 // 回答框自动扩高
@@ -1259,7 +1351,7 @@ $('#btn-interview-end').addEventListener('click', async () => {
   chat.scrollTop = chat.scrollHeight;
   
   try {
-    const resp = await fetch('/api/interview/evaluate', {
+    const resp = await fetchRetry('/api/interview/evaluate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId: state.sessionId })
@@ -1350,6 +1442,18 @@ function renderInterviewReport(report) {
   $('#interview-report').innerHTML = html;
   $('#interview-report').classList.remove('hidden');
   $('#interview-report').scrollIntoView({ behavior: 'smooth' });
+
+  // Save to interview history
+  try {
+    const history = JSON.parse(localStorage.getItem('interview_history') || '[]');
+    history.unshift({
+      date: new Date().toISOString(),
+      score: report.overall_score || '--',
+      questions: state._interviewState?.askedQuestions?.length || 0,
+      position: state.analysis?.jd?.position || '未知岗位'
+    });
+    localStorage.setItem('interview_history', JSON.stringify(history.slice(0, 20)));
+  } catch {}
 
   // 渲染雷达图
   setTimeout(() => renderRadarChart(avg), 200);
@@ -1506,7 +1610,7 @@ async function scoreResume() {
   const btn = $('#btn-score-resume');
   btn.disabled = true; btn.textContent = '⏳ 评分中...';
   try {
-    const resp = await fetch('/api/score-resume', {
+    const resp = await fetchRetry('/api/score-resume', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ resumeText })
@@ -1574,7 +1678,7 @@ $('#btn-open-settings').addEventListener('click', async () => {
   }
   // 同时加载 opencli 环境状态
   try {
-    const h = await fetch('/api/health').then(r => r.json());
+    const h = await fetchRetry('/api/health').then(r => r.json());
     renderEnvPanel(h);
   } catch {}
 });
@@ -1586,7 +1690,7 @@ $('#settings-temperature').addEventListener('input', () => {
 
 async function loadTemperatures() {
   try {
-    const data = await fetch('/api/providers/temperatures').then(r => r.json());
+    const data = await fetchRetry('/api/providers/temperatures').then(r => r.json());
     _settingsTemperatures = data.temperatures || {};
     applyStoredTemperatures();
   } catch {}
@@ -1610,7 +1714,7 @@ $('#btn-opencli-setup-settings').onclick = () => startOpencliSetup();
 async function loadSettingsData() {
   // 加载供应商预设
   try {
-    const p = await fetch('/api/providers/list').then(r => r.json());
+    const p = await fetchRetry('/api/providers/list').then(r => r.json());
     const sel = $('#settings-provider');
     sel.innerHTML = (p.providers || []).map(pr =>
       `<option value="${pr.id}" data-baseurl="${pr.baseUrl || ''}" data-model="${pr.defaultModel || ''}" data-protocol="${pr.protocol || 'openai-compatible'}">${pr.name} (${pr.id})</option>`
@@ -1656,7 +1760,7 @@ async function autoFetchModelsOnKeyInput() {
   s.disabled = true;
 
   try {
-    const result = await fetch('/api/providers/models', {
+    const result = await fetchRetry('/api/providers/models', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiBaseUrl: baseUrl, apiKey, protocol, providerId: sel.value })
@@ -1679,7 +1783,7 @@ async function autoFetchModelsOnKeyInput() {
 
 async function refreshConnectionList() {
   try {
-    const c = await fetch('/api/providers/connections').then(r => r.json());
+    const c = await fetchRetry('/api/providers/connections').then(r => r.json());
     const connections = c.connections || [];
     const activeId = c.activeConnectionId;
 
@@ -1720,7 +1824,7 @@ async function refreshConnectionList() {
 
 window.activateConnection = async function(id) {
   try {
-    await fetch('/api/providers/connections/active', {
+    await fetchRetry('/api/providers/connections/active', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id })
     });
@@ -1733,7 +1837,7 @@ window.activateConnection = async function(id) {
 window.fetchModelsForConn = async function(connectionId) {
   toast('📡 正在拉取模型列表...');
   try {
-    const result = await fetch('/api/providers/models', {
+    const result = await fetchRetry('/api/providers/models', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionId })
@@ -1750,12 +1854,12 @@ window.fetchModelsForConn = async function(connectionId) {
 window.deleteConnection = async function(id) {
   if (!confirm('确定删除此连接？')) return;
   try {
-    const resp = await fetch(`/api/providers/connections/${id}`, { method: 'DELETE' });
+    const resp = await fetchRetry(`/api/providers/connections/${id}`, { method: 'DELETE' });
     const result = await resp.json();
     if (!result.ok) throw new Error(result.error || '删除失败');
     toast('✅ 已删除');
     await refreshConnectionList();
-    const c = await fetch('/api/providers/connections').then(r => r.json());
+    const c = await fetchRetry('/api/providers/connections').then(r => r.json());
     if (!c.activeConnectionId) setStatus('⚠️ 未配置AI — 点击 ⚙️ 设置');
   } catch(e) { toast('删除失败: ' + e.message); }
 };
@@ -1766,7 +1870,7 @@ window.editConnectionTemp = async function(id, current) {
   if (val == null) return;
   const t = Math.max(0, Math.min(2, parseFloat(val) || 0.7));
   try {
-    await fetch('/api/providers/temperature', {
+    await fetchRetry('/api/providers/temperature', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionId: id, temperature: t })
     });
@@ -1782,7 +1886,7 @@ $('#settings-add-connection').addEventListener('submit', async (e) => {
   try {
     const sel = $('#settings-provider');
     const opt = sel.selectedOptions[0];
-    const result = await fetch('/api/providers/connections', {
+    const result = await fetchRetry('/api/providers/connections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1804,7 +1908,7 @@ $('#settings-add-connection').addEventListener('submit', async (e) => {
     const savedId = result.activeConnectionId || (result.connections?.length && result.connections[result.connections.length - 1]?.id);
     if (savedId) {
       const t = parseFloat($('#settings-temperature').value) || 0.7;
-      await fetch('/api/providers/temperature', {
+      await fetchRetry('/api/providers/temperature', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId: savedId, temperature: t })
       });
@@ -1815,7 +1919,7 @@ $('#settings-add-connection').addEventListener('submit', async (e) => {
     if (savedId) {
       toast('📡 正在自动拉取可用模型...');
       try {
-        const modelsResp = await fetch('/api/providers/models', {
+        const modelsResp = await fetchRetry('/api/providers/models', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId: savedId })
@@ -1847,7 +1951,7 @@ $('#btn-test-connection').addEventListener('click', async () => {
   res.textContent = '⏳ 正在测试...';
 
   try {
-    const result = await fetch('/api/providers/test', {
+    const result = await fetchRetry('/api/providers/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1891,7 +1995,7 @@ async function refreshSessionList() {
   _refreshingSessions = true;
   const sel = $('#nav-session-select');
   try {
-    const data = await fetch('/api/sessions').then(r => r.json());
+    const data = await fetchRetry('/api/sessions').then(r => r.json());
     const list = data.sessions || [];
     sel.innerHTML = list.length ? list.map(s =>
       `<option value="${s.id}" ${s.isActive ? 'selected' : ''}>${s.label} · ${s.matchScore}分</option>`
@@ -1918,7 +2022,7 @@ async function refreshSessionList() {
 }
 async function switchToSession(sessionId) {
   if (!sessionId) return;
-  const data = await fetch('/api/sessions/switch', {
+  const data = await fetchRetry('/api/sessions/switch', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId })
   }).then(r => r.json());
@@ -1951,7 +2055,7 @@ $('#btn-delete-session').addEventListener('click', async () => {
   if (!id) return toast('没有可删除的会话');
   if (!confirm('确定删除此岗位的所有面试数据？不可恢复。')) return;
   try {
-    await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+    await fetchRetry(`/api/sessions/${id}`, { method: 'DELETE' });
     state.sessionId = null;
     state.analysis = null;
     await refreshSessionList();
@@ -1968,7 +2072,7 @@ $('#btn-delete-session').addEventListener('click', async () => {
 // ============================================================
 async function loadBank(filters = {}) {
   const params = new URLSearchParams(filters).toString();
-  const data = await fetch(`/api/mianjing-bank?${params}`).then(r => r.json());
+  const data = await fetchRetry(`/api/mianjing-bank?${params}`).then(r => r.json());
 
   // 过滤器
   const all = '全部';
@@ -2029,7 +2133,7 @@ async function loadBank(filters = {}) {
       const company = decodeURIComponent(item.dataset.company);
       if (!confirm(`确定删除此题？\n\n「${question.slice(0,60)}」`)) return;
       try {
-        const resp = await fetch('/api/bank/question', {
+        const resp = await fetchRetry('/api/bank/question', {
           method: 'DELETE', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question, company })
         });
@@ -2150,6 +2254,31 @@ function renderMianjingResults(mData) {
     const q = window._mjQuestions?.[parseInt(b.dataset.idx)]; if (q) addMjToBank(q);
   }));
   updateMjButtonStates();
+
+  // Add sync button
+  const resultDiv = $('#mj-result');
+  if (resultDiv && !document.getElementById('btn-mj-sync-questions')) {
+    const syncBtn = document.createElement('button');
+    syncBtn.id = 'btn-mj-sync-questions';
+    syncBtn.className = 'btn-outline';
+    syncBtn.style.cssText = 'font-size:0.78rem;margin-top:0.5rem;';
+    syncBtn.textContent = '📋 同步到押题清单';
+    syncBtn.addEventListener('click', () => {
+      if (!state.analysis) state.analysis = { questions:[], mianjing:[], kb_supplement:[], jd:{}, resume:{} };
+      const mj = window._mjQuestions || [];
+      const existing = new Set((state.analysis.questions || []).map(q => q.question));
+      mj.forEach(q => {
+        if (!existing.has(q.question)) {
+          state.analysis.questions.push({ ...q, _source: '📡面经' });
+          existing.add(q.question);
+        }
+      });
+      toast(`已同步 ${mj.length} 道题到押题清单`);
+      switchTab('analyze');
+    });
+    const card = resultDiv.querySelector('.card');
+    if (card) card.appendChild(syncBtn);
+  }
 }
 
 function addMjToPractice(q) {
@@ -2169,7 +2298,7 @@ function addMjToPractice(q) {
 
 async function addMjToBank(q) {
   try {
-    const resp = await fetch('/api/bank/bookmark', {
+    const resp = await fetchRetry('/api/bank/bookmark', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: q.question, type: q.type, company: state.analysis?.jd?.company||'', position: state.analysis?.jd?.position||'', sessionId: state.sessionId })
     });
@@ -2490,7 +2619,7 @@ async function startOpencliSetup() {
           if (ev.step === 'done' || ev.step === 'error') {
             btn.disabled = false;
             btn.textContent = ev.status === 'ok' ? '✅ 已完成' : '🔧 重新配置';
-            const h = await fetch('/api/health').then(r => r.json());
+            const h = await fetchRetry('/api/health').then(r => r.json());
             renderEnvPanel(h);
           }
         } catch {}
@@ -2518,7 +2647,7 @@ async function openXhsForLogin() {
   const el = document.getElementById('recheck-login');
   if (el) el.textContent = '⏳ 正在打开小红书...';
   try {
-    const resp = await fetch('/api/open-xhs-login', { method: 'POST' });
+    const resp = await fetchRetry('/api/open-xhs-login', { method: 'POST' });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
     if (el) el.textContent = '✅ 小红书已打开！请在浏览器中完成扫码登录，登录成功后回到此页面点「已完成登录」';
@@ -2529,7 +2658,7 @@ async function openXhsForLogin() {
 async function markXhsLoginDone() {
   state._xhsLoginDone = true;
   try {
-    const h = await fetch('/api/health').then(r => r.json());
+    const h = await fetchRetry('/api/health').then(r => r.json());
     await renderEnvPanel(h);
   } catch(e) { /* ignore */ }
 }
@@ -2545,7 +2674,7 @@ window.markXhsLoginDone = markXhsLoginDone;
   $('#btn-jd-format')?.addEventListener('click', () => reformatJdInTextarea());
 
   try {
-    const h = await fetch('/api/health').then(r => r.json());
+    const h = await fetchRetry('/api/health').then(r => r.json());
 
     // 状态栏 — 同步更新 opencli 状态
     const oc = h.opencli || {};
