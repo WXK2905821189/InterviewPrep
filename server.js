@@ -8,7 +8,24 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, exec } = require('child_process');
+
+// ============================================================
+// async exec 辅助 — 避免长时间子进程阻塞 event loop
+// ============================================================
+function execAsync(cmd, options = {}) {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { timeout: options.timeout || 30000, maxBuffer: options.maxBuffer || 5 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
+      if (error) {
+        if (stdout && stdout.length > 20) resolve(stdout);
+        else reject(error);
+      } else resolve(stdout);
+    });
+  });
+}
+async function closeOpencliWindow() {
+  try { await execAsync('opencli close', { timeout: 5000 }); } catch {}
+}
 
 // ---- 数据目录 (Electron模式用app.getPath('userData')，普通模式用__dirname) ----
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -1113,10 +1130,9 @@ app.post('/api/jd-fetch', async (req, res) => {
       const securityId = bossMatch[1];
       console.log('[JD扒取] Boss直聘详情:', securityId);
       try {
-        const result = execSync(
+        const result = await execAsync(
           `opencli boss detail "${securityId}" -f md --stdout true`,
-          { timeout: 30000, encoding: 'utf-8', maxBuffer: 5 * 1024 * 1024,
-            stdio: ['pipe', 'pipe', 'pipe'] }
+          { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }
         );
         text = result || '';
       } catch (e) {
@@ -1128,10 +1144,9 @@ app.post('/api/jd-fetch', async (req, res) => {
     if (!text || text.length < 100) {
       console.log('[JD扒取] 通用web read:', url);
       try {
-        const result = execSync(
+        const result = await execAsync(
           `opencli web read --url "${url}" -f md --stdout true --wait 2`,
-          { timeout: 30000, encoding: 'utf-8', maxBuffer: 5 * 1024 * 1024,
-            stdio: ['pipe', 'pipe', 'pipe'] }
+          { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }
         );
         text = result || '';
       } catch (e) {
@@ -1190,11 +1205,11 @@ ${text.slice(0, 8000)}`;
 
     const maxLen = 15000;
     // 扒取完成后自动关闭 opencli 浏览器窗口
-    try { execSync('opencli close', { timeout: 5000, encoding: 'utf-8', stdio: ['pipe','pipe','pipe'] }); } catch {}
+    closeOpencliWindow().catch(()=>{});
     res.json({ url, text: text.slice(0, maxLen), charCount: Math.min(text.length, maxLen), truncated: text.length > maxLen });
   } catch (e) {
     // 失败时也尝试关闭浏览器
-    try { execSync('opencli close', { timeout: 5000, encoding: 'utf-8', stdio: ['pipe','pipe','pipe'] }); } catch {}
+    closeOpencliWindow().catch(()=>{});
     res.status(502).json({ error: '扒取失败: ' + (e.message || String(e)).slice(0, 100) });
   }
 });
@@ -1467,9 +1482,7 @@ app.post('/api/open-xhs-login', async (req, res) => {
   if (ocErr) return res.status(503).json({ error: ocErr });
   try {
     // 使用 opencli xiaohongshu search 命令，会自动打开浏览器（让用户扫码登录）
-    execSync('opencli xiaohongshu search "面试经验" --foreground', {
-      shell: true, timeout: 15000, stdio: ['pipe', 'pipe', 'pipe']
-    });
+    await execAsync('opencli xiaohongshu search "面试经验" --foreground', { timeout: 20000 });
     res.json({ ok: true });
   } catch(e) {
     // opencli 可能返回非0（daemon已在运行等），只要命令执行了就认为成功

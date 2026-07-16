@@ -2,24 +2,63 @@
 // 面经采集节点 V2 — opencli 小红书多轮搜索 + 逐篇读取正文
 // ============================================================
 
-const { execSync } = require('child_process');
+const { exec } = require('child_process');
 const { llm } = require('../llm-client');
 const { MIANJING_CLEAN_SYSTEM } = require('../prompts');
 
 /**
- * 执行 opencli 命令，超时 25s，返回 stdout 或 null
+ * 异步执行 opencli 命令，返回 stdout 或 null
+ * 使用 exec (非阻塞) 避免阻塞 Express event loop
  */
 function openCli(cmd) {
-  try {
-    console.log(`[面经] 执行: ${cmd.slice(0, 80)}...`);
-    return execSync(cmd, {
-      timeout: 12000, encoding: 'utf-8', maxBuffer: 3 * 1024 * 1024,
-      stdio: ['pipe', 'pipe', 'pipe']
+  return new Promise((resolve) => {
+    console.log(`[面经] 异步执行: ${cmd.slice(0, 80)}...`);
+    exec(cmd, {
+      timeout: 25000, encoding: 'utf-8', maxBuffer: 3 * 1024 * 1024,
+      windowsHide: true
+    }, (error, stdout, stderr) => {
+      if (error) {
+        console.warn(`[面经] 命令失败: ${error.message?.slice(0, 60)}`);
+        // 即使报错，如果有部分输出也返回
+        if (stdout && stdout.length > 20) {
+          console.log(`[面经] 部分输出: ${stdout.length} 字节`);
+          resolve(stdout);
+        } else {
+          resolve(null);
+        }
+      } else {
+        resolve(stdout);
+      }
     });
-  } catch (e) {
-    console.warn(`[面经] 命令失败: ${e.message?.slice(0, 60)}`);
-    return null;
+  });
+}
+
+/** 检测笔记中是否有图片，返回图片 URL 列表 */
+function detectImages(htmlOrMdText) {
+  const urls = [];
+  // 标准 markdown 图片: ![alt](url)
+  const mdRe = /!\[.*?\]\((https?:\/\/[^)]+)\)/g;
+  let m;
+  while ((m = mdRe.exec(htmlOrMdText)) !== null) {
+    urls.push(m[1]);
   }
+  // HTML img 标签
+  const htmlRe = /<img[^>]+src=["']([^"']+)["']/gi;
+  while ((m = htmlRe.exec(htmlOrMdText)) !== null) {
+    urls.push(m[1]);
+  }
+  return urls;
+}
+
+/** 生成图片识别提示词 */
+function buildOcrPrompt(noteTitle, noteBody, imageUrls) {
+  let prompt = MIANJING_CLEAN_SYSTEM.replace('{{raw_mianjing}}', 
+    `标题: ${noteTitle}\n正文:\n${noteBody.slice(0, 8000)}`);
+  if (imageUrls.length > 0) {
+    prompt += '\n\n⚠️ 注意：这篇笔记包含以下图片，图片中可能含有面试题目。如果正文能提取到完整题目，请忽略图片；如果正文中题目不完整或缺失，请根据图片上下文推断可能包含的面试题类型。';
+    prompt += `\n图片数量: ${imageUrls.length} 张`;
+  }
+  return prompt;
 }
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -32,7 +71,7 @@ async function queryMianjing(company, position, keywords = []) {
   const query = `${company} ${position} 面经`;
 
   const allNotes = [];
-  const raw = openCli(`opencli xiaohongshu search "${query}" -f json --limit 10`);
+  const raw = await openCli(`opencli xiaohongshu search "${query}" -f json --limit 10`);
   if (raw) {
     try {
       const results = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -79,7 +118,7 @@ async function queryMianjing(company, position, keywords = []) {
     if (!signedUrl) { failCount++; continue; }
     // 篇与篇之间间隔 2 秒，防小红书 "操作太频繁"
     if (i > 0) await sleep(2000);
-    const content = openCli(`opencli xiaohongshu note "${signedUrl}" -f md`);
+    const content = await openCli(`opencli xiaohongshu note "${signedUrl}" -f md`);
     if (content && content.length > 30) {
       let title = n.title || '';
       let body = '';
@@ -265,7 +304,7 @@ async function fetchNotesFromUrls(urls) {
     // 篇与篇之间间隔 2 秒，防反爬
     if (i > 0) await sleep(2000);
 
-    const content = openCli(`opencli xiaohongshu note "${url}" -f md`);
+    const content = await openCli(`opencli xiaohongshu note "${url}" -f md`);
     if (content && content.length > 30) {
       const { title, body } = parseNoteContent(content, url);
       if (body.length > 20) {

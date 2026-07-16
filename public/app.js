@@ -345,9 +345,6 @@ function switchTab(tabName) {
     $('#resume-opt-empty').classList.remove('hidden');
     checkAndAutoScore();
   }
-  if (tabName === 'templates') {
-    initTemplates();
-  }
 }
 
 $$('.nav-tab').forEach(tab => {
@@ -1329,7 +1326,6 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
   if (!state.sessionId) return toast('请先完成分析');
   const btn = $('#btn-optimize-resume');
   btn.disabled = true; btn.textContent = '优化中...';
-  // 显示进度条
   const emptyEl = $('#resume-opt-empty');
   emptyEl.classList.remove('hidden');
   emptyEl.innerHTML = '<div style="text-align:center;padding:2rem;">'
@@ -1338,7 +1334,6 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
     + '<div class="progress-bar-wrap" style="margin-top:1rem;"><div class="progress-bar-fill" style="width:0%"></div></div>'
     + '<span class="progress-eta" style="font-size:0.78rem;color:var(--muted);">请耐心等待约 20-40 秒</span>'
     + '</div>';
-  // 模拟进度条
   let progressTimer = 0;
   const progressInterval = setInterval(() => {
     progressTimer += 1;
@@ -1351,16 +1346,45 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
       etaEl.textContent = `预计还需 ${remaining} 秒…`;
     }
   }, 1000);
+
+  // 超时保护：90秒后强制中断
+  const timeoutId = setTimeout(() => {
+    clearInterval(progressInterval);
+    const b = document.querySelector('.progress-bar-fill');
+    if (b) b.style.width = '100%';
+    const e = document.querySelector('.progress-eta');
+    if (e) e.textContent = '⚠️ 超时，请重试';
+    btn.disabled = false; btn.textContent = '重新生成';
+    emptyEl.innerHTML = '<p style="text-align:center;color:var(--red);padding:2rem;">❌ AI 响应超时，请检查网络或 AI 供应商连接后重试</p>';
+  }, 90000);
+
   try {
     const result = await apiOptimizeResume();
+    clearTimeout(timeoutId);
     clearInterval(progressInterval);
+    // 填充进度条到100%
+    const barEl = document.querySelector('.progress-bar-fill');
+    if (barEl) barEl.style.width = '100%';
+    const etaEl = document.querySelector('.progress-eta');
+    if (etaEl) etaEl.textContent = '✅ 完成';
+
+    if (!result || (!result.optimizations?.length && !result.elevator_pitch)) {
+      emptyEl.innerHTML = '<p style="text-align:center;color:#D97706;padding:2rem;">⚠️ AI 返回了空结果，请确认AI供应商连接正常后重试</p>';
+      btn.disabled = false; btn.textContent = '重新生成';
+      return;
+    }
     renderResumeOptimization(result);
     setStatus('✅ 优化完成');
-    // 小红点标记
     showTabDot('tab-optimize');
-  } catch (e) { toast('优化失败: ' + e.message); }
+  } catch (e) {
+    clearTimeout(timeoutId);
+    clearInterval(progressInterval);
+    emptyEl.innerHTML = '<p style="text-align:center;color:var(--red);padding:2rem;">❌ 优化失败: ' + (e.message || '网络错误') + '</p>';
+    toast('优化失败: ' + e.message);
+  }
   finally {
     clearInterval(progressInterval);
+    clearTimeout(timeoutId);
     btn.disabled = false; btn.textContent = '重新生成';
   }
 });
@@ -2352,169 +2376,6 @@ window.openXhsForLogin = openXhsForLogin;
 window.markXhsLoginDone = markXhsLoginDone;
 
 // ============================================================
-// 📄 简历模板
-// ============================================================
-
-const RESUME_TEMPLATES = {
-  clean: { name: '简洁版', desc: '单栏左对齐，经典黑白' },
-  business: { name: '商务版', desc: '双栏布局，深蓝侧栏' },
-  creative: { name: '设计版', desc: '卡片式，圆角+色彩' },
-};
-
-let resumeFormData = {
-  name: '', email: '', phone: '', location: '',
-  summary: '',
-  educations: [{ school: '', major: '', degree: '', years: '' }],
-  experiences: [{ company: '', role: '', duration: '', highlights: '' }],
-  projects: [{ name: '', desc: '', tech: '' }],
-  skills: ''
-};
-let activeTemplate = 'clean';
-
-function renderTemplateSelector() {
-  const el = $('#template-selector');
-  el.innerHTML = Object.entries(RESUME_TEMPLATES).map(([id, t]) => {
-    const active = id === activeTemplate;
-    return '<div class="template-option ' + (active ? 'selected' : '') + '" data-tpl="' + id + '" style="padding:0.6rem;border:2px solid ' + (active ? 'var(--accent)' : 'var(--rule)') + ';border-radius:8px;cursor:pointer;margin-bottom:0.3rem;">' +
-      '<div style="font-weight:600;">' + t.name + '</div>' +
-      '<div style="font-size:0.72rem;color:var(--muted);">' + t.desc + '</div></div>';
-  }).join('');
-
-  el.querySelectorAll('.template-option').forEach(opt => {
-    opt.addEventListener('click', () => {
-      activeTemplate = opt.dataset.tpl;
-      renderTemplateSelector();
-      renderResumePreview();
-    });
-  });
-}
-
-function renderResumePreview() {
-  const data = resumeFormData;
-  let html = '';
-
-  if (activeTemplate === 'clean') {
-    html = '<div class="template-clean">' +
-      '<h1>' + (data.name || '姓名') + '</h1>' +
-      '<p class="contact-line">' + [data.email, data.phone, data.location].filter(Boolean).join(' · ') + '</p>' +
-      (data.summary ? '<div class="section-block"><h3>个人简介</h3><p style="font-size:12px;color:#444;">' + data.summary + '</p></div>' : '') +
-      (data.educations.some(e => e.school) ? '<div class="section-block"><h3>教育经历</h3>' + data.educations.filter(e => e.school).map(e => '<div class="entry-item"><p><b class="role">' + e.school + '</b> · ' + e.major + ' · ' + e.degree + ' <span class="duration">' + e.years + '</span></p></div>').join('') + '</div>' : '') +
-      (data.experiences.some(e => e.company) ? '<div class="section-block"><h3>工作/实习经历</h3>' + data.experiences.filter(e => e.company).map(e => '<div class="entry-item"><p><b class="role">' + e.role + '</b> @ ' + e.company + ' <span class="duration">' + e.duration + '</span></p>' + (e.highlights ? '<ul>' + e.highlights.split('\n').filter(Boolean).map(h => '<li>' + h + '</li>').join('') + '</ul>' : '') + '</div>').join('') + '</div>' : '') +
-      (data.projects.some(p => p.name) ? '<div class="section-block"><h3>项目经历</h3>' + data.projects.filter(p => p.name).map(p => '<div class="entry-item"><p><b>' + p.name + '</b>' + (p.tech ? ' · ' + p.tech : '') + '</p><p style="font-size:12px;color:#444;">' + (p.desc || '') + '</p></div>').join('') + '</div>' : '') +
-      (data.skills ? '<div class="section-block"><h3>技能</h3><p style="font-size:12px;color:#444;">' + data.skills + '</p></div>' : '') +
-      '</div>';
-  } else if (activeTemplate === 'business') {
-    html = '<div class="template-business">' +
-      '<div class="sidebar">' +
-      '<h2>' + (data.name || '姓名') + '</h2>' +
-      '<p class="contact-info">' + [data.email, data.phone, data.location].filter(Boolean).join('<br>') + '</p>' +
-      (data.skills ? '<h4>技能</h4><p class="skill-list">' + data.skills.split(',').map(s => '· ' + s.trim()).join('<br>') + '</p>' : '') +
-      (data.educations.some(e => e.school) ? '<h4>教育</h4>' + data.educations.filter(e => e.school).map(e => '<div class="edu-item"><p class="school-name">' + e.school + '</p><p>' + e.major + '</p><p>' + e.years + '</p></div>').join('') : '') +
-      '</div>' +
-      '<div class="main-content">' +
-      (data.summary ? '<h4>个人简介</h4><p class="summary-text">' + data.summary + '</p>' : '') +
-      (data.experiences.some(e => e.company) ? '<h4>工作经历</h4>' + data.experiences.filter(e => e.company).map(e => '<div class="exp-item"><p class="exp-title"><b>' + e.role + '</b> · ' + e.company + '</p><p class="exp-date">' + e.duration + '</p>' + (e.highlights ? '<ul>' + e.highlights.split('\n').filter(Boolean).map(h => '<li>' + h + '</li>').join('') + '</ul>' : '') + '</div>').join('') : '') +
-      (data.projects.some(p => p.name) ? '<h4>项目经历</h4>' + data.projects.filter(p => p.name).map(p => '<div class="proj-item"><p><b>' + p.name + '</b>' + (p.tech ? ' <span class="proj-tech">(' + p.tech + ')</span>' : '') + '</p><p class="proj-desc">' + (p.desc || '') + '</p></div>').join('') : '') +
-      '</div></div>';
-  } else {
-    // creative
-    html = '<div class="template-creative">' +
-      '<div class="header-banner">' +
-      '<h1>' + (data.name || '姓名') + '</h1>' +
-      '<p class="contact-line">' + [data.email, data.phone, data.location].filter(Boolean).join(' · ') + '</p></div>' +
-      '<div class="body-area">' +
-      (data.summary ? '<div class="card-block"><h3>关于我</h3><p class="card-desc">' + data.summary + '</p></div>' : '') +
-      (data.experiences.some(e => e.company) ? '<div class="card-block"><h3>经历</h3>' + data.experiences.filter(e => e.company).map(e => '<div class="exp-item"><p class="exp-title"><b>' + e.role + '</b> @ ' + e.company + '</p><p class="exp-date">' + e.duration + '</p>' + (e.highlights ? '<p class="exp-detail">' + e.highlights.split('\n').filter(Boolean).join('<br>· ') + '</p>' : '') + '</div>').join('') + '</div>' : '') +
-      (data.educations.some(e => e.school) ? '<div class="card-block"><h3>教育</h3>' + data.educations.filter(e => e.school).map(e => '<p class="edu-item">' + e.school + ' · ' + e.major + ' · ' + e.years + '</p>').join('') + '</div>' : '') +
-      (data.skills ? '<div class="card-block"><h3>技能</h3><p style="margin:0;">' + data.skills.split(',').map(s => '<span class="skill-tag">' + s.trim() + '</span>').join('') + '</p></div>' : '') +
-      '</div></div>';
-  }
-
-  const preview = $('#resume-preview');
-  preview.innerHTML = html;
-}
-
-// Import from current session
-$('#btn-import-from-session').addEventListener('click', async () => {
-  if (!state.sessionId || !state.analysis) return toast('请先完成一次分析');
-  try {
-    const resp = await fetch('/api/sessions');
-    const data = await resp.json();
-    const sess = data.sessions.find(s => s.id === state.sessionId);
-    if (!sess) return toast('未找到会话数据');
-
-    // Load full session data
-    const fullResp = await fetch('/api/sessions/' + state.sessionId);
-    const full = await fullResp.json();
-    const a = full.analysis || {};
-    const resume = a.resume || {};
-
-    resumeFormData.name = resume.name || resumeFormData.name;
-    resumeFormData.email = resume.email || resumeFormData.email;
-    resumeFormData.phone = resume.phone || resumeFormData.phone;
-    if (resume.education) {
-      resumeFormData.educations = [{ school: resume.education.school || '', major: resume.education.major || '', degree: resume.education.degree || '', years: resume.education.year || '' }];
-    }
-    if (resume.internships) {
-      resumeFormData.experiences = resume.internships.map(i => ({ company: i.company || '', role: i.role || '', duration: i.duration || '', highlights: (i.highlights || []).join('\n') }));
-    }
-    if (resume.projects) {
-      resumeFormData.projects = resume.projects.map(p => ({ name: p.name || '', desc: p.description || '', tech: '' }));
-    }
-    if (resume.skills) {
-      resumeFormData.skills = resume.skills.join(', ');
-    }
-    if (resume.strengths && resume.strengths.length) {
-      resumeFormData.summary = resume.strengths.join('; ');
-    }
-
-    renderResumePreview();
-    toast('已从分析结果导入');
-  } catch (e) { toast('导入失败'); }
-});
-
-// Export DOCX
-$('#btn-export-docx').addEventListener('click', async () => {
-  try {
-    const resp = await fetch('/api/export-resume-docx', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: resumeFormData, template: activeTemplate })
-    });
-    if (!resp.ok) throw new Error('Export failed');
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'resume-' + (resumeFormData.name || 'untitled') + '.docx';
-    a.click(); URL.revokeObjectURL(url);
-    toast('已导出 DOCX');
-  } catch (e) { toast('导出失败: ' + e.message); }
-});
-
-// Export PDF
-$('#btn-export-pdf').addEventListener('click', async () => {
-  try {
-    const resp = await fetch('/api/export-resume-pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: resumeFormData, template: activeTemplate })
-    });
-    if (!resp.ok) throw new Error('Export failed');
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'resume-' + (resumeFormData.name || 'untitled') + '.pdf';
-    a.click(); URL.revokeObjectURL(url);
-    toast('已导出 PDF');
-  } catch (e) { toast('导出失败: ' + e.message); }
-});
-
-// Initialize templates
-function initTemplates() {
-  renderTemplateSelector();
-  renderResumePreview();
-}
-
 (async () => {
   await refreshSessionList();
 

@@ -127,14 +127,12 @@ InterviewPrep/
 │   ├── export-docx.js     # DOCX 导出基础设施
 │   └── nodes/
 │       ├── mianjing.js    # 面经采集（搜索+解析+清洗）
-│       ├── opencli-setup.js  # opencli 一键安装
-│       └── export-resume.js  # 简历导出 (DOCX/PDF)
+│       └── opencli-setup.js  # opencli 一键安装
 ├── ai-provider-kit/       # AI 供应商管理子系统
 ├── public/                # 前端 (SPA)
 │   ├── index.html         # 主页面
 │   ├── app.js             # 前端逻辑
 │   ├── style.css          # 样式
-│   ├── resume-templates.css  # 简历模板样式
 │   └── echarts.min.js     # ECharts 图表
 ├── knowledge/             # 知识库（高频题库）
 └── package.json
