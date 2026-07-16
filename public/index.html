@@ -19,6 +19,7 @@
       <button class="nav-tab" data-tab="practice">单题练习<span class="tab-dot" data-dot-tab="practice"></span></button>
       <button class="nav-tab" data-tab="interview">全真模拟<span class="tab-dot" data-dot-tab="interview"></span></button>
       <button class="nav-tab" data-tab="resume">简历优化<span class="tab-dot" data-dot-tab="resume"></span></button>
+      <button class="nav-tab" data-tab="mianjing">📡 面经采集<span class="tab-dot" data-dot-tab="mianjing"></span></button>
       <button class="nav-tab" data-tab="bank">真题库</button>
       <button class="nav-tab" data-tab="company">公司调研</button>
     </div>
@@ -116,20 +117,9 @@
     <div class="action-bar" style="flex-wrap:wrap;gap:0.5rem;">
       <div style="display:flex;flex-wrap:wrap;gap:0.5rem 1rem;align-items:center;">
         <label class="switch-label">
-          <input type="checkbox" id="use-mianjing" disabled>
-          <span>面经采集已独立 — 分析完成后在结果区手动触发</span>
-        </label>
-        <label class="switch-label">
           <input type="checkbox" id="use-quick-mode">
           <span>⚡ 快速模式（只用3类核心题型，约快5倍）</span>
         </label>
-      </div>
-      <!-- 手动URL粘贴区（面经采集时可用） -->
-      <div id="manual-urls-wrap" class="hidden" style="width:100%;margin-top:0.5rem;">
-        <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:0.3rem;">📎 粘贴小红书面经链接（一行一个，如：https://www.xiaohongshu.com/explore/xxx）</label>
-        <textarea id="manual-urls" rows="2" placeholder="https://www.xiaohongshu.com/explore/...
-https://www.xiaohongshu.com/explore/..." style="font-size:0.8rem;font-family:monospace;width:100%;resize:vertical;"></textarea>
-        <span style="font-size:0.75rem;color:var(--muted);">面经采集已独立为单独功能，分析完成后可在结果区点击「开始采集面经」</span>
       </div>
       <button id="btn-analyze" class="btn-primary">开始分析 →</button>
     </div>

@@ -470,7 +470,7 @@ app.post('/api/optimize-resume', async (req, res) => {
   }
 });
 
-// 简历优化 — 生成完整优化版 DOCX 供下载
+// 简历优化 — 生成完整优化版 DOCX 供下载（内联生成，不依赖已删除的 export-resume 模块）
 app.post('/api/optimize-resume-docx', async (req, res) => {
   try {
     const { sessionId } = req.body;
@@ -484,7 +484,7 @@ app.post('/api/optimize-resume-docx', async (req, res) => {
     const jdParsed = session.analysis.jd;
     const resumeText = session.resumeText || '';
 
-    // 1. 调用 LLM 生成全文优化版
+    // 1. LLM 生成全文优化版
     const optPrompt = fillTemplate(prompts.RESUME_FULL_OPTIMIZE_SYSTEM, {
       jd_parsed: JSON.stringify(jdParsed, null, 2),
       resume_text: resumeText
@@ -495,26 +495,76 @@ app.post('/api/optimize-resume-docx', async (req, res) => {
       return res.status(500).json({ error: 'AI 未能生成优化版简历，请重试' });
     }
 
-    // 2. 生成 DOCX
     const fullText = optimized.optimized_full_text || 
       Object.values(optimized.optimized_sections || {}).filter(Boolean).join('\n\n');
     
-    const { generateResumeDocx } = require('./chatflow/nodes/export-resume');
-    const buf = await generateResumeDocx({ 
-      name: jdParsed.position || '简历',
-      email: '',
-      phone: '',
-      location: '',
-      summary: optimized.optimized_sections?.summary || '',
-      experiences: [],
-      educations: [],
-      projects: [],
-      skills: optimized.optimized_sections?.skills || '',
-      fullText
+    // 2. 内联生成 DOCX (不依赖已删除的 export-resume 模块)
+    const { Document, Packer, Paragraph, TextRun, Header, AlignmentType } = require('docx');
+    const CJK_FONT = 'Microsoft YaHei';
+    const FONT = { ascii: 'Arial', hAnsi: 'Arial', eastAsia: CJK_FONT };
+    
+    const children = [];
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER, spacing: { after: 200 },
+      children: [new TextRun({ text: 'AI 优化版简历', bold: true, size: 36, color: '4F46E5', font: FONT })]
+    }));
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER, spacing: { after: 400 },
+      children: [new TextRun({ text: '由 InterviewPrep 根据目标岗位 JD 自动优化', size: 18, color: '999999', font: FONT })]
+    }));
+
+    const sections = fullText.split(/\n{2,}/);
+    for (const section of sections) {
+      const trimmed = section.trim();
+      if (!trimmed) continue;
+      const lines = trimmed.split('\n');
+      if (lines[0] && lines[0].length < 50 && !lines[0].startsWith('•') && !lines[0].startsWith('-')) {
+        children.push(new Paragraph({
+          spacing: { before: 280, after: 120 },
+          children: [new TextRun({ text: lines[0], bold: true, size: 24, color: '4F46E5', font: FONT })]
+        }));
+        for (let i = 1; i < lines.length; i++) {
+          if (lines[i].trim()) {
+            children.push(new Paragraph({
+              spacing: { after: 80 },
+              children: [new TextRun({ text: lines[i].trim(), size: 22, font: FONT })]
+            }));
+          }
+        }
+      } else {
+        for (const line of lines) {
+          if (line.trim()) {
+            children.push(new Paragraph({
+              spacing: { after: 80 },
+              children: [new TextRun({ text: line.trim(), size: 22, font: FONT })]
+            }));
+          }
+        }
+      }
+    }
+
+    const doc = new Document({
+      styles: {
+        default: { document: { run: { font: FONT, size: 22 } } }
+      },
+      sections: [{
+        properties: {
+          page: { size: { width: 11906, height: 16838 }, margin: { top: 1200, right: 1200, bottom: 1200, left: 1200 } }
+        },
+        headers: {
+          default: new Header({ children: [new Paragraph({
+            alignment: AlignmentType.RIGHT,
+            children: [new TextRun({ text: 'InterviewPrep AI 优化生成', font: FONT, size: 18, color: '999999' })]
+          })] })
+        },
+        children
+      }]
     });
+    const buf = await Packer.toBuffer(doc);
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="resume-${encodeURIComponent(jdParsed.position || 'optimized')}.docx"`);
+    const filename = encodeURIComponent(jdParsed.position || 'resume');
+    res.setHeader('Content-Disposition', `attachment; filename="resume-${filename}.docx"`);
     res.send(buf);
   } catch (e) {
     console.error('[API] 优化版简历DOCX生成失败:', e);
@@ -1076,35 +1126,6 @@ app.get('/api/export/mianjing', async (req, res) => {
     res.send(buffer);
   } catch (e) {
     res.status(500).json({ error: e.message });
-  }
-});
-
-// Export resume as DOCX
-app.post('/api/export-resume-docx', async (req, res) => {
-  try {
-    const { data, template } = req.body;
-    const { generateResumeDocx } = require('./chatflow/nodes/export-resume');
-    const buf = await generateResumeDocx(data);
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', 'attachment; filename="resume.docx"');
-    res.send(buf);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Export resume as PDF
-app.post('/api/export-resume-pdf', async (req, res) => {
-  try {
-    const { data, template } = req.body;
-    const { generateResumePdf } = require('./chatflow/nodes/export-resume');
-    const buf = await generateResumePdf(data, template);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="resume.pdf"');
-    res.send(buf);
-  } catch (e) {
-    console.error('PDF export error:', e);
-    res.status(500).json({ error: 'PDF导出失败: ' + e.message });
   }
 });
 
