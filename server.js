@@ -1299,7 +1299,9 @@ app.post('/api/mianjing-collect', async (req, res) => {
     sse({ step: 'mianjing', detail: '🔍 搜索小红书面经...', status: 'running' });
     
     const { queryMianjing } = require('./chatflow/nodes/mianjing');
-    const mResult = await queryMianjing(company, position, 8, 25000);
+    const mResult = await queryMianjing(company, position, (ev) => {
+      sse(ev);
+    });
     
     if (mResult.success && mResult.data?.questions?.length) {
       // 相关性过滤
