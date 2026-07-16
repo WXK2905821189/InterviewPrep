@@ -783,9 +783,12 @@ function renderAnalysisResult(data) {
     $('#analysis-result').scrollIntoView({ behavior: 'smooth' });
   }, 120);
 
-  // 下一步引导卡片
+  // 下一步引导卡片（先移除旧的，避免重复）
+  const oldCard = document.getElementById('next-steps-card');
+  if (oldCard) oldCard.remove();
   const actions = $('#analysis-result');
   const actionCard = document.createElement('div');
+  actionCard.id = 'next-steps-card';
   actionCard.className = 'card';
   actionCard.style.cssText = 'text-align:center;margin-top:1.5rem;border:2px dashed var(--accent2);background:linear-gradient(135deg, rgba(6,182,212,0.05), rgba(79,70,229,0.05));';
   actionCard.innerHTML = 
