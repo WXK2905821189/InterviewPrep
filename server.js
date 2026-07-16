@@ -1340,7 +1340,7 @@ app.post('/api/mianjing-collect', async (req, res) => {
       sse(ev);
     });
     
-    if (mResult.success && mResult.data?.questions?.length) {
+    if (mResult?.success && mResult.data?.questions?.length) {
       // 相关性过滤
       const qCount = mResult.data.questions.length;
       sse({ step: 'mianjing', detail: `📝 采集到 ${qCount} 道题，正在过滤...`, status: 'running' });

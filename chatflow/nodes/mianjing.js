@@ -118,7 +118,7 @@ async function readNoteContent(n) {
 }
 
 // ─── OCR 通道: 截图 → tesseract 识别 ───
-async function ocrNote(noteUrl, noteId) {
+async function ocrNote(noteUrl, noteId, statusCb) {
   const T = getTesseract();
   if (!T) { console.log('[OCR] tesseract.js 未安装，跳过'); return ''; }
 
@@ -128,18 +128,27 @@ async function ocrNote(noteUrl, noteId) {
 
   try {
     // 1. opencli 截图
+    if (statusCb) statusCb({ step: 'ocr', detail: '📸 正在截图笔记...', status: 'running' });
     console.log(`[OCR] 截图: ${noteUrl.slice(0, 60)}...`);
     await openCli(`opencli browser screen shot --url "${noteUrl}" --output "${screenshotPath}"`, 30000);
     if (!fs.existsSync(screenshotPath)) { console.log('[OCR] 截图文件不存在'); return ''; }
 
     // 2. tesseract OCR (中文+英文)
+    if (statusCb) statusCb({ step: 'ocr', detail: '🔤 OCR 文字识别中（首次需下载中文语言包约30MB）...', status: 'running' });
     console.log(`[OCR] tesseract 识别中...`);
+    let lastPct = -1;
     const { data } = await T.recognize(screenshotPath, 'chi_sim+eng', {
       tessedit_pageseg_mode: '6',
       logger: (m) => {
         if (m.status === 'recognizing text') {
           const pct = Math.round((m.progress || 0) * 100);
           console.log(`[OCR] 识别进度: ${pct}%`);
+          if (pct > lastPct + 9 && statusCb) {  // 每10%推一次
+            statusCb({ step: 'ocr', detail: `🔤 OCR 识别中 ${pct}%...`, status: 'running' });
+            lastPct = pct;
+          }
+        } else if (m.status === 'loading tesseract core' || m.status === 'loading language traineddata') {
+          if (statusCb) statusCb({ step: 'ocr', detail: `📥 下载 OCR 模型: ${Math.round(m.progress*100)}%`, status: 'running' });
         }
       }
     });
@@ -345,8 +354,8 @@ async function queryMianjing(company, position, statusCb) {
   const candidates = await searchNotes(company, position);
 
   if (candidates.length < 3) {
-    report({ step: 'search', detail: `⚠️ 仅找到 ${candidates.length} 篇候选，太少，退出`, status: 'warn' });
-    return null;
+    report({ step: 'search', detail: `⚠️ 仅找到 ${candidates.length} 篇候选，少于3篇，退出`, status: 'warn' });
+    return { success: false, data: { source_count: 0, sources: [], questions: [] } };
   }
 
   // 阶段二: 逐篇读取正文 + OCR
@@ -370,7 +379,7 @@ async function queryMianjing(company, position, statusCb) {
     // 通道2: 如果是图片帖或文字太少 → OCR
     const needsOcr = !textResult || textResult.isLowText;
     if (needsOcr) {
-      const ocrText = await ocrNote(note.url || note.noteId, `${i}`);
+      const ocrText = await ocrNote(note.url || note.noteId, `${i}`, report);
       if (ocrText && ocrText.length > 30) {
         notesWithContent.push({ ...note, title: note.title, content: `[OCR识别]\n${ocrText}`, hasImages: true });
         ocrSuccess++;
@@ -388,7 +397,7 @@ async function queryMianjing(company, position, statusCb) {
 
   if (notesWithContent.length < 2) {
     report({ step: 'read', detail: '❌ 有效内容不足2篇', status: 'warn' });
-    return null;
+    return { success: false, data: { source_count: notesWithContent.length, sources, questions: [] } };
   }
 
   // 阶段三: LLM 三阶段结构化
@@ -431,7 +440,7 @@ async function fetchNotesFromUrls(urls, statusCb) {
     if (textResult) { notesWithContent.push(textResult); continue; }
 
     // text 失败 → OCR
-    const ocrText = await ocrNote(url, `${i}`);
+    const ocrText = await ocrNote(url, `${i}`, statusCb);
     if (ocrText && ocrText.length > 30) {
       notesWithContent.push({ url, title: url, content: `[OCR]\n${ocrText}`, hasImages: true });
     }
