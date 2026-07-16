@@ -1292,11 +1292,12 @@ ${questionsText}
 // 面经采集 — 独立触发
 // ============================================================
 app.post('/api/mianjing-collect', async (req, res) => {
-  const { sessionId, jdText, resumeText } = req.body;
+  const { sessionId, jdText, resumeText, company: reqCompany, position: reqPosition, manualUrls } = req.body;
   const session = sessions.get(sessionId);
-  if (!session?.analysis) {
-    return res.status(400).json({ error: '请先完成分析（调用 /api/analyze）' });
-  }
+  
+  const jdParsed = session?.analysis?.jd || {};
+  const company = reqCompany || jdParsed.company || '';
+  const position = reqPosition || jdParsed.position || '';
   
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -1307,12 +1308,27 @@ app.post('/api/mianjing-collect', async (req, res) => {
   function sse(data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
 
   try {
-    const jdParsed = session.analysis.jd;
-    const company = jdParsed.company || '';
-    const position = jdParsed.position || '';
-    
+    // 优先手动URL模式
+    if (manualUrls?.length) {
+      sse({ step: 'mianjing', detail: `🔍 读取 ${manualUrls.length} 条链接...`, status: 'running' });
+      const { fetchNotesFromUrls } = require('./chatflow/nodes/mianjing');
+      const mResult = await fetchNotesFromUrls(manualUrls, (ev) => sse(ev));
+      
+      if (mResult?.success && mResult.data?.questions?.length) {
+        const relevant = await filterRelevantQuestions(mResult.data.questions, jdParsed);
+        mResult.data.questions = relevant;
+        
+        sse({ step: 'done', detail: `✅ 采集完成: ${mResult.data.source_count || 0} 篇 · ${relevant.length} 题`, status: 'ok', result: { mianjing: mResult.data } });
+        res.end();
+        return;
+      }
+      sse({ step: 'done', detail: '❌ 手动链接未提取到题目', status: 'warn' });
+      res.end();
+      return;
+    }
+
     if (!company && !position) {
-      sse({ step: 'error', detail: '无法识别公司/岗位，请确保JD已解析' });
+      sse({ step: 'error', detail: '无法识别公司/岗位，请确保JD已解析或手动输入' });
       res.end();
       return;
     }
