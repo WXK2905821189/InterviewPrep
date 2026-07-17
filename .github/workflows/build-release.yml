@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-release:
-    runs-on: ubuntu-latest
+  build-windows:
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,44 +18,52 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Prepare release package
-        run: |
-          mkdir -p dist/interview-prep
-          cp -r public chatflow electron knowledge server.js package.json package-lock.json dist/interview-prep/
-          cp -r ai-provider-kit dist/interview-prep/ 2>/dev/null || true
+      - name: Install dependencies
+        run: npm ci
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
-      - name: Create ZIP
+      - name: Build Windows installer
+        run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USE_HARD_LINKS: 'false'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+      - name: Show artifacts
+        run: Get-ChildItem -Path release -Recurse
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: release/*.exe
+
+  create-release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: ./artifacts
+
+      - name: Rename for clarity
         run: |
-          cd dist
-          zip -r InterviewPrep-v${{ github.ref_name }}-portable.zip interview-prep
+          for f in ./artifacts/*.exe; do
+            [ -f "$f" ] && mv "$f" "./artifacts/InterviewPrep-Setup-${{ github.ref_name }}.exe"
+          done
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/InterviewPrep-v${{ github.ref_name }}-portable.zip
+          files: ./artifacts/*
           body: |
-            ## 📥 下载
+            ## 📥 一键安装
 
-            | 文件 | 说明 |
-            |------|------|
-            | `InterviewPrep-v${{ github.ref_name }}-portable.zip` | 源码包，解压后运行 |
-
-            ---
-
-            ## 🚀 使用方式
-
-            ```bash
-            # 1. 解压
-            unzip InterviewPrep-v*-portable.zip
-            cd interview-prep
-
-            # 2. 安装依赖
-            npm install
-
-            # 3. 启动
-            npm start
-            # 打开 http://localhost:3456
-            ```
+            下载 `InterviewPrep-Setup-${{ github.ref_name }}.exe`，双击安装即可使用。
 
             ---
 
