@@ -1550,6 +1550,63 @@ function requireOpencli(what) {
 }
 
 // ============================================================
+// 通用 DOCX 生成端点
+// ============================================================
+app.post('/api/export/generate-docx', async (req, res) => {
+  try {
+    const { title, content, sections } = req.body;
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
+    const CJK_FONT = 'Microsoft YaHei';
+    const FONT = { ascii: 'Arial', hAnsi: 'Arial', eastAsia: CJK_FONT };
+    
+    const children = [];
+    children.push(new Paragraph({ heading: HeadingLevel.TITLE, alignment: require('docx').AlignmentType.CENTER, spacing: { after: 200 },
+      children: [new TextRun({ text: title || '导出文档', bold: true, color: '4F46E5', font: FONT })]
+    }));
+    
+    const timestamp = new Date().toLocaleString('zh-CN');
+    children.push(new Paragraph({ alignment: require('docx').AlignmentType.CENTER, spacing: { after: 300 },
+      children: [new TextRun({ text: `由 InterviewPrep 导出 · ${timestamp}`, size: 18, color: '999999', font: FONT })]
+    }));
+
+    if (sections) {
+      for (const [label, text] of Object.entries(sections)) {
+        children.push(new Paragraph({ spacing: { before: 300, after: 120 },
+          children: [new TextRun({ text: label, bold: true, size: 24, color: '4F46E5', font: FONT })]
+        }));
+        for (const line of String(text).split('\n')) {
+          if (line.trim()) {
+            children.push(new Paragraph({ spacing: { after: 60 },
+              children: [new TextRun({ text: line, size: 20, font: FONT })]
+            }));
+          }
+        }
+      }
+    } else if (content) {
+      for (const line of String(content).split('\n')) {
+        if (line.trim()) {
+          children.push(new Paragraph({ spacing: { after: 60 },
+            children: [new TextRun({ text: line, size: 20, font: FONT })]
+          }));
+        }
+      }
+    }
+
+    const doc = new Document({
+      styles: { default: { document: { run: { font: FONT, size: 20 } } } },
+      sections: [{ properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1200, right: 1200, bottom: 1200, left: 1200 } } }, children }]
+    });
+    const buf = await Packer.toBuffer(doc);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(title||'export')}.docx`);
+    res.send(buf);
+  } catch (e) {
+    console.error('[DOCX] 生成失败:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
 // 启动
 // ============================================================
 const PORT = process.env.PORT || 3456;

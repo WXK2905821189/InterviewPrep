@@ -15,6 +15,59 @@
   --shadow: 0 2px 12px rgba(0,0,0,0.05);
 }
 
+/* ===== Dark Mode ===== */
+html.dark {
+  --bg: #0F1117;
+  --bg2: #1A1B23;
+  --bg0: #1A1B23;
+  --ink: #E4E6F0;
+  --muted: #8B8FA3;
+  --rule: #2A2C38;
+  --tag-bg: #252630;
+  --shadow: 0 2px 12px rgba(0,0,0,0.3);
+  --accent: #818CF8;
+  --accent2: #22D3EE;
+  --green: #34D399;
+  --red: #F87171;
+  --yellow: #FBBF24;
+}
+html.dark .q-card .q-type.behavioral { background: #1E1B4B; color: #A5B4FC; }
+html.dark .q-card .q-type.professional { background: #0C2D48; color: #7DD3FC; }
+html.dark .q-card .q-type.project { background: #3D2E00; color: #FDE68A; }
+html.dark .q-card .q-type.pressure { background: #3B0000; color: #FCA5A5; }
+html.dark .gap-col .tag.weak { background: #3B0000; color: var(--red); }
+html.dark .gap-col .tag.advantage { background: #002E1A; color: var(--green); }
+html.dark .q-card { border-color: var(--rule); }
+html.dark input, html.dark textarea, html.dark select {
+  background: var(--bg); color: var(--ink); border-color: var(--rule);
+}
+html.dark input::placeholder, html.dark textarea::placeholder { color: #555; }
+html.dark .navbar { background: var(--bg2); border-bottom-color: var(--rule); }
+html.dark .btn-outline { color: var(--accent); }
+html.dark .spinner { border-top-color: var(--accent); border-color: var(--rule) var(--rule) var(--accent) var(--rule); }
+html.dark .feedback-score .num { color: var(--accent); }
+html.dark .feedback-line { border-color: var(--rule); }
+html.dark .q-filter { background: var(--bg2); }
+html.dark .q-filter.active { background: var(--accent); color: #fff; }
+html.dark .q-page-btn { background: var(--bg2); color: var(--ink); }
+html.dark .opt-text { background: var(--bg); }
+html.dark .opt-text.original { border-left-color: var(--rule); }
+html.dark .opt-text.improved { border-left-color: var(--accent); background: rgba(79,70,229,0.08); }
+html.dark .tag { color: var(--ink); }
+html.dark .feedback-lines { color: var(--ink); }
+html.dark .nav-brand { color: var(--accent); }
+html.dark .hero-card .subtitle { color: var(--muted); }
+html.dark .input-card textarea { background: var(--bg); color: var(--ink); }
+html.dark .mianjing-q { border-bottom-color: var(--rule); }
+html.dark .q-card-q, html.dark .opt-label { color: var(--ink); }
+html.dark .q-card-intent { color: var(--muted); }
+html.dark .btn-bookmark { border-color: var(--rule); color: var(--muted); background: transparent; }
+html.dark #settings-modal .modal-content { background: var(--bg2); }
+html.dark details summary { color: var(--accent); }
+html.dark .switcher-option { background: var(--bg); }
+html.dark .switcher-option:hover { border-color: var(--accent); }
+html.dark .switcher-option.selected { border-color: var(--accent); }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
@@ -626,3 +679,11 @@ select:focus, .styled-select:focus {
   font-size: 0.8rem;
   padding: 0.3rem 2rem 0.3rem 0.6rem;
 }
+
+/* ===== Dark Mode Toggle ===== */
+.dark-toggle {
+  background: none; border: 1px solid var(--rule); border-radius: 20px;
+  padding: 0.3rem 0.7rem; cursor: pointer; font-size: 0.85rem;
+  color: var(--ink); margin-left: auto; transition: all 0.15s;
+}
+.dark-toggle:hover { background: var(--tag-bg); border-color: var(--accent); }

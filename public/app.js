@@ -4,6 +4,33 @@
 
 const API = '/api';
 
+// 防抖工具函数
+function debounce(fn, ms = 300) {
+  let timer;
+  return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+}
+
+// 暗色模式
+(function() {
+  const saved = localStorage.getItem('darkMode');
+  if (saved === '1' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.classList.add('dark');
+  }
+  const btn = document.getElementById('btn-dark-toggle');
+  if (btn) {
+    const update = () => {
+      const dark = document.documentElement.classList.contains('dark');
+      btn.textContent = dark ? '\u2600\uFE0F' : '\uD83C\uDF19';
+      localStorage.setItem('darkMode', dark ? '1' : '0');
+    };
+    update();
+    btn.addEventListener('click', () => {
+      document.documentElement.classList.toggle('dark');
+      update();
+    });
+  }
+})();
+
 // 全局 fetch 重试包装器（LLM API 错误时自动处理）
 async function fetchRetry(url, options = {}, retries = 2) {
   for (let i = 0; i <= retries; i++) {
@@ -97,7 +124,8 @@ async function loadDashboard() {
     if (welcome) welcome.remove();
 
     renderDashStats(data);
-    renderRadarChart(data.radarScores || {});
+    // Defer heavy chart rendering
+    setTimeout(() => renderRadarChart(data.radarScores || {}), 100);
     renderPieChart(data.typeCoverage || {});
     renderCalendar(data.calendar || {});
     renderRecentPractices(data.recentPractices || []);
@@ -316,7 +344,8 @@ async function autoSavePracticeRecord(question, answer, result) {
 // Tab 小红点系统
 function showTabDot(tabName) {
   const dot = document.querySelector(`.tab-dot[data-dot-tab="${tabName}"]`);
-  if (dot) dot.classList.add('show');
+  if (!dot || dot.classList.contains('show')) return;
+  dot.classList.add('show');
 }
 function hideTabDot(tabName) {
   const dot = document.querySelector(`.tab-dot[data-dot-tab="${tabName}"]`);
@@ -498,10 +527,19 @@ function switchTab(tabName) {
   const content = document.getElementById(`tab-${tabName}`);
   if (content) content.classList.add('active');
 
+  // Record tab activation for lazy loading
+  if (!content?.dataset.loaded) {
+    content?.setAttribute('data-loaded', '1');
+    if (tabName === 'bank') loadBank();
+    if (tabName === 'company') {/* company research loads on demand */}
+  }
+
   if (tabName === 'dashboard') loadDashboard();
   if (tabName === 'interview') renderInterviewTabHistory();
-  if (tabName === 'practice' && state.analysis) renderPracticeQuestions();
-  if (tabName === 'practice') renderPracticeHistory();
+  if (tabName === 'practice') {
+    if (state.analysis) renderPracticeQuestions();
+    renderPracticeHistory();
+  }
   if (tabName === 'resume' && state.analysis) {
     $('#resume-opt-empty').classList.remove('hidden');
     checkAndAutoScore();
@@ -1074,6 +1112,7 @@ function renderPracticeQuestions() {
   const qSection = qs.length + kb.length;
   const mjSection = mj.length;
   
+  // 性能优化：一次性 innerHTML 赋值减少 DOM 重排，然后批量绑定事件
   if (mjSection > 0) {
     // Two-section layout
     const renderList = (items, startIdx) => items.map((q, i) => `
@@ -1167,10 +1206,10 @@ function selectPracticeQuestion(question) {
 (function() {
   const ta = document.getElementById('practice-answer');
   if (ta) {
-    ta.addEventListener('input', () => {
+    ta.addEventListener('input', debounce(() => {
       ta.style.height = 'auto';
       ta.style.height = Math.max(100, ta.scrollHeight) + 'px';
-    });
+    }));
   }
 })();
 
@@ -1449,6 +1488,7 @@ function resetInterviewUI(keepReport = false) {
   if (!keepReport) {
     $('#interview-report').classList.add('hidden');
     $('#interview-report').innerHTML = '';
+    $('#interview-report-actions').classList.add('hidden');
   }
   $('#interview-area').classList.add('hidden');
   $('#interview-empty').classList.remove('hidden');
@@ -1504,6 +1544,7 @@ function renderInterviewReport(report) {
   $('#interview-report').innerHTML = html;
   $('#interview-report').classList.remove('hidden');
   $('#interview-report').scrollIntoView({ behavior: 'smooth' });
+  $('#interview-report-actions').classList.remove('hidden');
 
   // Save to interview history
   try {
@@ -2726,6 +2767,133 @@ async function markXhsLoginDone() {
 }
 window.openXhsForLogin = openXhsForLogin;
 window.markXhsLoginDone = markXhsLoginDone;
+
+// ============================================================
+// 导出功能 — DOCX + Markdown
+// ============================================================
+
+function exportMarkdown(title, content, sections) {
+  let md = `# ${title}\n\n`;
+  md += `> 由 InterviewPrep 导出 · ${new Date().toLocaleDateString('zh-CN')} ${new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}\n\n`;
+  if (sections) {
+    for (const [label, text] of Object.entries(sections)) {
+      md += `## ${label}\n\n${text}\n\n`;
+    }
+  } else {
+    md += content;
+  }
+  downloadFile(`${title}.md`, md, 'text/markdown');
+}
+
+async function exportDocx(title, content, sections) {
+  try {
+    const resp = await fetchRetry('/api/export/generate-docx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, content, sections })
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error);
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${title}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { toast('导出DOCX失败: ' + e.message); }
+}
+
+function exportCurrentQuestionsMD() {
+  if (!state.analysis) return toast('请先完成分析');
+  const qs = (state.analysis.questions || []).concat(state.analysis.kb_supplement || []).concat(state.analysis.mianjing || []);
+  if (!qs.length) return toast('没有题目可导出');
+  const sections = {};
+  sections['押题清单'] = qs.map((q,i) => `${i+1}. [${q.type||'通用'}] ${q.question}\n   🎯 ${q.examiner_intent || ''}${q.sample_answer_points?.length ? '\n   💡 ' + q.sample_answer_points.join(' / ') : ''}${q.tips?.length ? '\n   🔧 ' + q.tips.join(' / ') : ''}`).join('\n\n');
+  const company = state.analysis.jd?.company || '未知';
+  const position = state.analysis.jd?.position || '面试';
+  exportMarkdown(`${company} ${position} 押题清单`, '', sections);
+}
+
+async function exportCurrentQuestionsDocx() {
+  if (!state.analysis) return toast('请先完成分析');
+  const qs = (state.analysis.questions || []).concat(state.analysis.kb_supplement || []).concat(state.analysis.mianjing || []);
+  if (!qs.length) return toast('没有题目可导出');
+  const sections = {};
+  sections['押题清单'] = qs.map((q,i) => `${i+1}. [${q.type||'通用'}] ${q.question}\n   🎯 ${q.examiner_intent || ''}${q.sample_answer_points?.length ? '\n   💡 ' + q.sample_answer_points.join(' / ') : ''}${q.tips?.length ? '\n   🔧 ' + q.tips.join(' / ') : ''}`).join('\n\n');
+  const company = state.analysis.jd?.company || '未知';
+  const position = state.analysis.jd?.position || '面试';
+  await exportDocx(`${company} ${position} 押题清单`, '', sections);
+}
+
+function exportPracticeHistoryMD() {
+  const el = $('#phrase-panel');
+  if (!el || el.classList.contains('hidden')) { 
+    // Force load phrases
+    loadPhrasesForExport().then(phrases => {
+      if (!phrases.length) return toast('暂无练习记录');
+      const sections = {};
+      sections['练习历史'] = phrases.map((p,i) => `${i+1}. **${p.question||''}** (${p.score||0}分)\n   回答: ${(p.answer||'').slice(0, 200)}${(p.answer||'').length>200?'...':''}\n   ${p.improvedVersion ? '改进版: ' + p.improvedVersion + '\n' : ''}${p.keyTakeaways ? '关键点: ' + p.keyTakeaways : ''}`).join('\n\n');
+      exportMarkdown('练习历史记录', '', sections);
+    });
+    return;
+  }
+  // Read from rendered DOM
+  const items = document.querySelectorAll('#phrase-list .phrase-item');
+  if (!items.length) return toast('暂无练习记录');
+  const sections = {};
+  sections['练习历史'] = Array.from(items).map((item, i) => {
+    const qEl = item.querySelector('.phrase-q');
+    const aEl = item.querySelector('.phrase-a');
+    const scoreEl = item.querySelector('.phrase-score');
+    return `${i+1}. ${qEl?.textContent?.replace(/^Q:\s*/,'')||''} (${scoreEl?.textContent||'0分'})\n   ${aEl?.textContent?.slice(0,300)||''}`;
+  }).join('\n\n');
+  exportMarkdown('练习历史记录', '', sections);
+}
+
+async function loadPhrasesForExport() {
+  try {
+    const data = await fetchRetry('/api/phrases?tag=练习');
+    return data.phrases || [];
+  } catch { return []; }
+}
+
+function exportInterviewReportMD() {
+  const reportEl = $('#interview-report');
+  if (!reportEl || reportEl.classList.contains('hidden')) return toast('暂无面试报告可导出');
+  const sections = {};
+  sections['面试报告'] = reportEl.innerText;
+  exportMarkdown('面试评估报告', '', sections);
+}
+
+async function exportInterviewReportDocx() {
+  const reportEl = $('#interview-report');
+  const reportText = reportEl?.innerText || '';
+  if (!reportText) return toast('暂无面试报告可导出');
+  await exportDocx('面试评估报告', reportText);
+}
+
+function downloadFile(filename, content, mimeType) {
+  const blob = new Blob(['\uFEFF' + content], { type: mimeType + ';charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  a.click(); URL.revokeObjectURL(url);
+  toast('✅ 已导出 ' + filename);
+}
+
+// 导出按钮事件绑定
+(function() {
+  const btnQMd = document.getElementById('btn-export-questions-md');
+  const btnQDocx = document.getElementById('btn-export-questions-docx');
+  const btnPMd = document.getElementById('btn-export-practice-md');
+  const btnIMd = document.getElementById('btn-export-interview-md');
+  const btnIDocx = document.getElementById('btn-export-interview-docx');
+  
+  if (btnQMd) btnQMd.addEventListener('click', exportCurrentQuestionsMD);
+  if (btnQDocx) btnQDocx.addEventListener('click', exportCurrentQuestionsDocx);
+  if (btnPMd) btnPMd.addEventListener('click', exportPracticeHistoryMD);
+  if (btnIMd) btnIMd.addEventListener('click', exportInterviewReportMD);
+  if (btnIDocx) btnIDocx.addEventListener('click', exportInterviewReportDocx);
+})();
 
 // ============================================================
 (async () => {
