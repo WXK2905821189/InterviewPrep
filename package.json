@@ -80,7 +80,9 @@
         "dmg"
       ],
       "icon": "electron/icon.png",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": false,
+      "identity": null
     },
     "linux": {
       "target": [

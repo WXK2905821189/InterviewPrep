@@ -3,8 +3,8 @@ name: Build & Release
 on:
   push:
     tags:
-      - 'v*'          # 每次打 tag 自动触发
-  workflow_dispatch:   # 也支持手动触发
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build-windows:
@@ -13,21 +13,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
+
+      - name: Cache Electron binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            %LOCALAPPDATA%/electron/Cache
+            ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
 
       - name: Install dependencies
         run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 0
 
       - name: Build Windows installer
-        run: npx electron-builder --win --x64 -c.extraMetadata.main=electron/main.js
+        run: npx electron-builder --win --x64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USE_HARD_LINKS: 'false'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Upload installer artifact
+      - name: Show artifacts
+        run: Get-ChildItem -Path release -Recurse
+
+      - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
@@ -39,21 +54,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
+
+      - name: Cache Electron binary
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
 
       - name: Install dependencies
         run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 0
 
       - name: Build macOS dmg
-        run: npx electron-builder --mac --x64 -c.extraMetadata.main=electron/main.js
+        run: npx electron-builder --mac --x64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Upload dmg artifact
+      - name: Show artifacts
+        run: ls -la release/
+
+      - name: Upload macOS dmg
         uses: actions/upload-artifact@v4
         with:
           name: macos-installer
@@ -95,7 +122,7 @@ jobs:
 
             ---
 
-            ### 💻 或者直接运行源码
+            ### 💻 直接运行源码
 
             ```bash
             git clone https://github.com/${{ github.repository }}.git
