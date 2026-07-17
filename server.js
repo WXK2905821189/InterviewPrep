@@ -166,14 +166,6 @@ function sseError(res, msg) {
   try { sseDone(res, { error: String(msg) }); } catch {}
 }
 
-// 防止未捕获异常导致进程崩溃
-process.on('uncaughtException', (err) => {
-  console.error('[FATAL] 未捕获异常 - 进程继续运行:', err.message);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL] 未处理的Promise拒绝:', reason?.message || reason);
-});
-
 // 安全 LLM 调用 + 自动重试：捕获所有异常，返回 { value, error }
 async function safeCall(fn, retries = 1) {
   let lastError;
@@ -631,6 +623,29 @@ app.post('/api/evaluate-single', async (req, res) => {
 });
 
 // ============================================================
+// ============================================================
+// API 7b: AI追问
+// ============================================================
+app.post('/api/follow-up', async (req, res) => {
+  try {
+    const { question, answer, jdSummary, resumeText } = req.body;
+    if (!question || !answer) {
+      return res.status(400).json({ error: '请提供题目和回答' });
+    }
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+    const followUpPrompt = fillTemplate(prompts.FOLLOW_UP_SYSTEM, {
+      original_question: question,
+      candidate_answer: answer
+    });
+    const result = await llm(followUpPrompt, '', { temperature: 0.5 });
+    res.json(result);
+  } catch (e) {
+    console.error('[API] 追问生成失败:', e);
+    res.status(500).json({ error: '追问失败: ' + e.message });
+  }
+});
+
 // API 8: AI Provider 管理 — 供应商/连接/测试/模型
 // ============================================================
 
@@ -805,8 +820,127 @@ app.delete('/api/phrases/:id', (req, res) => {
 });
 
 // ============================================================
-// API 10: 会话管理 — 列表 + 切换
+// API 10: 专项训练记录 — 持久化存储
 // ============================================================
+const DRILL_RECORDS_PATH = path.join(DATA_DIR, '.data', 'drill-records.json');
+
+function loadDrillRecords() {
+  try {
+    if (fs.existsSync(DRILL_RECORDS_PATH)) {
+      const data = JSON.parse(fs.readFileSync(DRILL_RECORDS_PATH, 'utf8'));
+      return Array.isArray(data) ? data : [];
+    }
+  } catch (e) { logWarn('加载专项训练记录失败: ' + e.message); }
+  return [];
+}
+
+function saveDrillRecords(records) {
+  try {
+    const dir = path.dirname(DRILL_RECORDS_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(DRILL_RECORDS_PATH, JSON.stringify(records, null, 2), 'utf8');
+  } catch (e) { logError('保存专项训练记录失败: ' + e.message); }
+}
+
+// 保存专项训练记录
+app.post('/api/drill/records', (req, res) => {
+  try {
+    const { question, questionType, answer, scores, overallScore, improvedVersion, keyTakeaways, lineByLine } = req.body;
+    if (!question || !answer) return res.status(400).json({ error: '需要 question 和 answer' });
+
+    const records = loadDrillRecords();
+    const existingCount = records.filter(r => r.question === question).length;
+    const entry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      question,
+      questionType: questionType || '',
+      answer,
+      scores: scores || {},
+      overallScore: overallScore || 0,
+      improvedVersion: improvedVersion || '',
+      keyTakeaways: keyTakeaways || [],
+      lineByLine: lineByLine || [],
+      attemptNumber: existingCount + 1,
+      createdAt: new Date().toISOString()
+    };
+    records.unshift(entry);
+    saveDrillRecords(records);
+    res.json({ ok: true, entry, attemptNumber: entry.attemptNumber, totalAttempts: existingCount + 1 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 获取某道题的专项训练历史
+app.get('/api/drill/records', (req, res) => {
+  try {
+    const records = loadDrillRecords();
+    const question = req.query.question;
+    if (question) {
+      const filtered = records
+        .filter(r => r.question === question || r.question.includes(question) || (question && question.includes(r.question)))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      return res.json({ records: filtered, total: filtered.length });
+    }
+    res.json({ records: records.slice(0, 100), total: records.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 获取专项训练统计
+app.get('/api/drill/stats', (req, res) => {
+  try {
+    const records = loadDrillRecords();
+    const totalDrills = records.length;
+
+    const typeStats = {};
+    records.forEach(r => {
+      const t = r.questionType || '其他';
+      if (!typeStats[t]) typeStats[t] = { count: 0, totalScore: 0, avgScore: 0 };
+      typeStats[t].count++;
+      typeStats[t].totalScore += r.overallScore || 0;
+    });
+    Object.keys(typeStats).forEach(t => {
+      if (typeStats[t].count > 0) {
+        typeStats[t].avgScore = Math.round(typeStats[t].totalScore / typeStats[t].count);
+      }
+    });
+
+    const questionCount = {};
+    records.forEach(r => {
+      const key = r.question;
+      if (!questionCount[key]) questionCount[key] = { question: r.question, questionType: r.questionType, count: 0, scores: [] };
+      questionCount[key].count++;
+      if (r.overallScore) questionCount[key].scores.push(r.overallScore);
+    });
+    const topQuestions = Object.values(questionCount)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+      .map(q => ({
+        question: q.question.slice(0, 80),
+        questionType: q.questionType,
+        attemptCount: q.count,
+        latestScore: q.scores[q.scores.length - 1] || 0,
+        firstScore: q.scores[0] || 0,
+        trend: q.scores.length >= 2 ? q.scores[q.scores.length - 1] - q.scores[0] : 0
+      }));
+
+    const recentDrills = records.slice(0, 10).map(r => ({
+      date: r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : '',
+      question: (r.question || '').slice(0, 60),
+      overallScore: r.overallScore || 0,
+      questionType: r.questionType || '',
+      attemptNumber: r.attemptNumber || 1
+    }));
+
+    res.json({ totalDrills, typeStats, topQuestions, recentDrills });
+  } catch (e) {
+    console.error('Drill stats error:', e);
+    res.status(500).json({ error: 'Failed to load drill stats' });
+  }
+});
+
+// ============================================================
+// API 11: 会话管理 — 列表 + 切换
+// ============================================================
+
 
 app.get('/api/sessions', (req, res) => {
   const list = [];
@@ -828,6 +962,266 @@ app.get('/api/sessions', (req, res) => {
 });
 
 // ---- Dashboard stats endpoint ----
+
+// 专项训练弱点分析
+app.get('/api/drill/weakness', (req, res) => {
+  try {
+    const records = loadDrillRecords();
+    const dimKeys = ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'];
+    const dimLabels = { star_completeness: 'STAR完整性', quantification: '量化程度', position_match: '岗位匹配', structure: '表达结构', highlight: '亮点突出' };
+    const dimTotals = {};
+    const dimCounts = {};
+    dimKeys.forEach(k => { dimTotals[k] = 0; dimCounts[k] = 0; });
+
+    records.forEach(r => {
+      const sc = r.scores || {};
+      dimKeys.forEach(k => {
+        if (typeof sc[k] === 'number' && sc[k] > 0) {
+          dimTotals[k] += sc[k];
+          dimCounts[k]++;
+        }
+      });
+    });
+
+    const weaknesses = dimKeys
+      .map(k => ({
+        key: k,
+        label: dimLabels[k],
+        avgScore: dimCounts[k] > 0 ? Math.round(dimTotals[k] / dimCounts[k]) : 0,
+        count: dimCounts[k]
+      }))
+      .filter(w => w.avgScore > 0)
+      .sort((a, b) => a.avgScore - b.avgScore);
+
+    const weakQuestions = [];
+    if (weaknesses.length > 0) {
+      const questionMap = {};
+      records.forEach(r => {
+        const key = r.question;
+        if (!questionMap[key]) {
+          questionMap[key] = { question: key, questionType: r.questionType || '', attemptCount: 0, avgScore: 0, totalScore: 0 };
+        }
+        questionMap[key].attemptCount++;
+        questionMap[key].totalScore += (r.overallScore || 0);
+      });
+      Object.values(questionMap).forEach(q => {
+        if (q.attemptCount > 0) q.avgScore = Math.round(q.totalScore / q.attemptCount);
+      });
+      const sorted = Object.values(questionMap).sort((a, b) => a.avgScore - b.avgScore);
+      weakQuestions.push(...sorted.slice(0, 5));
+    }
+
+    res.json({ weaknesses: weaknesses.slice(0, 3), weakQuestions });
+  } catch (e) {
+    console.error('Weakness analysis error:', e);
+    res.status(500).json({ error: 'Failed to analyze weaknesses' });
+  }
+});
+
+// ============================================================
+// P1: 自定义题目管理
+// ============================================================
+const CUSTOM_QUESTIONS_PATH = path.join(DATA_DIR, '.data', 'custom-questions.json');
+
+function loadCustomQuestions() {
+  try {
+    if (fs.existsSync(CUSTOM_QUESTIONS_PATH)) {
+      return JSON.parse(fs.readFileSync(CUSTOM_QUESTIONS_PATH, 'utf-8'));
+    }
+  } catch (e) { console.error('Load custom questions error:', e); }
+  return [];
+}
+
+function saveCustomQuestions(data) {
+  try {
+    const dir = path.dirname(CUSTOM_QUESTIONS_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(CUSTOM_QUESTIONS_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (e) { console.error('Save custom questions error:', e); }
+}
+
+app.get('/api/custom-questions', (req, res) => {
+  try {
+    res.json({ questions: loadCustomQuestions() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/custom-questions', (req, res) => {
+  try {
+    const { question, type, category, examinerIntent, difficulty } = req.body;
+    if (!question || !question.trim()) {
+      return res.status(400).json({ error: '请输入题目内容' });
+    }
+    const questions = loadCustomQuestions();
+    const entry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      question: question.trim(),
+      type: type || '自定义',
+      category: category || '',
+      examiner_intent: examinerIntent || '',
+      difficulty: difficulty || '中等',
+      _source: '自定义',
+      createdAt: new Date().toISOString()
+    };
+    questions.unshift(entry);
+    saveCustomQuestions(questions);
+    res.json({ ok: true, entry, total: questions.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/custom-questions/:id', (req, res) => {
+  try {
+    const questions = loadCustomQuestions();
+    const before = questions.length;
+    const filtered = questions.filter(q => q.id !== req.params.id);
+    if (filtered.length === before) {
+      return res.status(404).json({ error: '未找到该题目' });
+    }
+    saveCustomQuestions(filtered);
+    res.json({ ok: true, deleted: before - filtered.length, total: filtered.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
+// P2: 快速复习卡片
+// ============================================================
+app.get('/api/review/cards', (req, res) => {
+  try {
+    const records = loadDrillRecords();
+    const cards = [];
+    const questionMap = {};
+    records.forEach(r => {
+      const key = r.question;
+      if (!questionMap[key]) {
+        questionMap[key] = {
+          question: key,
+          questionType: r.questionType || '',
+          answers: [],
+          bestScore: 0,
+          totalScore: 0,
+          count: 0
+        };
+      }
+      questionMap[key].answers.push({
+        answer: r.answer || '',
+        score: r.overallScore || 0,
+        scores: r.scores || {},
+        improvedVersion: r.improvedVersion || '',
+        keyTakeaways: r.keyTakeaways || [],
+        date: r.createdAt
+      });
+      questionMap[key].totalScore += (r.overallScore || 0);
+      questionMap[key].count++;
+      questionMap[key].bestScore = Math.max(questionMap[key].bestScore, r.overallScore || 0);
+    });
+
+    Object.values(questionMap).forEach(q => {
+      if (q.count > 0) q.avgScore = Math.round(q.totalScore / q.count);
+      const latest = q.answers[q.answers.length - 1];
+      cards.push({
+        question: q.question,
+        questionType: q.questionType,
+        avgScore: q.avgScore || 0,
+        bestScore: q.bestScore,
+        attemptCount: q.count,
+        latestAnswer: latest ? latest.answer : '',
+        latestImproved: latest ? latest.improvedVersion : '',
+        latestTakeaways: latest ? latest.keyTakeaways : [],
+        latestScores: latest ? latest.scores : {},
+        latestDate: latest ? latest.date : ''
+      });
+    });
+
+    cards.sort((a, b) => (a.avgScore || 0) - (b.avgScore || 0));
+    res.json({ cards: cards.slice(0, 20) });
+  } catch (e) {
+    console.error('Review cards error:', e);
+    res.status(500).json({ error: 'Failed to load review cards' });
+  }
+});
+
+// ============================================================
+// P2: 面试学习计划
+// ============================================================
+const STUDY_PLAN_PATH = path.join(DATA_DIR, '.data', 'study-plan.json');
+
+function loadStudyPlan() {
+  try {
+    if (fs.existsSync(STUDY_PLAN_PATH)) {
+      return JSON.parse(fs.readFileSync(STUDY_PLAN_PATH, 'utf-8'));
+    }
+  } catch (e) { console.error('Load study plan error:', e); }
+  return { targetDate: null, dailyGoal: 5, checkins: {}, createdAt: null };
+}
+
+function saveStudyPlan(data) {
+  try {
+    const dir = path.dirname(STUDY_PLAN_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(STUDY_PLAN_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (e) { console.error('Save study plan error:', e); }
+}
+
+app.get('/api/study-plan', (req, res) => {
+  try {
+    const plan = loadStudyPlan();
+    const drillRecords = loadDrillRecords();
+    const today = new Date().toISOString().slice(0, 10);
+    const todayCount = drillRecords.filter(r => (r.createdAt || '').startsWith(today)).length;
+
+    let daysRemaining = 0;
+    let totalDays = 0;
+    if (plan.targetDate) {
+      const target = new Date(plan.targetDate);
+      const now = new Date();
+      daysRemaining = Math.max(0, Math.ceil((target - now) / (1000 * 60 * 60 * 24)));
+      totalDays = Math.max(1, Math.ceil((target - new Date(plan.createdAt || plan.targetDate)) / (1000 * 60 * 60 * 24)));
+    }
+
+    let streak = 0;
+    const check = new Date();
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(check);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      const dayRecords = drillRecords.filter(r => (r.createdAt || '').startsWith(key));
+      if (dayRecords.length > 0) { streak++; } else { break; }
+    }
+
+    res.json({
+      plan,
+      todayCount,
+      todayGoal: plan.dailyGoal || 5,
+      daysRemaining,
+      totalDays,
+      streak,
+      progress: totalDays > 0 ? Math.round(((totalDays - daysRemaining) / totalDays) * 100) : 0
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/study-plan', (req, res) => {
+  try {
+    const { targetDate, dailyGoal } = req.body;
+    const plan = loadStudyPlan();
+    if (targetDate) plan.targetDate = targetDate;
+    if (dailyGoal !== undefined) plan.dailyGoal = Math.max(1, Math.min(50, parseInt(dailyGoal) || 5));
+    if (!plan.createdAt) plan.createdAt = new Date().toISOString();
+    saveStudyPlan(plan);
+    res.json({ ok: true, plan });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/dashboard/stats', (req, res) => {
   try {
     // Read phrase library
@@ -1361,11 +1755,13 @@ app.post('/api/mianjing-collect', async (req, res) => {
       mResult.data.questions = relevant;
       
       // 更新session中的面经数据
-      session.analysis.mianjing = mResult.data;
-      saveSessions();
+      if (session) {
+        session.analysis.mianjing = mResult.data;
+        saveSessions();
+      }
       
       // 真题库写入
-      const label = session.label || (jdParsed.position || jdParsed.company || '未命名');
+      const label = (session ? session.label : null) || (jdParsed.position || jdParsed.company || '未命名');
       if (mResult.data.questions?.length) {
         const bank = loadMianjingBank();
         for (const q of mResult.data.questions) {

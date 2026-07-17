@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // InterviewPrep MVP - Frontend App (v2)
 // ============================================================
 
@@ -61,7 +61,13 @@ let state = {
   jdText: '',
   resumeText: '',
   resumeFileName: '',
-  resumeSourceType: ''
+  resumeSourceType: '',
+  _drillMode: 'type',
+  _drillType: '',
+  _drillQuestion: null,
+  _drillFeedback: null,
+  _drillTimer: null,
+  _drillPhase: null
 };
 
 // ===== Helpers =====
@@ -341,6 +347,69 @@ async function autoSavePracticeRecord(question, answer, result) {
   } catch { /* 静默失败，不影响主流程 */ }
 }
 
+
+
+// ===== P1: Follow-up Question System =====
+function showFollowUpButton(mode, question, answer, evalResult) {
+  var existing = document.querySelector('.follow-up-section');
+  if (existing) existing.remove();
+
+  var container = mode === 'practice' ? document.getElementById('practice-feedback') : document.getElementById('drill-feedback');
+  if (!container) return;
+
+  var section = document.createElement('div');
+  section.className = 'follow-up-section';
+  section.innerHTML = '<button class=\"btn-follow-up\" id=\"btn-follow-up-' + mode + '\">AI追问练习</button>';
+  container.appendChild(section);
+
+  document.getElementById('btn-follow-up-' + mode).addEventListener('click', async function() {
+    section.innerHTML = '<p style=\"font-size:0.82rem;color:var(--muted);\">生成追问中...</p>';
+    try {
+      var jd = state.analysis ? (state.analysis.jd || {}) : {};
+      var jdSummary = jd.position ? (jd.company || '') + ' ' + jd.position : '';
+      var followUp = await fetchRetry('/api/follow-up', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: question,
+          answer: answer,
+          jdSummary: jdSummary,
+          resumeText: (state.resumeText || '').slice(0, 3000)
+        })
+      }).then(function(r) { return r.json(); });
+
+      if (followUp.should_follow_up) {
+        section.innerHTML = '<div class=\"follow-up-q\">' + (followUp.follow_up_question || '') + '</div>' +
+          '<div class=\"follow-up-reason\">追问原因：' + (followUp.reason || '') + ' (' + (followUp.follow_up_type || '') + ')</div>' +
+          '<textarea id=\"follow-up-answer-' + mode + '\" rows=\"4\" placeholder=\"输入你的追问回答...\" style=\"width:100%;min-height:100px;resize:vertical;line-height:1.7;padding:0.5rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);margin-bottom:0.5rem;\"></textarea>' +
+          '<button class=\"btn-primary\" id=\"btn-follow-up-submit-' + mode + '\" style=\"font-size:0.82rem;\">提交追问回答</button>';
+
+        document.getElementById('btn-follow-up-submit-' + mode).addEventListener('click', async function() {
+          var fuAnswer = document.getElementById('follow-up-answer-' + mode).value.trim();
+          if (!fuAnswer || fuAnswer.length < 5) { toast('请写下追问回答（至少5个字）'); return; }
+          var fuBtn = document.getElementById('btn-follow-up-submit-' + mode);
+          fuBtn.disabled = true; fuBtn.textContent = '评估中...';
+          try {
+            var fuResult = await apiEvaluateSingle(followUp.follow_up_question, fuAnswer, jdSummary, (state.resumeText || '').slice(0, 3000));
+            if (mode === 'practice') {
+              renderSingleFeedback(fuResult);
+            } else {
+              renderDrillFeedback(fuResult);
+            }
+            autoSavePracticeRecord(followUp.follow_up_question, fuAnswer, fuResult);
+            toast('追问评估完成');
+          } catch(e) { toast('评估失败: ' + e.message); }
+          finally { fuBtn.disabled = false; fuBtn.textContent = '重新提交'; }
+        });
+      } else {
+        section.innerHTML = '<p style=\"font-size:0.82rem;color:var(--green);\">回答已足够充分，无需追问</p>';
+      }
+    } catch (e) {
+      section.innerHTML = '<p style=\"font-size:0.82rem;color:var(--red);\">追问生成失败: ' + e.message + '</p>';
+    }
+  });
+}
+
 // Tab 小红点系统
 function showTabDot(tabName) {
   const dot = document.querySelector(`.tab-dot[data-dot-tab="${tabName}"]`);
@@ -545,6 +614,10 @@ function switchTab(tabName) {
     checkAndAutoScore();
   }
   if (tabName === 'mianjing') autoFillMianjingFields();
+  if (tabName === 'drill') {
+    if (state.analysis) { renderDrillQuestions(); renderDrillMode(); }
+    loadDrillStats();
+  }
 }
 
 $$('.nav-tab').forEach(tab => {
@@ -1099,12 +1172,14 @@ function renderPracticeQuestions() {
   const qs = state.analysis.questions || [];
   const kb = state.analysis.kb_supplement || [];
   const mj = state.analysis.mianjing || [];
+  const custom = (state._customQuestions || []);
   
   // Build combined list with source labels
   const allQs = [];
   qs.forEach(q => allQs.push({ ...q, _source: '' }));
   kb.forEach(q => allQs.push({ ...q, _source: '📚知识库' }));
   mj.forEach(q => allQs.push({ ...q, _source: '📡面经' }));
+  custom.forEach(q => allQs.push({ ...q, _source: '✏️自定义' }));
   
   if (allQs.length === 0) return;
   
@@ -1241,6 +1316,8 @@ $('#btn-practice-submit').addEventListener('click', async () => {
     // 小红点标记
     showTabDot('practice');
     setStatus('✅ 评估完成');
+    // 追问按钮
+    showFollowUpButton('practice', question, answer, result);
   } catch (e) {
     toast('评估失败: ' + e.message);
   } finally {
@@ -1559,10 +1636,10 @@ function renderInterviewReport(report) {
   } catch {}
 
   // 渲染雷达图
-  setTimeout(() => renderRadarChart(avg), 200);
+  setTimeout(() => renderInterviewRadarChart(avg), 200);
 }
 
-function renderRadarChart(avg) {
+function renderInterviewRadarChart(avg) {
   const el = document.getElementById('radar-chart');
   if (!el || !window.echarts) return;
   const chart = echarts.init(el, null, { renderer: 'svg' });
@@ -2926,6 +3003,856 @@ function downloadFile(filename, content, mimeType) {
       statusParts.push(`📊 ${k} tokens`);
     }
     setStatus(statusParts.join(' · '));
-  } catch { setStatus('⚪ 就绪 — 请填写JD和简历开始'); }
+} catch { setStatus('\u26aa 就绪 — 请填写JD和简历开始'); }
+
+})();
+  // ============================================================
+  // 专项训练模块
+  // ============================================================
+  function renderDrillMode() {
+    document.querySelectorAll('.drill-mode-btn').forEach(function(btn) {
+      btn.classList.toggle('active', btn.dataset.mode === state._drillMode);
+    });
+    loadDrillTypeFilter();
+    renderDrillQuestions();
+  }
+
+  function loadDrillTypeFilter() {
+    var allQs = getAllDrillQuestions();
+    var types = {};
+    allQs.forEach(function(q) { var t = q.type || '其他'; types[t] = (types[t] || 0) + 1; });
+    var filterEl = document.getElementById('drill-filter');
+    if (!filterEl) return;
+    var html = '<button class="btn-filter drill-filter-btn active" data="">全部 (' + allQs.length + ')</button>';
+    Object.keys(types).forEach(function(t) {
+      html += '<button class="btn-filter drill-filter-btn" data="' + t + '">' + t + ' (' + types[t] + ')</button>';
+    });
+    filterEl.innerHTML = html;
+    document.querySelectorAll('.drill-filter-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.drill-filter-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        state._drillType = btn.dataset.type;
+        renderDrillQuestions();
+      });
+    });
+  }
+
+  function getAllDrillQuestions() {
+    if (!state.analysis) return [];
+    var qs = state.analysis.questions || [];
+    var kb = state.analysis.kb_supplement || [];
+    var mj = state.analysis.mianjing || [];
+    var all = [];
+    qs.forEach(function(q) { all.push(Object.assign({}, q, { _source: '' })); });
+    kb.forEach(function(q) { all.push(Object.assign({}, q, { _source: '知识库' })); });
+    mj.forEach(function(q) { all.push(Object.assign({}, q, { _source: '面经' })); });
+    return all;
+  }
+
+  function renderDrillQuestions() {
+    var allQs = getAllDrillQuestions();
+    var drillEmpty = document.getElementById('drill-empty');
+    var drillArea = document.getElementById('drill-area');
+    if (!allQs.length) {
+      if (drillEmpty) drillEmpty.classList.remove('hidden');
+      if (drillArea) drillArea.classList.add('hidden');
+      return;
+    }
+    if (drillEmpty) drillEmpty.classList.add('hidden');
+    if (drillArea) drillArea.classList.remove('hidden');
+    var filtered = state._drillType ? allQs.filter(function(q) { return (q.type || '') === state._drillType; }) : allQs;
+    var listEl = document.getElementById('drill-question-list');
+    var countEl = document.getElementById('drill-q-count');
+    if (countEl) countEl.textContent = filtered.length;
+    listEl.innerHTML = filtered.map(function(q, i) {
+      var source = q._source ? '<span style="font-size:0.65rem;color:var(--accent);margin-right:4px;">' + q._source + '</span>' : '';
+      return '<li data-question="' + encodeURIComponent(q.question || '') + '">' +
+        '<span class="num">' + (i + 1) + '</span>' + source + (q.question || '') + '</li>';
+    }).join('');
+    listEl.querySelectorAll('li').forEach(function(li) {
+      li.addEventListener('click', function() { selectDrillQuestion(decodeURIComponent(li.dataset.question)); });
+    });
+  }
+
+  function selectDrillQuestion(question) {
+    var allQs = getAllDrillQuestions();
+    var found = null;
+    for (var i = 0; i < allQs.length; i++) {
+      if (allQs[i].question === question) { found = allQs[i]; break; }
+    }
+    if (!found) {
+      for (var j = 0; j < allQs.length; j++) {
+        if (allQs[j].question.indexOf(question) !== -1 || (question && question.indexOf(allQs[j].question) !== -1)) {
+          found = allQs[j]; break;
+        }
+      }
+    }
+    state._drillQuestion = question;
+    state._drillFeedback = null;
+    clearDrillTimer();
+    var taskCard = document.getElementById('drill-task-card');
+    var taskType = document.getElementById('drill-task-type');
+    var taskQ = document.getElementById('drill-task-question');
+    var taskPoints = document.getElementById('drill-task-points');
+    if (found) {
+      taskType.innerHTML = '<span class="' + getTypeClass(found.type) + '">' + (found.type || '') + '</span>';
+      taskQ.textContent = found.question || question;
+      taskPoints.innerHTML = '<strong>回答要点：</strong>使用 STAR 框架，量化成果，突出你的贡献，控制在 2 分钟内';
+    } else {
+      taskType.innerHTML = '<span>题目</span>';
+      taskQ.textContent = question || '';
+      taskPoints.innerHTML = '<strong>回答要点：</strong>使用 STAR 框架，量化成果，突出你的贡献';
+    }
+    taskCard.style.display = 'block';
+    document.getElementById('drill-timer-card').style.display = 'block';
+    document.getElementById('drill-answer-card').style.display = 'none';
+    document.getElementById('drill-feedback').classList.add('hidden');
+    document.getElementById('drill-history-card').style.display = 'none';
+    document.getElementById('btn-drill-retry').classList.add('hidden');
+    document.getElementById('drill-timer-phase').textContent = '准备作答';
+    document.getElementById('drill-timer-display').textContent = '0:30';
+    document.getElementById('drill-timer-display').className = '';
+    document.getElementById('drill-timer-actions').style.display = 'flex';
+    document.getElementById('drill-answer').value = '';
+    loadDrillAttemptInfo(question);
+    loadDrillHistory(question);
+    document.querySelectorAll('#drill-question-list li').forEach(function(li) {
+      var liQ = decodeURIComponent(li.dataset.question || '');
+      li.classList.toggle('active', liQ === question);
+    });
+    var idx = -1;
+    for (var k = 0; k < allQs.length; k++) { if (allQs[k].question === question) { idx = k; break; } }
+    var currentEl = document.getElementById('drill-current-type');
+    if (currentEl) currentEl.textContent = '当前：第 ' + (idx + 1) + ' / ' + allQs.length + ' 题';
+    setTimeout(function() {
+      document.getElementById('drill-task-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }
+
+  async function loadDrillAttemptInfo(question) {
+    try {
+      var data = await fetchRetry('/api/drill/records?question=' + encodeURIComponent(question)).then(function(r) { return r.json(); });
+      var total = data.total || 0;
+      var el = document.getElementById('drill-attempt-info');
+      if (!el) return;
+      if (total > 0) {
+        var latest = data.records[0];
+        el.innerHTML = '已练习 <b>' + total + '</b> 次' + (latest ? ' · 上次 ' + latest.overallScore + '分' : '');
+      } else {
+        el.textContent = '首次练习';
+      }
+    } catch(e) { /* ignore */ }
+  }
+
+  // ===== Timer =====
+  document.getElementById('btn-drill-start-prepare').addEventListener('click', function() {
+    startDrillTimer('prepare', 30);
+  });
+  document.getElementById('btn-drill-skip-prepare').addEventListener('click', function() {
+    startDrillTimer('answer', 120);
+  });
+  function clearDrillTimer() {
+    if (state._drillTimer) {
+      clearInterval(state._drillTimer);
+      state._drillTimer = null;
+      state._drillPhase = null;
+    }
+  }
+  function startDrillTimer(phase, seconds) {
+    clearDrillTimer();
+    state._drillPhase = phase;
+    var display = document.getElementById('drill-timer-display');
+    var phaseEl = document.getElementById('drill-timer-phase');
+    var actions = document.getElementById('drill-timer-actions');
+    var answerCard = document.getElementById('drill-answer-card');
+    var answerTimer = document.getElementById('drill-answer-timer');
+    actions.style.display = 'none';
+    display.className = '';
+    if (phase === 'prepare') {
+      phaseEl.textContent = '准备时间 — 思考你的回答结构';
+      answerCard.style.display = 'none';
+    } else {
+      phaseEl.textContent = '作答时间 — 开始回答';
+      answerCard.style.display = 'block';
+      document.getElementById('drill-answer').focus();
+    }
+    var remaining = seconds;
+    var updateDisplay = function() {
+      var mins = Math.floor(remaining / 60);
+      var secs = remaining % 60;
+      display.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
+      if (remaining <= 10) display.className = 'danger';
+      else if (remaining <= 20) display.className = 'warning';
+      if (phase === 'answer' && answerTimer) {
+        answerTimer.textContent = '（剩余 ' + mins + ':' + (secs < 10 ? '0' : '') + secs + '）';
+      }
+    };
+    updateDisplay();
+    state._drillTimer = setInterval(function() {
+      remaining--;
+      updateDisplay();
+      if (remaining <= 0) {
+        clearDrillTimer();
+        if (phase === 'prepare') {
+          phaseEl.textContent = '准备时间结束，开始作答';
+          startDrillTimer('answer', 120);
+        } else {
+          phaseEl.textContent = '时间到！';
+          display.className = 'danger';
+          if (answerTimer) answerTimer.textContent = '（时间到）';
+        }
+      }
+    }, 1000);
+  }
+
+  // ===== Submit =====
+  document.getElementById('btn-drill-submit').addEventListener('click', async function() {
+    var answer = document.getElementById('drill-answer').value.trim();
+    var question = state._drillQuestion;
+    if (!question) { toast('请先选择一道题目'); return; }
+    if (!answer || answer.length < 5) { toast('请写下你的回答（至少5个字）'); return; }
+    var btn = document.getElementById('btn-drill-submit');
+    btn.disabled = true; btn.textContent = '评估中...';
+    setStatus('评估中...');
+    try {
+      clearDrillTimer();
+      var jd = state.analysis ? (state.analysis.jd || {}) : {};
+      var jdSummary = jd.position
+        ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || jd.responsibilities || '')
+        : (jd.requirements || jd.responsibilities || '');
+      var resumeText = (state.resumeText || '').slice(0, 3000);
+      var result = await apiEvaluateSingle(question, answer, jdSummary, resumeText);
+      state._drillFeedback = result;
+      renderDrillFeedback(result);
+      var allQs = getAllDrillQuestions();
+      var found = null;
+      for (var i = 0; i < allQs.length; i++) { if (allQs[i].question === question) { found = allQs[i]; break; } }
+      var questionType = found ? (found.type || '') : '';
+      await saveDrillRecord(question, questionType, answer, result);
+      document.getElementById('btn-drill-retry').classList.remove('hidden');
+      loadDrillAttemptInfo(question);
+      loadDrillHistory(question);
+      showTabDot('drill');
+      setStatus('评估完成');
+      // 追问按钮
+      showFollowUpButton('drill', question, answer, result);
+    } catch (e) {
+      toast('评估失败: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = '重新提交';
+    }
+  });
+
+  async function saveDrillRecord(question, questionType, answer, result) {
+    try {
+      var sc = result.scores || {};
+      var scores = {
+        star_completeness: sc.star_completeness || 0,
+        quantification: sc.quantification || 0,
+        position_match: sc.position_match || 0,
+        structure: sc.structure || 0,
+        highlight: sc.highlight || 0
+      };
+      await fetchRetry('/api/drill/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: question, questionType: questionType, answer: answer, scores: scores,
+          overallScore: result.overall_score || result.over_score || 0,
+          improvedVersion: result.improved_version || '',
+          keyTakeaways: result.key_takeaways || [],
+          lineByLine: result.line_by_line || []
+        })
+      });
+    } catch(e) { /* silent */ }
+  }
+
+  function renderDrillFeedback(data) {
+    var scores = data.scores || {};
+    var lines = data.line_by_line || [];
+    var fb = document.getElementById('drill-feedback');
+    fb.classList.remove('hidden');
+    var labelMap = {star_completeness: 'STAR', quantification: '量化', position_match: '匹配', structure: '结构', highlight: '亮点'};
+    fb.innerHTML = '<div class="card feedback-card">' +
+      '<h3>评估结果 — 综合 ' + (data.overall_score || data.over_score || '--') + '分</h3>' +
+      '<div class="feedback-scores">' +
+      ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'].map(function(k) {
+        return '<div class="feedback-score"><div class="num">' + (scores[k] || '--') + '</div><div class="label">' + labelMap[k] + '</div></div>';
+      }).join('') +
+      '</div>' +
+      '<div class="feedback-lines">' + lines.map(function(l) {
+        return '<div class="feedback-line ' + (l.is_good ? 'good' : 'bad') + '">' +
+        (l.is_good ? '✓' : '✗') + ' "' + (l.quote || '') + '" — ' + (l.comment || '') + '</div>';
+      }).join('') + '</div>' +
+      (data.improved_version ? '<div class="feedback-improved"><strong>改进参考：</strong><br>' + data.improved_version + '</div>' : '') +
+      (data.key_takeaways ? '<div style="font-size:0.82rem;color:var(--muted);"><strong>关键改进点：</strong>' + (Array.isArray(data.key_takeaways) ? data.key_takeaways.join('；') : data.key_takeaways) + '</div>' : '') +
+      '</div>';
+    fb.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  // ===== Retry =====
+  document.getElementById('btn-drill-retry').addEventListener('click', function() {
+    document.getElementById('drill-answer').value = '';
+    document.getElementById('drill-feedback').classList.add('hidden');
+    document.getElementById('btn-drill-retry').classList.add('hidden');
+    document.getElementById('drill-timer-card').style.display = 'block';
+    document.getElementById('drill-timer-phase').textContent = '准备作答';
+    document.getElementById('drill-timer-display').textContent = '0:30';
+    document.getElementById('drill-timer-display').className = '';
+    document.getElementById('drill-timer-actions').style.display = 'flex';
+    document.getElementById('drill-answer-card').style.display = 'none';
+    document.getElementById('drill-task-card').scrollIntoView({ behavior: 'smooth' });
+  });
+
+  // ===== Skip =====
+  document.getElementById('btn-drill-skip').addEventListener('click', function() {
+    var allQs = getAllDrillQuestions();
+    var filtered = state._drillType ? allQs.filter(function(q) { return (q.type || '') === state._drillType; }) : allQs;
+    var currentIdx = -1;
+    for (var i = 0; i < filtered.length; i++) { if (filtered[i].question === state._drillQuestion) { currentIdx = i; break; } }
+    var nextIdx = (currentIdx + 1) % filtered.length;
+    if (filtered[nextIdx]) {
+      selectDrillQuestion(filtered[nextIdx].question);
+    }
+  });
+
+  // ===== Mode Switch =====
+  document.querySelectorAll('.drill-mode-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      state._drillMode = btn.dataset.mode;
+      renderDrillMode();
+    });
+  });
+
+  // ===== Drill History =====
+  async function loadDrillHistory(question) {
+    var card = document.getElementById('drill-history-card');
+    var list = document.getElementById('drill-history-list');
+    if (!card || !list) return;
+    try {
+      var data = await fetchRetry('/api/drill/records?question=' + encodeURIComponent(question)).then(function(r) { return r.json(); });
+      var records = data.records || [];
+      if (records.length === 0) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      list.innerHTML = records.map(function(r, i) {
+        var prev = records[i + 1];
+        var trend = '';
+        if (prev) {
+          var diff = (r.overallScore || 0) - (prev.overallScore || 0);
+          if (diff > 0) trend = '<span class="drill-score-trend-up">↑' + diff + '</span>';
+          else if (diff < 0) trend = '<span class="drill-score-trend-down">↓' + Math.abs(diff) + '</span>';
+          else trend = '<span class="drill-score-trend-same">→</span>';
+        }
+        var date = r.createdAt ? new Date(r.createdAt).toLocaleDateString('zh-CN') + ' ' + new Date(r.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+        return '<div class="drill-history-item">' +
+          '<span class="drill-attempt-badge">#' + (r.attemptNumber || '-') + '</span>' +
+          '<span style="flex:1;">' + date + '</span>' +
+          '<span style="font-weight:700;font-size:1.1rem;color:var(--accent);">' + (r.overallScore || '-') + '分</span>' +
+          trend + '</div>';
+      }).join('');
+      var chartEl = document.getElementById('drill-history-chart');
+      if (chartEl && typeof echarts !== 'undefined') {
+        renderDrillHistoryChart(chartEl, records);
+      }
+    } catch(e) { card.style.display = 'none'; }
+  }
+
+  function renderDrillHistoryChart(el, records) {
+    var sorted = [].concat(records).reverse();
+    var labels = sorted.map(function(r, i) { return '#' + (i + 1); });
+    var scores = sorted.map(function(r) { return r.overallScore || 0; });
+    if (typeof echarts === 'undefined') {
+      el.innerHTML = '<p style="text-align:center;color:var(--muted);padding:2rem;">图表加载中...</p>';
+      return;
+    }
+    var chart = echarts.init(el);
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      grid: { left: 40, right: 20, top: 20, bottom: 30 },
+      xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 11 } },
+      yAxis: { type: 'value', min: 0, max: 100, axisLabel: { fontSize: 11 } },
+      series: [{
+        data: scores, type: 'line', smooth: true,
+        lineStyle: { color: '#4F46E5', width: 2 },
+        itemStyle: { color: '#4F46E5' },
+        areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(79,70,229,0.2)' }, { offset: 1, color: 'rgba(79,70,229,0.02)' }] } },
+        markLine: { silent: true, data: [{ yAxis: 60, lineStyle: { color: '#F59E0B', type: 'dashed' }, label: { formatter: '及格线 60' } }] }
+      }]
+    });
+    var resizeFn = function() { try { chart.resize(); } catch(e) {} };
+    window.addEventListener('resize', resizeFn);
+    el._chart = chart;
+    el._resizeFn = resizeFn;
+  }
+
+  // ===== Drill Stats =====
+  function loadDrillStats() {
+    var panel = document.getElementById('drill-stats-panel');
+    var content = document.getElementById('drill-stats-content');
+    if (!panel || !content) return;
+    panel.addEventListener('toggle', function() {
+      if (panel.open && !content.dataset.loaded) {
+        content.dataset.loaded = '1';
+        fetchRetry('/api/drill/stats').then(function(r) { return r.json(); }).then(function(data) {
+          var html = '<div class="drill-stats-grid">' +
+            '<div class="drill-stat-card"><div class="num">' + (data.totalDrills || 0) + '</div><div class="label">总训练次数</div></div>';
+          Object.keys(data.typeStats || {}).forEach(function(t) {
+            var s = data.typeStats[t];
+            html += '<div class="drill-stat-card"><div class="num">' + s.avgScore + '</div><div class="label">' + t + '平均分</div></div>';
+          });
+          html += '</div>';
+          if (data.topQuestions && data.topQuestions.length > 0) {
+            html += '<h4 style="margin-bottom:0.5rem;">刻意练习最多</h4>';
+            data.topQuestions.forEach(function(q) {
+              var trendIcon = q.trend > 0 ? ' <span class="drill-score-trend-up">↑' + q.trend + '</span>' :
+                q.trend < 0 ? ' <span class="drill-score-trend-down">↓' + Math.abs(q.trend) + '</span>' : '';
+              html += '<div class="drill-history-item">' +
+                '<span class="drill-attempt-badge">' + q.attemptCount + '次</span>' +
+                '<span style="flex:1;font-size:0.82rem;">' + (q.question || '').slice(0, 60) + '</span>' +
+                '<span style="font-size:0.78rem;color:var(--muted);">' + q.firstScore + '→' + q.latestScore + '</span>' +
+                trendIcon + '</div>';
+            });
+          }
+          content.innerHTML = html;
+        }).catch(function(e) { content.innerHTML = '<p style="color:var(--muted);">加载失败</p>'; });
+      }
+    });
+  }
+
+  // ===== Drill Answer Auto-resize =====
+  (function() {
+    var ta = document.getElementById('drill-answer');
+    if (ta) {
+      ta.addEventListener('input', debounce(function() {
+        ta.style.height = 'auto';
+        ta.style.height = Math.max(100, ta.scrollHeight) + 'px';
+      }, 300));
+    }
+  })();
+
+// ===== Voice Recording =====
+  var voiceBtn = document.getElementById('btn-drill-voice');
+  var voiceStatus = document.getElementById('drill-voice-status');
+  var voiceRecognition = null;
+  var voiceIsRecording = false;
+
+  if (voiceBtn) {
+    // Check browser support
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      voiceBtn.style.display = 'flex';
+      voiceBtn.addEventListener('click', function() {
+        if (voiceIsRecording) {
+          stopVoiceRecording();
+        } else {
+          startVoiceRecording();
+        }
+      });
+
+      function startVoiceRecording() {
+        voiceRecognition = new SpeechRecognition();
+        voiceRecognition.lang = 'zh-CN';
+        voiceRecognition.interimResults = true;
+        voiceRecognition.continuous = true;
+        voiceRecognition.maxAlternatives = 1;
+
+        var finalTranscript = '';
+        var ta = document.getElementById('drill-answer');
+
+        voiceRecognition.onresult = function(event) {
+          var interim = '';
+          for (var i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            } else {
+              interim += event.results[i][0].transcript;
+            }
+          }
+          ta.value = (finalTranscript + interim).trim();
+          ta.style.height = 'auto';
+          ta.style.height = Math.max(100, ta.scrollHeight) + 'px';
+        };
+
+        voiceRecognition.onerror = function(event) {
+          if (event.error === 'no-speech') return;
+          console.warn('Speech recognition error:', event.error);
+          stopVoiceRecording();
+          if (event.error === 'not-allowed') {
+            toast('麦克风权限被拒绝，请在浏览器设置中允许麦克风访问');
+          }
+        };
+
+        voiceRecognition.onend = function() {
+          if (voiceIsRecording) {
+            // Auto-restart for continuous recording
+            try { voiceRecognition.start(); } catch(e) {}
+          }
+        };
+
+        try {
+          voiceRecognition.start();
+          voiceIsRecording = true;
+          voiceBtn.classList.add('recording');
+          voiceBtn.textContent = '⏹';
+          if (voiceStatus) voiceStatus.style.display = 'block';
+          // Also start the answer timer if not already started
+          var answerCard = document.getElementById('drill-answer-card');
+          if (answerCard && answerCard.style.display === 'block' && !state._drillTimer) {
+            startDrillTimer('answer', 120);
+          }
+        } catch(e) {
+          toast('语音识别启动失败: ' + e.message);
+        }
+      }
+
+      function stopVoiceRecording() {
+        voiceIsRecording = false;
+        if (voiceRecognition) {
+          try { voiceRecognition.stop(); } catch(e) {}
+          voiceRecognition = null;
+        }
+        voiceBtn.classList.remove('recording');
+        voiceBtn.textContent = '🎤';
+        if (voiceStatus) voiceStatus.style.display = 'none';
+      }
+    } else {
+      voiceBtn.style.display = 'none';
+      console.log('Speech Recognition not supported in this browser');
+    }
+  }
+
+  // ===== Smart Recommendation =====
+  var smartBtn = document.createElement('button');
+  smartBtn.className = 'drill-smart-btn';
+  smartBtn.textContent = '🎯 智能推荐';
+  smartBtn.style.display = 'none';
+  smartBtn.addEventListener('click', function() {
+    var isActive = smartBtn.classList.toggle('active');
+    if (isActive) {
+      loadSmartRecommendation();
+    } else {
+      state._drillType = '';
+      renderDrillQuestions();
+      // Reset filter buttons
+      document.querySelectorAll('.drill-filter-btn').forEach(function(b) { b.classList.remove('active'); });
+      var allBtn = document.querySelector('.drill-filter-btn[data=""]');
+      if (allBtn) allBtn.classList.add('active');
+    }
+  });
+
+  var filterContainer = document.getElementById('drill-filter');
+  if (filterContainer) {
+    filterContainer.parentNode.insertBefore(smartBtn, filterContainer.nextSibling);
+  }
+
+  async function loadSmartRecommendation() {
+    try {
+      smartBtn.textContent = '⏳ 分析中...';
+      var data = await fetchRetry('/api/drill/weakness').then(function(r) { return r.json(); });
+      var weakQs = data.weakQuestions || [];
+      if (weakQs.length === 0) {
+        toast('暂无足够数据，请先完成几次练习');
+        smartBtn.classList.remove('active');
+        smartBtn.textContent = '🎯 智能推荐';
+        return;
+      }
+      state._smartQuestions = weakQs.map(function(q) { return q.question; });
+      renderDrillQuestions();
+      smartBtn.textContent = '🎯 智能推荐 (' + weakQs.length + '题)';
+    } catch(e) {
+      toast('智能推荐加载失败');
+      smartBtn.classList.remove('active');
+      smartBtn.textContent = '🎯 智能推荐';
+    }
+  }
+
+  // Override getAllDrillQuestions to support smart sort
+  var _origGetAllDrillQuestions = getAllDrillQuestions;
+  getAllDrillQuestions = function() {
+    var all = _origGetAllDrillQuestions();
+    if (smartBtn.classList.contains('active') && state._smartQuestions && state._smartQuestions.length > 0) {
+      var smartSet = {};
+      state._smartQuestions.forEach(function(q, i) { smartSet[q] = i; });
+      all.sort(function(a, b) {
+        var aIdx = smartSet.hasOwnProperty(a.question) ? smartSet[a.question] : 999;
+        var bIdx = smartSet.hasOwnProperty(b.question) ? smartSet[b.question] : 999;
+        return aIdx - bIdx;
+      });
+    }
+    return all;
+  };
+
+  // ===== Weakness Card on Dashboard =====
+  var _origLoadDashboard = loadDashboard;
+  loadDashboard = async function() {
+    await _origLoadDashboard();
+    renderWeaknessCard();
+  };
+
+  async function renderWeaknessCard() {
+    var container = document.getElementById('tab-dashboard');
+    if (!container) return;
+    // Remove existing weakness card
+    var existing = document.getElementById('dash-weakness-card');
+    if (existing) existing.remove();
+
+    try {
+      var data = await fetchRetry('/api/drill/weakness').then(function(r) { return r.json(); });
+      var weaknesses = data.weaknesses || [];
+      if (weaknesses.length === 0) return;
+
+      var card = document.createElement('div');
+      card.id = 'dash-weakness-card';
+      card.className = 'card weakness-card';
+      var emojiMap = { star_completeness: '📋', quantification: '📊', position_match: '🎯', structure: '🗂️', highlight: '✨' };
+
+      var html = '<h3 style="margin-bottom:0.8rem;">⚠️ 待提升维度</h3>';
+      weaknesses.forEach(function(w) {
+        var pct = Math.max(5, w.avgScore);
+        html += '<div class="weakness-dim">' +
+          '<span class="weakness-dim-label">' + (emojiMap[w.key] || '') + ' ' + w.label + '</span>' +
+          '<div class="weakness-dim-bar"><div class="weakness-dim-fill" style="width:' + pct + '%;"></div></div>' +
+          '<span class="weakness-dim-score">' + w.avgScore + '分</span>' +
+          '</div>';
+      });
+      html += '<p style="font-size:0.75rem;color:var(--muted);margin-top:0.5rem;">💡 去「专项训练」使用「智能推荐」针对性练习</p>';
+
+      card.innerHTML = html;
+      var statsEl = document.getElementById('dash-stats');
+      if (statsEl) {
+        statsEl.parentNode.insertBefore(card, statsEl.nextSibling);
+      } else {
+        container.appendChild(card);
+      }
+    } catch(e) { /* ignore */ }
+  }
+
+  
+
+// ============================================================
+// P1: Custom Question Management
+// ============================================================
+(function() {
+  var customPanel = document.getElementById('custom-question-panel');
+  if (!customPanel) return;
+
+  customPanel.addEventListener('toggle', function() {
+    if (customPanel.open) loadCustomQuestionList();
+  });
+
+  document.getElementById('btn-custom-q-add').addEventListener('click', async function() {
+    var text = document.getElementById('custom-q-text').value.trim();
+    var type = document.getElementById('custom-q-type').value;
+    if (!text) { toast('请输入题目内容'); return; }
+    try {
+      await fetchRetry('/api/custom-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: text, type: type })
+      });
+      document.getElementById('custom-q-text').value = '';
+      toast('题目已添加');
+      loadCustomQuestionList();
+      if (typeof renderDrillQuestions === 'function') renderDrillQuestions();
+      if (typeof renderPracticeQuestions === 'function') renderPracticeQuestions();
+    } catch(e) { toast('添加失败: ' + e.message); }
+  });
+
+  async function loadCustomQuestionList() {
+    var el = document.getElementById('custom-q-list');
+    try {
+      var data = await fetchRetry('/api/custom-questions').then(function(r) { return r.json(); });
+      var qs = data.questions || [];
+      if (qs.length === 0) {
+        el.innerHTML = '<p style=\"color:var(--muted);\">暂无自定义题目，在上方添加</p>';
+        return;
+      }
+      el.innerHTML = qs.map(function(q) {
+        return '<div class=\"custom-q-item\">' +
+          '<span style=\"flex:1;\">[' + (q.type || '') + '] ' + (q.question || '') + '</span>' +
+          '<button class=\"custom-q-del\" data-id=\"' + q.id + '\">x</button>' +
+          '</div>';
+      }).join('');
+      el.querySelectorAll('.custom-q-del').forEach(function(btn) {
+        btn.addEventListener('click', async function(e) {
+          e.stopPropagation();
+          var id = btn.dataset.id;
+          try {
+            await fetchRetry('/api/custom-questions/' + id, { method: 'DELETE' });
+            loadCustomQuestionList();
+            if (typeof renderDrillQuestions === 'function') renderDrillQuestions();
+            if (typeof renderPracticeQuestions === 'function') renderPracticeQuestions();
+          } catch(e) { toast('删除失败'); }
+        });
+      });
+    } catch(e) { el.innerHTML = '<p style=\"color:var(--red);\">加载失败</p>'; }
+  }
+
+  // Load custom questions eagerly into state for sync access
+  (async function() {
+    try {
+      var data = await fetchRetry('/api/custom-questions').then(function(r) { return r.json(); });
+      state._customQuestions = (data.questions || []).map(function(q) {
+        return {
+          question: q.question,
+          type: q.type || '自定义',
+          category: q.category || '',
+          examiner_intent: q.examiner_intent || '',
+          difficulty: q.difficulty || '中等',
+          _source: '自定义'
+        };
+      });
+    } catch(e) { state._customQuestions = []; }
+  })();
+
+  // Patch getAllDrillQuestions to include custom questions (sync, not async)
+  if (typeof getAllDrillQuestions === 'function') {
+    var _origGetAllDrill = getAllDrillQuestions;
+    getAllDrillQuestions = function() {
+      var all = _origGetAllDrill();
+      if (state._customQuestions && state._customQuestions.length > 0) {
+        all = all.concat(state._customQuestions);
+      }
+      return all;
+    };
+  }
 })();
 
+// ============================================================
+// P2: Review Cards (Flashcard)
+// ============================================================
+(function() {
+  var reviewCards = [];
+  var reviewIndex = 0;
+  var reviewCard = document.getElementById('review-card');
+  var reviewSection = document.getElementById('review-cards-section');
+
+  async function loadReviewCards() {
+    try {
+      var data = await fetchRetry('/api/review/cards').then(function(r) { return r.json(); });
+      reviewCards = data.cards || [];
+      if (reviewCards.length === 0) {
+        if (reviewSection) reviewSection.style.display = 'none';
+        return;
+      }
+      if (reviewSection) reviewSection.style.display = 'block';
+      reviewIndex = 0;
+      renderReviewCard();
+    } catch(e) {
+      if (reviewSection) reviewSection.style.display = 'none';
+    }
+  }
+
+  function renderReviewCard() {
+    if (!reviewCard || reviewCards.length === 0) return;
+    var card = reviewCards[reviewIndex];
+    var indexEl = document.getElementById('review-card-index');
+    if (indexEl) indexEl.textContent = (reviewIndex + 1) + '/' + reviewCards.length;
+
+    document.getElementById('review-card-type').textContent = card.questionType || '题目';
+    document.getElementById('review-card-question').textContent = card.question || '';
+
+    var sc = card.latestScores || {};
+    var dimLabels = { star_completeness: 'STAR', quantification: '量化', position_match: '匹配', structure: '结构', highlight: '亮点' };
+    var scoresHtml = Object.keys(dimLabels).map(function(k) {
+      var v = sc[k] || 0;
+      var cls = v < 60 ? ' weak' : '';
+      return '<span class=\"review-score-item' + cls + '\">' + dimLabels[k] + ': ' + v + '</span>';
+    }).join('');
+    document.getElementById('review-card-scores').innerHTML = scoresHtml;
+    document.getElementById('review-card-improved').innerHTML = '<strong>改进参考：</strong><br>' + (card.latestImproved || '暂无');
+    var takeaways = card.latestTakeaways || [];
+    document.getElementById('review-card-takeaways').innerHTML = takeaways.length > 0 ?
+      '<strong>关键改进点：</strong><ul>' + takeaways.map(function(t) { return '<li>' + t + '</li>'; }).join('') + '</ul>' :
+      '<strong>关键改进点：</strong>暂无';
+  }
+
+  if (reviewCard) {
+    reviewCard.addEventListener('click', function() {
+      reviewCard.classList.toggle('flipped');
+    });
+  }
+
+  document.getElementById('btn-review-prev').addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (reviewCards.length === 0) return;
+    reviewIndex = (reviewIndex - 1 + reviewCards.length) % reviewCards.length;
+    if (reviewCard) reviewCard.classList.remove('flipped');
+    renderReviewCard();
+  });
+
+  document.getElementById('btn-review-next').addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (reviewCards.length === 0) return;
+    reviewIndex = (reviewIndex + 1) % reviewCards.length;
+    if (reviewCard) reviewCard.classList.remove('flipped');
+    renderReviewCard();
+  });
+
+  if (typeof loadDashboard === 'function') {
+    var _origLoadDashboard2 = loadDashboard;
+    loadDashboard = async function() {
+      await _origLoadDashboard2();
+      loadReviewCards();
+      loadStudyPlan();
+    };
+  }
+})();
+
+// ============================================================
+// P2: Study Plan
+// ============================================================
+(function() {
+  async function loadStudyPlan() {
+    try {
+      var data = await fetchRetry('/api/study-plan').then(function(r) { return r.json(); });
+      var plan = data.plan || {};
+      var empty = document.getElementById('study-plan-empty');
+      var active = document.getElementById('study-plan-active');
+
+      if (!plan.targetDate) {
+        if (empty) empty.style.display = 'block';
+        if (active) active.style.display = 'none';
+        return;
+      }
+
+      if (empty) empty.style.display = 'none';
+      if (active) active.style.display = 'block';
+
+      var days = data.daysRemaining || 0;
+      document.getElementById('study-countdown').textContent = days + '天';
+      document.getElementById('study-streak').textContent = data.streak || 0;
+      document.getElementById('study-today').textContent = (data.todayCount || 0) + '/' + (data.todayGoal || 5);
+
+      var pct = Math.min(100, data.progress || 0);
+      document.getElementById('study-progress-fill').style.width = pct + '%';
+      document.getElementById('study-progress-text').textContent = '总进度 ' + pct + '%';
+
+      document.getElementById('study-target-date').value = plan.targetDate ? plan.targetDate.slice(0, 10) : '';
+      document.getElementById('study-daily-goal').value = plan.dailyGoal || 5;
+    } catch(e) { /* ignore */ }
+  }
+
+  document.getElementById('btn-study-plan-save').addEventListener('click', async function() {
+    var targetDate = document.getElementById('study-target-date').value;
+    var dailyGoal = parseInt(document.getElementById('study-daily-goal').value) || 5;
+    if (!targetDate) { toast('请选择目标面试日期'); return; }
+    try {
+      await fetchRetry('/api/study-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDate: targetDate, dailyGoal: dailyGoal })
+      });
+      toast('计划已保存');
+      loadStudyPlan();
+    } catch(e) { toast('保存失败: ' + e.message); }
+  });
+
+  document.getElementById('btn-study-plan-edit').addEventListener('click', function() {
+    var empty = document.getElementById('study-plan-empty');
+    var active = document.getElementById('study-plan-active');
+    if (empty) empty.style.display = 'block';
+    if (active) active.style.display = 'none';
+  });
+})();

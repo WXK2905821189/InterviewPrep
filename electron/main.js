@@ -77,7 +77,7 @@ function buildMenu() {
     {
       label: '应用',
       submenu: [
-        { label: '关于 InterviewPrep', click: () => dialog.showMessageBox(mainWindow, { title: '关于', message: 'InterviewPrep MVP v1.2.0\n\nAI 面试押题与模拟面试官\n\n基于 OpenCLI + LLM 驱动', type: 'info' }) },
+        { label: '关于 InterviewPrep', click: () => dialog.showMessageBox(mainWindow, { title: '关于', message: 'InterviewPrep MVP v1.4.0\n\nAI 面试押题与模拟面试官\n\n基于 OpenCLI + LLM 驱动', type: 'info' }) },
         { type: 'separator' },
         { label: '退出', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() }
       ]

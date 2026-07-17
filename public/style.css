@@ -687,3 +687,123 @@ select:focus, .styled-select:focus {
   color: var(--ink); margin-left: auto; transition: all 0.15s;
 }
 .dark-toggle:hover { background: var(--tag-bg); border-color: var(--accent); }
+
+/* ===== Drill Mode ===== */
+.drill-mode-btn {
+  padding: 0.35rem 1rem; border: 1px solid var(--rule); border-radius: 20px;
+  font-size: 0.82rem; cursor: pointer; background: var(--bg2); color: var(--muted);
+  transition: all 0.15s;
+}
+.drill-mode-btn:hover { border-color: var(--accent); color: var(--accent); }
+.drill-mode-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.drill-task-card {
+  border-left: 4px solid var(--accent2) !important;
+  background: linear-gradient(135deg, rgba(6,182,212,0.03), rgba(79,70,229,0.03));
+}
+
+/* Drill Timer */
+#drill-timer-display {
+  font-size: 3rem; font-weight: 800; color: var(--accent);
+  font-family: 'Consolas', 'Courier New', monospace;
+  transition: color 0.3s;
+}
+#drill-timer-display.warning { color: var(--yellow); }
+#drill-timer-display.danger { color: var(--red); animation: pulse-timer 0.5s infinite; }
+@keyframes pulse-timer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Drill Question List */
+#drill-question-list {
+  list-style: none; padding: 0; margin: 0;
+}
+#drill-question-list li {
+  padding: 0.45rem 0.6rem; border-radius: 6px; cursor: pointer;
+  border-bottom: 1px solid var(--rule); font-size: 0.84rem;
+  display: flex; align-items: flex-start; gap: 0.5rem; line-height: 1.5;
+}
+#drill-question-list li:hover { background: var(--tag-bg); }
+#drill-question-list li.active { background: var(--tag-bg); font-weight: 600; color: var(--accent); }
+#drill-question-list li.active .q-num { background: var(--accent); color: #fff; }
+
+/* Drill History */
+.drill-history-item {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.5rem; border-bottom: 1px solid var(--rule);
+  font-size: 0.82rem;
+}
+.drill-attempt-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-weight: 700; font-size: 0.72rem;
+  flex-shrink: 0;
+}
+.drill-score-trend-up { color: var(--green); font-weight: 600; }
+.drill-score-trend-down { color: var(--red); font-weight: 600; }
+.drill-score-trend-same { color: var(--muted); }
+
+/* Drill Stats */
+.drill-stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.8rem; margin-bottom: 1rem;
+}
+.drill-stat-card {
+  text-align: center; padding: 0.8rem;
+  background: var(--tag-bg); border-radius: 8px;
+}
+.drill-stat-card .num { font-size: 1.8rem; font-weight: 800; color: var(--accent); }
+.drill-stat-card .label { font-size: 0.72rem; color: var(--muted); margin-top: 0.2rem; }
+
+
+/* ===== Voice Recording ===== */
+.btn-voice {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 2px solid var(--rule); background: var(--bg2);
+  font-size: 1.2rem; cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 2px;
+}
+.btn-voice:hover { border-color: var(--accent); color: var(--accent); }
+.btn-voice.recording {
+  background: #FEE2E2; border-color: var(--red); color: var(--red);
+  animation: pulse-voice-btn 1.5s infinite;
+}
+@keyframes pulse-voice-btn {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+}
+@keyframes pulse-voice {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+#drill-voice-status { transition: opacity 0.3s; }
+
+/* ===== Weakness Card ===== */
+.weakness-card {
+  border-left: 4px solid var(--red) !important;
+  background: linear-gradient(135deg, rgba(220,38,38,0.03), rgba(220,38,38,0.01)) !important;
+}
+.weakness-dim {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.weakness-dim:last-child { border-bottom: none; }
+.weakness-dim-bar {
+  flex: 1; height: 8px; background: var(--rule); border-radius: 4px; overflow: hidden;
+}
+.weakness-dim-fill {
+  height: 100%; background: var(--red); border-radius: 4px; transition: width 0.5s;
+}
+.weakness-dim-label { font-size: 0.8rem; min-width: 70px; }
+.weakness-dim-score { font-size: 0.85rem; font-weight: 700; color: var(--red); min-width: 45px; text-align: right; }
+
+/* ===== Smart Recommendation ===== */
+.drill-smart-btn {
+  padding: 0.25rem 0.7rem; border: 1px solid var(--red); border-radius: 20px;
+  font-size: 0.78rem; cursor: pointer; background: #FEE2E2; color: var(--red);
+  transition: all 0.15s;
+}
+.drill-smart-btn:hover { background: #FECACA; }
+.drill-smart-btn.active { background: var(--red); color: #fff; border-color: var(--red); }
