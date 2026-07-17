@@ -62,7 +62,16 @@ const {
   optimizeResume
 } = require('./chatflow/engine');
 
-// ---- ai-provider-kit 集成 ----
+// ---- ai-provider-kit 集成（云端自动降级） ----
+let provider;
+try {
+  provider = require('./chatflow/ai-provider');
+  console.log('[Server] 使用 ai-provider-kit');
+} catch (e) {
+  console.log('[Server] ai-provider-kit 不可用, 使用独立连接存储');
+  provider = require('./chatflow/conn-store');
+}
+
 const {
   listConnections,
   saveConnection,
@@ -71,12 +80,12 @@ const {
   testConnection,
   listProviders,
   fetchModels,
-  startGateway,
-  PROVIDER_KIT_PATH,
-  setConnectionTemperature,
-  getConnectionTemperature,
-  getTokenUsage
-} = require('./chatflow/ai-provider');
+  startGateway = () => { throw new Error('gateway unavailable'); },
+  PROVIDER_KIT_PATH = '',
+  setConnectionTemperature = () => {},
+  getConnectionTemperature = () => 0.7,
+  getTokenUsage = () => ({ prompt: 0, completion: 0, total: 0, calls: 0 })
+} = provider;
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -1622,15 +1631,20 @@ function startServer() {
       console.log(`   应用地址: http://localhost:${PORT}`);
       console.log(`   AI Provider Kit: ${PROVIDER_KIT_PATH}`);
 
-      try {
-        const { url } = await startGateway(GATEWAY_PORT);
-        logInfo(`网关已启动: ${url}`);
-        console.log(`   网关地址: ${url} (OpenAI-compatible)`);
-      } catch (e) {
-        logWarn(`网关未启动: ${e.message?.slice(0, 80)}`);
-        console.log(`   网关: 未启动 (${e.message?.slice(0, 80)})`);
+      // 云端部署时跳过 AI 网关（只暴露一个端口）
+      if (process.env.NO_GATEWAY === '1') {
+        console.log(`   网关: 云端模式跳过`);
+      } else {
+        try {
+          const { url } = await startGateway(GATEWAY_PORT);
+          logInfo(`网关已启动: ${url}`);
+          console.log(`   网关地址: ${url} (OpenAI-compatible)`);
+        } catch (e) {
+          logWarn(`网关未启动: ${e.message?.slice(0, 80)}`);
+          console.log(`   网关: 未启动 (${e.message?.slice(0, 80)})`);
+        }
+        console.log();
       }
-      console.log();
 
       // Electron 模式下不打开外部浏览器
       if (!IS_ELECTRON) {
