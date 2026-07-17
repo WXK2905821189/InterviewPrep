@@ -257,7 +257,34 @@ async function optimizeResume(jdParsed, resumeText) {
     resume_text: resumeText
   });
 
-  return await llm(optPrompt, '', { temperature: 0.5 });
+  const result = await llm(optPrompt, '', { temperature: 0.5 });
+
+  // 兜底: LLM 返回 JSON 解析失败时，从 raw 文本中尝试提取
+  if (result.parse_error) {
+    console.warn('[engine] 简历优化 JSON 解析失败，尝试从 raw 文本生成降级结果');
+    // 从原始文本中提取可用的段落作为 optimizations
+    const lines = (result.raw || '').split(/\n(?=[\d]+[\.\、]|[☞✓✅✔✕✗❌⚠])/).filter(Boolean);
+    const fallbackOpts = [];
+    for (const line of lines) {
+      const parts = line.split(/[→\->]/);
+      if (parts.length === 2 && parts[0].trim().length > 5 && parts[1].trim().length > 5) {
+        fallbackOpts.push({ original: parts[0].trim(), suggestion: parts[1].trim(), reason: 'AI 原始输出（未解析为JSON）' });
+      } else if (line.trim().length > 10) {
+        fallbackOpts.push({ original: '(原始输出)', suggestion: line.trim(), reason: 'AI 原始输出' });
+      }
+    }
+    return {
+      optimizations: fallbackOpts.length > 0 ? fallbackOpts : [{
+        original: '无法解析 AI 返回的结构化数据',
+        suggestion: result.raw || '',
+        reason: 'AI 以非 JSON 格式返回，已完整展示'
+      }],
+      elevator_pitch: jdParsed.position ? `我是${jdParsed.position}岗位的最佳候选人` : '',
+      self_intro_script: ''
+    };
+  }
+
+  return result;
 }
 
 module.exports = {

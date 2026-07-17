@@ -146,10 +146,19 @@ async function llm(systemPrompt, userContent, { jsonMode = true, temperature = 0
 
     if (jsonMode) {
       try {
-        const match = text.match(/\{[\s\S]*\}/);
-        return JSON.parse(match ? match[0] : text);
-      } catch {
-        return { raw: text, parse_error: true };
+        // 策略1: 匹配 markdown 代码块中的 JSON
+        const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+        const candidate = codeBlock ? codeBlock[1] : text;
+        // 策略2: 提取最外层 {...}  用非贪婪 + 结尾锚定
+        const braceMatch = candidate.match(/\{[\s\S]*\}/);
+        const parsed = JSON.parse(braceMatch ? braceMatch[0] : candidate);
+        // 防止解析出 {} 空对象（模型只回了一个花括号提示符）
+        if (Object.keys(parsed).length === 0) throw new Error('empty object');
+        return parsed;
+      } catch (e) {
+        console.warn('[AI Provider] JSON 解析失败，返回原始文本. 原因:', e.message?.slice(0, 60));
+        console.warn('[AI Provider] 原始响应 (前 300 字):', text?.slice(0, 300));
+        return { raw: text, parse_error: true, error_detail: e.message };
       }
     }
     return text;
