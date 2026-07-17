@@ -760,13 +760,14 @@ app.get('/api/usage', (req, res) => {
 // 保存话术
 app.post('/api/phrases', (req, res) => {
   try {
-    const { question, answer, improvedVersion, score, tags } = req.body;
+    const { question, answer, improvedVersion, keyTakeaways, score, scores, tags, type } = req.body;
     if (!question || !answer) return res.status(400).json({ error: '需要 question 和 answer' });
     const phrases = loadPhrases();
     const entry = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      question, answer, improvedVersion: improvedVersion || '', score: score || 0,
-      tags: tags || [], createdAt: new Date().toISOString()
+      question, answer, improvedVersion: improvedVersion || '', keyTakeaways: keyTakeaways || '',
+      score: score || 0, scores: scores || {}, tags: tags || [], type: type || '',
+      createdAt: new Date().toISOString()
     };
     phrases.unshift(entry);
     savePhrases(phrases);
@@ -852,10 +853,12 @@ app.get('/api/dashboard/stats', (req, res) => {
     const radarScores = { star_completeness: 0, quantification: 0, position_match: 0, structure: 0, highlight: 0 };
     const dimCounts = { star_completeness: 0, quantification: 0, position_match: 0, structure: 0, highlight: 0 };
     phrases.forEach(p => {
-      if (p.evaluation && typeof p.evaluation === 'object') {
+      // 兼容两种数据来源：旧的 p.evaluation 和新的 p.scores
+      const evalData = p.scores || p.evaluation;
+      if (evalData && typeof evalData === 'object') {
         dimKeys.forEach(k => {
-          if (typeof p.evaluation[k] === 'number') {
-            radarScores[k] += p.evaluation[k];
+          if (typeof evalData[k] === 'number' && evalData[k] > 0) {
+            radarScores[k] += evalData[k];
             dimCounts[k]++;
           }
         });

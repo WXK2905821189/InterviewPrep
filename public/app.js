@@ -255,22 +255,62 @@ function renderInterviewTabHistory() {
 }
 
 function renderPracticeHistory() {
+  loadPracticeHistoryFromServer();
+}
+
+async function loadPracticeHistoryFromServer() {
   const el = $('#practice-history-list');
   if (!el) return;
   try {
-    const hist = JSON.parse(localStorage.getItem('practice_history') || '[]');
-    if (!hist.length) {
+    const data = await fetchRetry('/api/phrases?tag=练习');
+    const phrases = (data.phrases || []).slice(0, 50);
+    if (!phrases.length) {
       el.innerHTML = '暂无练习记录。提交一道题后会自动显示。';
       return;
     }
-    el.innerHTML = hist.map((h, i) => {
-      const cls = h.score >= 85 ? 'color:var(--green);' : h.score >= 60 ? 'color:#D97706;' : 'color:var(--red);';
-      return `<div style="padding:0.5rem;margin:4px 0;background:var(--tag-bg);border-radius:4px;display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${new Date(h.date).toLocaleDateString('zh-CN')} · ${h.question}</span>
-        <span style="font-weight:600;white-space:nowrap;${cls}">${h.score}分</span>
-      </div>`;
+    el.innerHTML = phrases.map(p => {
+      const cls = (p.score || 0) >= 85 ? 'color:var(--green);' : (p.score || 0) >= 60 ? 'color:#D97706;' : 'color:var(--red);';
+      return `<details style="margin:4px 0;background:var(--tag-bg);border-radius:4px;padding:0.4rem 0.6rem;">
+        <summary style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.82rem;">${new Date(p.createdAt).toLocaleDateString('zh-CN')} · ${(p.question||'').slice(0, 50)}</span>
+          <span style="font-weight:600;white-space:nowrap;font-size:0.82rem;${cls}">${p.score||0}分</span>
+        </summary>
+        <div style="margin-top:0.4rem;font-size:0.78rem;line-height:1.6;">
+          <div style="color:var(--muted);margin-bottom:0.3rem;"><b>题目：</b>${p.question||''}</div>
+          <div style="color:var(--muted);margin-bottom:0.3rem;"><b>你的回答：</b>${(p.answer||'').slice(0, 300)}${(p.answer||'').length>300?'...':''}</div>
+          ${p.improvedVersion ? `<div style="background:rgba(79,70,229,0.05);padding:0.4rem;border-radius:4px;margin-bottom:0.3rem;"><b>💡 改进版参考：</b>${p.improvedVersion}</div>` : ''}
+          ${p.keyTakeaways ? `<div style="color:var(--accent);"><b>🎯 关键改进点：</b>${p.keyTakeaways}</div>` : ''}
+          ${p.scores ? `<div style="font-size:0.72rem;color:var(--muted);margin-top:0.2rem;">STAR:${p.scores.star_completeness||'-'} | 量化:${p.scores.quantification||'-'} | 匹配:${p.scores.position_match||'-'} | 结构:${p.scores.structure||'-'} | 亮点:${p.scores.highlight||'-'}</div>` : ''}
+        </div>
+      </details>`;
     }).join('');
   } catch { el.innerHTML = '加载失败'; }
+}
+
+async function autoSavePracticeRecord(question, answer, result) {
+  try {
+    const scores = {
+      star_completeness: result.star_completeness || result.scores?.star_completeness || 0,
+      quantification: result.quantification || result.scores?.quantification || 0,
+      position_match: result.position_match || result.scores?.position_match || 0,
+      structure: result.structure || result.scores?.structure || 0,
+      highlight: result.highlight || result.scores?.highlight || 0
+    };
+    await fetchRetry('/api/phrases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question,
+        answer,
+        improvedVersion: result.improved_version || '',
+        keyTakeaways: (result.key_takeaways || []).join('；'),
+        score: result.overall_score || 0,
+        scores,
+        tags: ['练习', result.type || ''],
+        type: result.type || ''
+      })
+    });
+  } catch { /* 静默失败，不影响主流程 */ }
 }
 
 // Tab 小红点系统
@@ -1154,12 +1194,8 @@ $('#btn-practice-submit').addEventListener('click', async () => {
     const result = await apiEvaluateSingle(question, answer, jdSummary, resumeText.slice(0, 3000));
     state._lastFeedback = result;
     renderSingleFeedback(result);
-    // 保存练习历史到 localStorage
-    try {
-      const hist = JSON.parse(localStorage.getItem('practice_history') || '[]');
-      hist.unshift({ date: new Date().toISOString(), question: question.slice(0, 80), score: result.overall_score || 0, type: found?.type || '' });
-      localStorage.setItem('practice_history', JSON.stringify(hist.slice(0, 50)));
-    } catch {}
+    // 自动保存练习记录到服务端（题目+回答+评估+改进版+关键改进点）
+    autoSavePracticeRecord(question, answer, result);
     if ((result.overall_score || 0) >= 85) {
       $('#btn-save-phrase').classList.remove('hidden');
     }
