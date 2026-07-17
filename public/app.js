@@ -254,6 +254,25 @@ function renderInterviewTabHistory() {
   } catch { el.innerHTML = '加载失败'; }
 }
 
+function renderPracticeHistory() {
+  const el = $('#practice-history-list');
+  if (!el) return;
+  try {
+    const hist = JSON.parse(localStorage.getItem('practice_history') || '[]');
+    if (!hist.length) {
+      el.innerHTML = '暂无练习记录。提交一道题后会自动显示。';
+      return;
+    }
+    el.innerHTML = hist.map((h, i) => {
+      const cls = h.score >= 85 ? 'color:var(--green);' : h.score >= 60 ? 'color:#D97706;' : 'color:var(--red);';
+      return `<div style="padding:0.5rem;margin:4px 0;background:var(--tag-bg);border-radius:4px;display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${new Date(h.date).toLocaleDateString('zh-CN')} · ${h.question}</span>
+        <span style="font-weight:600;white-space:nowrap;${cls}">${h.score}分</span>
+      </div>`;
+    }).join('');
+  } catch { el.innerHTML = '加载失败'; }
+}
+
 // Tab 小红点系统
 function showTabDot(tabName) {
   const dot = document.querySelector(`.tab-dot[data-dot-tab="${tabName}"]`);
@@ -442,6 +461,7 @@ function switchTab(tabName) {
   if (tabName === 'dashboard') loadDashboard();
   if (tabName === 'interview') renderInterviewTabHistory();
   if (tabName === 'practice' && state.analysis) renderPracticeQuestions();
+  if (tabName === 'practice') renderPracticeHistory();
   if (tabName === 'resume' && state.analysis) {
     $('#resume-opt-empty').classList.remove('hidden');
     checkAndAutoScore();
@@ -1134,6 +1154,12 @@ $('#btn-practice-submit').addEventListener('click', async () => {
     const result = await apiEvaluateSingle(question, answer, jdSummary, resumeText.slice(0, 3000));
     state._lastFeedback = result;
     renderSingleFeedback(result);
+    // 保存练习历史到 localStorage
+    try {
+      const hist = JSON.parse(localStorage.getItem('practice_history') || '[]');
+      hist.unshift({ date: new Date().toISOString(), question: question.slice(0, 80), score: result.overall_score || 0, type: found?.type || '' });
+      localStorage.setItem('practice_history', JSON.stringify(hist.slice(0, 50)));
+    } catch {}
     if ((result.overall_score || 0) >= 85) {
       $('#btn-save-phrase').classList.remove('hidden');
     }
