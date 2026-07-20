@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;0,800;1,500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=1784531200">
 </head>
 <body>
 
@@ -380,6 +380,28 @@
       <button id="btn-optimize-resume" class="btn-primary">生成优化建议</button>
     </div>
 
+    <!-- 自我介绍生成卡片 -->
+    <div class="card" id="self-intro-card" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+        <div>
+          <h3 style="margin:0;">🎙️ 面试自我介绍</h3>
+          <p style="font-size:0.78rem;color:var(--muted);margin:0.2rem 0 0 0;">AI基于你的简历生成1-2分钟口语化自我介绍，可重复生成</p>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <button id="btn-generate-self-intro" class="btn-ai-action btn-ai-model">
+            <span class="ai-action-icon">✨</span>生成自我介绍
+          </button>
+          <button id="btn-save-self-intro" class="btn-ai-action btn-ai-followup" style="display:none;" title="保存到话术库">
+            <span class="ai-action-icon">💾</span>保存
+          </button>
+        </div>
+      </div>
+      <div id="self-intro-result" style="margin-top:0.8rem;"></div>
+    </div>
+
+    <div id="resume-opt-empty" class="empty-state">
+    </div>
+
     <div id="resume-opt-area" class="hidden">
       <div class="card" id="resume-elevator" style="display:none;"></div>
       <div id="resume-opt-list"></div>
@@ -540,10 +562,27 @@
         <div class="progress-detail" id="company-progress-detail"></div>
       </div>
       <div id="company-result" style="margin-top:1rem;"></div>
+      <div style="margin-top:1rem;">
+        <details style="font-size:0.85rem;">
+          <summary style="cursor:pointer;color:var(--muted);">📋 历史调研记录</summary>
+          <div id="company-history-list" style="margin-top:0.5rem;max-height:300px;overflow-y:auto;"></div>
+        </details>
+      </div>
     </div>
   </section>
 
 </main>
+
+<!-- 练习详情弹窗 -->
+<div class="modal-overlay hidden" id="practice-detail-modal">
+  <div class="modal-content" style="max-width:600px;max-height:80vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <h3 style="margin:0;">📝 练习详情</h3>
+      <button id="btn-close-practice-detail" class="btn-outline" style="font-size:0.82rem;padding:0.2rem 0.6rem;">✕ 关闭</button>
+    </div>
+    <div id="practice-detail-body"></div>
+  </div>
+</div>
 
 <div id="toast" class="toast"></div>
 
@@ -639,6 +678,6 @@
 </div>
 
 <script src="echarts.min.js" defer></script>
-<script src="app.js?v=1784514284" defer></script>
+<script src="app.js?v=1784531200" defer></script>
 </body>
 </html>

@@ -8,6 +8,14 @@ const fs = require('fs');
 let mainWindow = null;
 let loadingWindow = null;
 
+// ── 读取版本号 ──
+function getAppVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    return pkg.version || '1.0.0';
+  } catch { return '1.0.0'; }
+}
+
 // ── 创建主窗口 ──
 function createMainWindow(PORT) {
   mainWindow = new BrowserWindow({
@@ -73,11 +81,12 @@ display:flex;flex-direction:column;align-items:center;justify-content:center;hei
 
 // ── 菜单栏 ──
 function buildMenu() {
+  const appVersion = getAppVersion();
   const template = [
     {
       label: '应用',
       submenu: [
-        { label: '关于 InterviewPrep', click: () => dialog.showMessageBox(mainWindow, { title: '关于', message: 'InterviewPrep MVP v1.4.1\n\nAI 面试押题与模拟面试官\n\n基于 OpenCLI + LLM 驱动', type: 'info' }) },
+        { label: '关于 InterviewPrep', click: () => dialog.showMessageBox(mainWindow, { title: '关于', message: 'InterviewPrep MVP v' + appVersion + '\n\nAI 面试押题与模拟面试官\n\n基于 OpenCLI + LLM 驱动', type: 'info' }) },
         { type: 'separator' },
         { label: '退出', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() }
       ]
@@ -107,6 +116,11 @@ function buildMenu() {
   }
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+// ── IPC: 获取版本号 ──
+ipcMain.handle('get-app-version', () => {
+  return getAppVersion();
+});
 
 // ── App 生命周期 ──
 app.whenReady().then(async () => {

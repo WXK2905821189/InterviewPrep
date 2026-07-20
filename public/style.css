@@ -1252,3 +1252,325 @@ select:focus, .styled-select:focus {
   background: var(--accent-glow);
   color: var(--ink);
 }
+
+/* ============================================================
+   AI 辅助按钮组 — 追问 + 标准答案
+   ============================================================ */
+.ai-action-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+}
+.btn-ai-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+  letter-spacing: 0.01em;
+}
+.btn-ai-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.ai-action-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+/* 追问按钮 */
+.btn-ai-followup {
+  background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(139,92,246,0.04));
+  border-color: rgba(139,92,246,0.25);
+  color: #a78bfa;
+}
+.btn-ai-followup:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(139,92,246,0.16), rgba(139,92,246,0.08));
+  border-color: rgba(139,92,246,0.45);
+  box-shadow: 0 0 12px rgba(139,92,246,0.12);
+  transform: translateY(-1px);
+}
+
+/* 标准答案按钮 */
+.btn-ai-model {
+  background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(16,185,129,0.04));
+  border-color: rgba(6,182,212,0.25);
+  color: #22d3ee;
+}
+.btn-ai-model:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(6,182,212,0.16), rgba(16,185,129,0.08));
+  border-color: rgba(6,182,212,0.45);
+  box-shadow: 0 0 12px rgba(6,182,212,0.12);
+  transform: translateY(-1px);
+}
+
+/* ============================================================
+   AI标准答案卡片
+   ============================================================ */
+.model-answer-card {
+  margin-top: 0.6rem;
+  border: 1px solid rgba(6,182,212,0.2);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(6,182,212,0.04), rgba(16,185,129,0.02));
+  overflow: hidden;
+  animation: modelAnswerIn 0.35s ease-out;
+}
+@keyframes modelAnswerIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.model-answer-header {
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #22d3ee;
+  border-bottom: 1px solid rgba(6,182,212,0.1);
+  background: rgba(6,182,212,0.04);
+}
+.model-answer-body {
+  padding: 0.8rem;
+  font-size: 0.84rem;
+  line-height: 1.8;
+  color: var(--text);
+  white-space: pre-line;
+}
+.model-answer-anchors {
+  padding: 0.5rem 0.8rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+  border-top: 1px solid rgba(6,182,212,0.08);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+.anchor-tag {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  background: rgba(6,182,212,0.08);
+  border-radius: 3px;
+  font-size: 0.72rem;
+  color: #67e8f9;
+}
+.model-answer-tips {
+  padding: 0.5rem 0.8rem;
+  font-size: 0.78rem;
+  color: var(--accent2);
+  border-top: 1px solid rgba(6,182,212,0.08);
+  background: rgba(255,255,255,0.01);
+}
+
+/* ============================================================
+   专项训练按钮美化
+   ============================================================ */
+.drill-timer-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.drill-timer-actions button {
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+}
+#btn-drill-start-prepare {
+  background: linear-gradient(135deg, rgba(79,70,229,0.12), rgba(79,70,229,0.06));
+  border-color: rgba(79,70,229,0.3);
+  color: var(--accent);
+}
+#btn-drill-start-prepare:hover {
+  background: linear-gradient(135deg, rgba(79,70,229,0.2), rgba(79,70,229,0.1));
+  border-color: rgba(79,70,229,0.5);
+  box-shadow: 0 0 10px rgba(79,70,229,0.1);
+}
+#btn-drill-skip-prepare {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.1);
+  color: var(--muted);
+}
+#btn-drill-skip-prepare:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.2);
+  color: var(--text);
+}
+#btn-drill-submit {
+  background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.06));
+  border-color: rgba(16,185,129,0.3);
+  color: var(--green);
+}
+#btn-drill-submit:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.1));
+  border-color: rgba(16,185,129,0.5);
+  box-shadow: 0 0 10px rgba(16,185,129,0.12);
+}
+#btn-drill-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+#btn-drill-retry {
+  background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(245,158,11,0.04));
+  border-color: rgba(245,158,11,0.25);
+  color: #fbbf24;
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+}
+#btn-drill-retry:hover {
+  background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(245,158,11,0.08));
+  border-color: rgba(245,158,11,0.45);
+  box-shadow: 0 0 10px rgba(245,158,11,0.1);
+  transform: translateY(-1px);
+}
+#btn-drill-skip {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.08);
+  color: var(--muted);
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+}
+#btn-drill-skip:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.15);
+  color: var(--text);
+}
+#btn-drill-voice {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.08);
+  color: var(--muted);
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+}
+#btn-drill-voice:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.15);
+  color: var(--text);
+}
+#btn-drill-voice.recording {
+  background: rgba(239,68,68,0.15);
+  border-color: rgba(239,68,68,0.4);
+  color: #f87171;
+  animation: pulse-rec 1.5s ease-in-out infinite;
+}
+@keyframes pulse-rec {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.2); }
+  50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+
+/* ============================================================
+   面试操作按钮美化
+   ============================================================ */
+.interview-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.interview-actions button {
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+}
+#btn-interview-submit {
+  background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.06));
+  border-color: rgba(16,185,129,0.3);
+  color: var(--green);
+}
+#btn-interview-submit:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.1));
+  border-color: rgba(16,185,129,0.5);
+  box-shadow: 0 0 10px rgba(16,185,129,0.12);
+}
+#btn-interview-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+#btn-interview-skip {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.08);
+  color: var(--muted);
+}
+#btn-interview-skip:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.15);
+  color: var(--text);
+}
+#btn-interview-end {
+  background: rgba(239,68,68,0.08);
+  border-color: rgba(239,68,68,0.2);
+  color: #f87171;
+}
+#btn-interview-end:hover {
+  background: rgba(239,68,68,0.15);
+  border-color: rgba(239,68,68,0.35);
+  box-shadow: 0 0 10px rgba(239,68,68,0.1);
+}
+
+/* 面试标准答案区域 */
+.interview-model-answer-section {
+  padding: 0 0.4rem;
+}
+.interview-model-answer-section .btn-ai-action {
+  width: 100%;
+  justify-content: center;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.78rem;
+}
+
+/* ============================================================
+   自我介绍卡片
+   ============================================================ */
+#self-intro-card {
+  border: 1px solid rgba(6,182,212,0.15);
+  background: linear-gradient(135deg, rgba(6,182,212,0.03), rgba(16,185,129,0.02));
+  animation: cardIn 0.4s ease-out both;
+}
+.self-intro-duration {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  background: rgba(6,182,212,0.1);
+  border-radius: 3px;
+  font-size: 0.72rem;
+  color: #67e8f9;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+.self-intro-highlights {
+  padding: 0.5rem 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  border-top: 1px solid rgba(6,182,212,0.08);
+}
+#btn-save-self-intro {
+  transition: all 0.2s ease;
+}

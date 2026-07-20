@@ -106,6 +106,7 @@ const upload = multer({
 const SESSIONS_FILE = path.join(DATA_DIR, '.data', 'sessions.json');
 const PHRASES_FILE = path.join(DATA_DIR, '.data', 'phrase-library.json');
 const MIANJING_BANK_FILE = path.join(DATA_DIR, '.data', 'mianjing-bank.json');
+const COMPANY_RESEARCH_HISTORY_FILE = path.join(DATA_DIR, '.data', 'company-research-history.json');
 
 // 确保数据目录存在
 try { fs.mkdirSync(path.join(DATA_DIR, '.data'), { recursive: true }); } catch {}
@@ -646,8 +647,58 @@ app.post('/api/follow-up', async (req, res) => {
   }
 });
 
+// ============================================================
+// API 7c: AI 生成基于简历的标准答案
+// ============================================================
+app.post('/api/generate-model-answer', async (req, res) => {
+  try {
+    const { question, jdSummary, resumeText } = req.body;
+    if (!question) return res.status(400).json({ error: '请提供题目' });
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const userPrompt = `面试题目：${question}
+${jdSummary ? '岗位背景：' + jdSummary : ''}
+${resumeText ? '候选人简历：\n' + resumeText : '（未提供简历）'}
+
+请基于以上信息生成标准答案。`;
+
+    const result = await llm(prompts.MODEL_ANSWER_SYSTEM, userPrompt, { temperature: 0.7 });
+    res.json(result);
+  } catch (e) {
+    console.error('[API] 标准答案生成失败:', e);
+    res.status(500).json({ error: '生成失败: ' + e.message });
+  }
+});
+
 // API 8: AI Provider 管理 — 供应商/连接/测试/模型
 // ============================================================
+
+// ============================================================
+// API 7d: AI 生成基于简历的自我介绍
+// ============================================================
+app.post('/api/generate-self-intro', async (req, res) => {
+  try {
+    const { jdSummary, resumeText } = req.body;
+    if (!resumeText) return res.status(400).json({ error: '请先提供简历内容' });
+
+    const { llm } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const userPrompt = `岗位背景：${jdSummary || '（未提供）'}
+候选人简历：
+${resumeText.slice(0, 4000)}
+
+请基于以上信息生成面试自我介绍。`;
+
+    const result = await llm(prompts.SELF_INTRO_SYSTEM, userPrompt, { temperature: 0.8 });
+    res.json(result);
+  } catch (e) {
+    console.error('[API] 自我介绍生成失败:', e);
+    res.status(500).json({ error: '生成失败: ' + e.message });
+  }
+});
 
 // 列出所有供应商预设（OpenAI / DeepSeek / Qwen / Doubao / Ollama / Custom）
 app.get('/api/providers/list', async (req, res) => {
@@ -1230,23 +1281,26 @@ app.get('/api/dashboard/stats', (req, res) => {
     try { phrases = JSON.parse(fs.readFileSync(phrasesPath, 'utf8')); } catch {}
     if (!Array.isArray(phrases)) phrases = [];
 
-    // Read sessions
-    const sessionsPath = path.join(DATA_DIR, '.data', 'sessions.json');
-    let sessionsData = [];
-    try { sessionsData = JSON.parse(fs.readFileSync(sessionsPath, 'utf8')); } catch {}
-    if (!Array.isArray(sessionsData)) sessionsData = [];
+    // Use in-memory sessions Map (consistent with other API handlers)
+    // --- Practice stats from phrase library + drill records ---
+    const drillRecordsForStats = loadDrillRecords();
+    const totalPractices = phrases.length + drillRecordsForStats.length;
 
-    // --- Practice stats from phrase library ---
-    const totalPractices = phrases.length;
-
-    // Average score
-    const scores = phrases.map(p => p.score || 0).filter(s => s > 0);
-    const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    // Average score (包含话术库和专项训练)
+    const phraseScores = phrases.map(p => p.score || 0).filter(s => s > 0);
+    const drillScores = drillRecordsForStats.map(r => r.overallScore || 0).filter(s => s > 0);
+    const allScores = [...phraseScores, ...drillScores];
+    const avgScore = allScores.length > 0 ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length) : 0;
 
     // Type coverage
     const typeCoverage = { behavioral: 0, technical: 0, project: 0, stress: 0, hr: 0, total: 0 };
     phrases.forEach(p => {
       const t = p.type;
+      if (t && typeCoverage.hasOwnProperty(t)) typeCoverage[t]++;
+      typeCoverage.total++;
+    });
+    drillRecordsForStats.forEach(r => {
+      const t = r.questionType;
       if (t && typeCoverage.hasOwnProperty(t)) typeCoverage[t]++;
       typeCoverage.total++;
     });
@@ -1267,20 +1321,51 @@ app.get('/api/dashboard/stats', (req, res) => {
         });
       }
     });
+    // 也计入专项训练记录的维度评分
+    drillRecordsForStats.forEach(r => {
+      if (r.scores && typeof r.scores === 'object') {
+        dimKeys.forEach(k => {
+          if (typeof r.scores[k] === 'number' && r.scores[k] > 0) {
+            radarScores[k] += r.scores[k];
+            dimCounts[k]++;
+          }
+        });
+      }
+    });
     dimKeys.forEach(k => {
       if (dimCounts[k] > 0) radarScores[k] = Math.round(radarScores[k] / dimCounts[k]);
     });
 
-    // Recent practices (last 10)
-    const recentPractices = [...phrases]
+    // Recent practices (last 10) - 合并话术库和专项训练记录
+    const drillRecent = drillRecordsForStats.slice(0, 10).map(r => ({
+      date: r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : '',
+      createdAt: r.createdAt || '',
+      question: r.question || '',
+      score: r.overallScore || 0,
+      type: r.questionType || '专项训练',
+      answer: r.answer || '',
+      improvedVersion: r.improvedVersion || '',
+      keyTakeaways: r.keyTakeaways || [],
+      scores: r.scores || {},
+      source: 'drill'
+    }));
+    const phraseRecent = phrases.map(p => ({
+      date: p.createdAt ? new Date(p.createdAt).toISOString().slice(0, 10) : '',
+      createdAt: p.createdAt || '',
+      question: p.question || '',
+      score: p.score || 0,
+      type: p.type || '',
+      answer: p.answer || '',
+      improvedVersion: p.improvedVersion || '',
+      keyTakeaways: p.keyTakeaways || '',
+      scores: (p.scores || p.evaluation) || {},
+      source: 'practice'
+    }));
+    // 合并并按时间排序
+    const allRecent = [...phraseRecent, ...drillRecent]
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-      .slice(0, 10)
-      .map(p => ({
-        date: p.createdAt ? new Date(p.createdAt).toISOString().slice(0, 10) : '',
-        question: p.question || '',
-        score: p.score || 0,
-        type: p.type || ''
-      }));
+      .slice(0, 10);
+    const recentPractices = allRecent;
 
     // Calendar: date -> count for last 60 days
     const calendar = {};
@@ -1296,11 +1381,21 @@ app.get('/api/dashboard/stats', (req, res) => {
         }
       }
     });
+    // 也计入专项训练记录
+    drillRecordsForStats.forEach(r => {
+      if (r.createdAt) {
+        const d = new Date(r.createdAt);
+        if (d >= sixtyDaysAgo && d <= now) {
+          const key = d.toISOString().slice(0, 10);
+          calendar[key] = (calendar[key] || 0) + 1;
+        }
+      }
+    });
 
     // --- Interview reports from sessions ---
     const interviewReports = [];
     let totalInterviews = 0;
-    sessionsData.forEach(s => {
+    for (const s of sessions.values()) {
       const interview = s.interview;
       if (interview && interview.stage === 'done') {
         totalInterviews++;
@@ -1314,14 +1409,14 @@ app.get('/api/dashboard/stats', (req, res) => {
           }
         }
         interviewReports.push({
-          label: s.label || s.position || s.company || '面试',
-          company: s.company || '',
-          position: s.position || '',
+          label: s.label || s.analysis?.jd?.position || s.analysis?.jd?.company || '面试',
+          company: s.analysis?.jd?.company || '',
+          position: s.analysis?.jd?.position || '',
           date: s.createdAt ? new Date(s.createdAt).toISOString() : '',
           score: reportScore
         });
       }
-    });
+    }
     interviewReports.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     res.json({
@@ -1480,6 +1575,67 @@ app.post('/api/company-research', async (req, res) => {
   } catch (e) {
     sseError(res, '公司调研失败: ' + (e.message || String(e)));
   }
+});
+
+// ============================================================
+// 公司调研历史记录
+// ============================================================
+function loadCompanyResearchHistory() {
+  try {
+    if (fs.existsSync(COMPANY_RESEARCH_HISTORY_FILE)) {
+      const data = JSON.parse(fs.readFileSync(COMPANY_RESEARCH_HISTORY_FILE, 'utf8'));
+      return Array.isArray(data) ? data : [];
+    }
+  } catch (e) { logWarn('加载公司调研历史失败: ' + e.message); }
+  return [];
+}
+
+function saveCompanyResearchHistory(records) {
+  try {
+    const dir = path.dirname(COMPANY_RESEARCH_HISTORY_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(COMPANY_RESEARCH_HISTORY_FILE, JSON.stringify(records, null, 2), 'utf8');
+  } catch (e) { logError('保存公司调研历史失败: ' + e.message); }
+}
+
+app.get('/api/company-research/history', (req, res) => {
+  try {
+    const history = loadCompanyResearchHistory();
+    res.json({ history: history.slice(0, 50) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/company-research/history', (req, res) => {
+  try {
+    const { company, position, result } = req.body;
+    if (!company || !result) return res.status(400).json({ error: '需要 company 和 result' });
+
+    const history = loadCompanyResearchHistory();
+    // 去重：同一公司+岗位的调研，只保留最新的一条
+    const filtered = history.filter(h => !(h.company === company && h.position === (position || '')));
+    history.length = 0;
+    history.push(...filtered);
+
+    const entry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      company,
+      position: position || '',
+      result: {
+        _summary: result._summary || '',
+        interview_talking_points: result.interview_talking_points || null,
+        mock_qa: result.mock_qa || null,
+        company_basics: result.company_basics || null,
+        business_insight: result.business_insight || null,
+        interview_intel: result.interview_intel || null,
+        latest_news: result.latest_news || null,
+        competitors: result.competitors || null
+      },
+      createdAt: new Date().toISOString()
+    };
+    history.unshift(entry);
+    saveCompanyResearchHistory(history);
+    res.json({ ok: true, entry });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ============================================================

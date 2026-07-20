@@ -245,16 +245,52 @@ function renderCalendar(calData) {
   el.innerHTML = html;
 }
 
+// 练习详情弹窗
+function showPracticeDetail(p) {
+  const modal = document.getElementById('practice-detail-modal');
+  const body = document.getElementById('practice-detail-body');
+  if (!modal || !body) return;
+
+  const dateStr = p.date ? new Date(p.date).toLocaleDateString('zh-CN') + ' ' + new Date(p.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+  const scoreCls = (p.score || 0) >= 80 ? 'color:var(--green);' : (p.score || 0) >= 60 ? 'color:#F59E0B;' : 'color:var(--red);';
+
+  body.innerHTML = `
+    <div style="margin-bottom:1rem;">
+      <div style="font-size:0.78rem;color:var(--muted);margin-bottom:0.3rem;">${dateStr} · ${p.type || '练习'}</div>
+      <div style="font-weight:600;font-size:1rem;margin-bottom:0.5rem;">${p.question || '无题目'}</div>
+      ${p.score ? '<div style="font-size:1.2rem;font-weight:700;' + scoreCls + 'margin-bottom:0.8rem;">' + p.score + '分</div>' : ''}
+    </div>
+    ${p.answer ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;">你的回答：</b><div style="background:var(--bg2);padding:0.5rem;border-radius:6px;margin-top:0.2rem;font-size:0.82rem;line-height:1.6;max-height:200px;overflow-y:auto;">' + p.answer.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div></div>' : ''}
+    ${p.improvedVersion ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;">💡 AI改进参考：</b><div style="background:rgba(79,70,229,0.05);padding:0.5rem;border-radius:6px;margin-top:0.2rem;font-size:0.82rem;line-height:1.6;max-height:200px;overflow-y:auto;">' + p.improvedVersion.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div></div>' : ''}
+    ${p.keyTakeaways ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;">🎯 关键改进点：</b><div style="font-size:0.82rem;color:var(--accent);margin-top:0.2rem;">' + (Array.isArray(p.keyTakeaways) ? p.keyTakeaways.join('；') : p.keyTakeaways) + '</div></div>' : ''}
+    ${p.scores ? '<div style="font-size:0.78rem;color:var(--muted);">STAR完整度:' + (p.scores.star_completeness || '-') + ' | 量化:' + (p.scores.quantification || '-') + ' | 匹配:' + (p.scores.position_match || '-') + ' | 结构:' + (p.scores.structure || '-') + ' | 亮点:' + (p.scores.highlight || '-') + '</div>' : ''}
+    ${p.source === 'drill' ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:var(--accent2);">📋 来自专项训练</div>' : ''}
+  `;
+
+  modal.classList.remove('hidden');
+}
+
 function renderRecentPractices(items) {
   const el = $('#dash-recent');
   if (!items.length) { el.innerHTML = '<p style="color:var(--muted);">暂无练习记录</p>'; return; }
-  el.innerHTML = items.slice(0, 10).map(p =>
-    '<div style="display:flex;align-items:center;gap:0.8rem;padding:0.5rem 0;border-bottom:1px solid var(--rule);">' +
+  // 存储最近练习数据供详情弹窗使用
+  window._dashRecentPractices = items;
+  el.innerHTML = items.slice(0, 10).map((p, idx) =>
+    '<div class="dash-practice-item" data-idx="' + idx + '" style="display:flex;align-items:center;gap:0.8rem;padding:0.5rem 0;border-bottom:1px solid var(--rule);cursor:pointer;" title="点击查看详情">' +
     '<span style="font-size:0.78rem;color:var(--muted);white-space:nowrap;">' + (p.date || '').slice(5) + '</span>' +
     '<span style="flex:1;font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (p.question || p.type || '练习') + '</span>' +
     '<span style="font-weight:600;color:' + (p.score >= 80 ? 'var(--green)' : p.score >= 60 ? '#F59E0B' : 'var(--red)') + ';">' + (p.score || 0) + '分</span>' +
     '</div>'
   ).join('');
+
+  // 点击查看详情
+  el.querySelectorAll('.dash-practice-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const idx = parseInt(item.dataset.idx);
+      const p = window._dashRecentPractices[idx];
+      if (p) showPracticeDetail(p);
+    });
+  });
 }
 
 function renderInterviewHistory(reports) {
@@ -350,6 +386,9 @@ async function autoSavePracticeRecord(question, answer, result) {
 
 
 // ===== P1: Follow-up Question System =====
+// ============================================================
+// AI 辅助按钮组：追问 + 标准答案
+// ============================================================
 function showFollowUpButton(mode, question, answer, evalResult) {
   var existing = document.querySelector('.follow-up-section');
   if (existing) existing.remove();
@@ -359,11 +398,16 @@ function showFollowUpButton(mode, question, answer, evalResult) {
 
   var section = document.createElement('div');
   section.className = 'follow-up-section';
-  section.innerHTML = '<button class=\"btn-follow-up\" id=\"btn-follow-up-' + mode + '\">AI追问练习</button>';
+  section.innerHTML = '<div class=\"ai-action-row\">' +
+    '<button class=\"btn-ai-action btn-ai-followup\" id=\"btn-follow-up-' + mode + '\" title=\"AI根据你的回答弱点生成追问\"><span class=\"ai-action-icon\">💬</span>AI追问练习</button>' +
+    '<button class=\"btn-ai-action btn-ai-model\" id=\"btn-model-answer-' + mode + '\" title=\"AI基于你的简历生成标准答案参考\"><span class=\"ai-action-icon\">✨</span>AI标准答案</button>' +
+    '</div>';
   container.appendChild(section);
 
+  // ---- 追问按钮 ----
   document.getElementById('btn-follow-up-' + mode).addEventListener('click', async function() {
-    section.innerHTML = '<p style=\"font-size:0.82rem;color:var(--muted);\">生成追问中...</p>';
+    var btn = document.getElementById('btn-follow-up-' + mode);
+    btn.disabled = true; btn.innerHTML = '<span class=\"ai-action-icon\">⏳</span>生成追问中...';
     try {
       var jd = state.analysis ? (state.analysis.jd || {}) : {};
       var jdSummary = jd.position ? (jd.company || '') + ' ' + jd.position : '';
@@ -379,10 +423,17 @@ function showFollowUpButton(mode, question, answer, evalResult) {
       }).then(function(r) { return r.json(); });
 
       if (followUp.should_follow_up) {
-        section.innerHTML = '<div class=\"follow-up-q\">' + (followUp.follow_up_question || '') + '</div>' +
+        section.innerHTML = '<div class=\"ai-action-row\">' +
+          '<button class=\"btn-ai-action btn-ai-followup\" disabled>💬 已追问</button>' +
+          '<button class=\"btn-ai-action btn-ai-model\" id=\"btn-model-answer-' + mode + '\" title=\"AI基于你的简历生成标准答案参考\"><span class=\"ai-action-icon\">✨</span>AI标准答案</button>' +
+          '</div>' +
+          '<div class=\"follow-up-q\">' + (followUp.follow_up_question || '') + '</div>' +
           '<div class=\"follow-up-reason\">追问原因：' + (followUp.reason || '') + ' (' + (followUp.follow_up_type || '') + ')</div>' +
-          '<textarea id=\"follow-up-answer-' + mode + '\" rows=\"4\" placeholder=\"输入你的追问回答...\" style=\"width:100%;min-height:100px;resize:vertical;line-height:1.7;padding:0.5rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);margin-bottom:0.5rem;\"></textarea>' +
+          '<textarea id=\"follow-up-answer-' + mode + '\" rows=\"4\" placeholder=\"输入你的追问回答...\" style=\"width:100%;min-height:100px;resize:vertical;line-height:1.7;padding:0.5rem;border:1px solid var(--rule);border-radius:var(--radius-sm);background:var(--bg);margin-bottom:0.5rem;font-family:var(--font-body);\"></textarea>' +
           '<button class=\"btn-primary\" id=\"btn-follow-up-submit-' + mode + '\" style=\"font-size:0.82rem;\">提交追问回答</button>';
+
+        // 重新绑定标准答案按钮
+        loadModelAnswerHandler(mode, question, section);
 
         document.getElementById('btn-follow-up-submit-' + mode).addEventListener('click', async function() {
           var fuAnswer = document.getElementById('follow-up-answer-' + mode).value.trim();
@@ -402,10 +453,110 @@ function showFollowUpButton(mode, question, answer, evalResult) {
           finally { fuBtn.disabled = false; fuBtn.textContent = '重新提交'; }
         });
       } else {
-        section.innerHTML = '<p style=\"font-size:0.82rem;color:var(--green);\">回答已足够充分，无需追问</p>';
+        section.innerHTML = '<div class=\"ai-action-row\">' +
+          '<p style=\"font-size:0.82rem;color:var(--green);margin:0;\">回答已足够充分，无需追问</p>' +
+          '<button class=\"btn-ai-action btn-ai-model\" id=\"btn-model-answer-' + mode + '\" title=\"AI基于你的简历生成标准答案参考\"><span class=\"ai-action-icon\">✨</span>AI标准答案</button>' +
+          '</div>';
+        loadModelAnswerHandler(mode, question, section);
       }
     } catch (e) {
       section.innerHTML = '<p style=\"font-size:0.82rem;color:var(--red);\">追问生成失败: ' + e.message + '</p>';
+    }
+  });
+
+  // ---- 标准答案按钮 ----
+  loadModelAnswerHandler(mode, question, section);
+}
+
+// 为面试模式添加标准答案按钮
+function showInterviewModelAnswerButton() {
+  var existing = document.querySelector('.interview-model-answer-section');
+  if (existing) existing.remove();
+
+  var actions = document.querySelector('.interview-actions');
+  if (!actions) return;
+
+  var section = document.createElement('div');
+  section.className = 'interview-model-answer-section';
+  section.innerHTML = '<button class=\"btn-ai-action btn-ai-model\" id=\"btn-interview-model-answer\" title=\"AI基于你的简历生成当前题目的标准答案\"><span class=\"ai-action-icon\">✨</span>AI标准答案参考</button>';
+
+  var parent = actions.parentNode;
+  parent.insertBefore(section, actions.nextSibling);
+
+  loadModelAnswerHandler('interview', getCurrentInterviewQuestion(), section);
+}
+
+function getCurrentInterviewQuestion() {
+  var chat = document.getElementById('interview-chat');
+  if (!chat) return '';
+  var msgs = chat.querySelectorAll('.chat-msg.interviewer');
+  if (msgs.length === 0) return '';
+  return msgs[msgs.length - 1].textContent || '';
+}
+
+// 通用的标准答案生成逻辑
+function loadModelAnswerHandler(mode, question, section) {
+  var btnId = mode === 'interview' ? 'btn-interview-model-answer' : 'btn-model-answer-' + mode;
+  var btn = document.getElementById(btnId);
+  if (!btn) return;
+
+  btn.addEventListener('click', async function() {
+    btn.disabled = true;
+    btn.innerHTML = '<span class=\"ai-action-icon\">⏳</span>AI正在生成标准答案...';
+
+    try {
+      var jd = state.analysis ? (state.analysis.jd || {}) : {};
+      var jdSummary = jd.position
+        ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || jd.responsibilities || '')
+        : (jd.requirements || jd.responsibilities || '');
+      var resumeText = state.resumeText || '';
+
+      var result = await fetchRetry('/api/generate-model-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: question,
+          jdSummary: jdSummary.slice(0, 400),
+          resumeText: resumeText.slice(0, 3000)
+        })
+      }).then(function(r) { return r.json(); });
+
+      if (result.model_answer) {
+        var html = '<div class=\"model-answer-card\">';
+        html += '<div class=\"model-answer-header\">✨ AI标准答案参考</div>';
+        html += '<div class=\"model-answer-body\">' + result.model_answer.replace(/\n/g, '<br>') + '</div>';
+        if (result.resume_anchors && result.resume_anchors.length > 0) {
+          html += '<div class=\"model-answer-anchors\"><b>📎 引用的简历经历：</b>' +
+            result.resume_anchors.map(function(a) { return '<span class=\"anchor-tag\">' + a + '</span>'; }).join('') +
+            '</div>';
+        }
+        if (result.tips) {
+          html += '<div class=\"model-answer-tips\">💡 ' + result.tips + '</div>';
+        }
+        html += '</div>';
+
+        if (mode === 'interview') {
+          var chat = document.getElementById('interview-chat');
+          if (chat) {
+            var div = document.createElement('div');
+            div.className = 'chat-msg system';
+            div.innerHTML = html;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+          }
+        } else {
+          section.innerHTML = html;
+          section.scrollIntoView({ behavior: 'smooth' });
+        }
+      } else {
+        toast('生成失败：未获取到答案');
+        btn.disabled = false;
+        btn.innerHTML = '<span class=\"ai-action-icon\">✨</span>AI标准答案';
+      }
+    } catch (e) {
+      toast('标准答案生成失败: ' + e.message);
+      btn.disabled = false;
+      btn.innerHTML = '<span class=\"ai-action-icon\">✨</span>AI标准答案';
     }
   });
 }
@@ -429,6 +580,19 @@ document.addEventListener('click', (e) => {
   }
 });
 
+
+// 语义化版本号比较（返回 -1/0/1）
+function compareVersions(a, b) {
+  const pa = a.replace(/^v/i, '').split('.').map(Number);
+  const pb = b.replace(/^v/i, '').split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
 // ===== 版本更新检查 (GitHub Releases API) =====
 $('#btn-check-update')?.addEventListener('click', async () => {
   const statusEl = document.getElementById('update-status');
@@ -438,7 +602,12 @@ $('#btn-check-update')?.addEventListener('click', async () => {
   detailEl.classList.add('hidden');
 
   try {
-    const currentVer = window.__ELECTRON_VERSION__ || '1.2.0';
+    let currentVer = window.__ELECTRON_VERSION__ || '1.2.0';
+    try {
+      if (window.electronAPI?.getVersion) {
+        currentVer = await window.electronAPI.getVersion();
+      }
+    } catch {}
     const resp = await fetch('https://api.github.com/repos/WXK2905821189/InterviewPrep/releases/latest', {
       headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'InterviewPrep' }
     });
@@ -450,7 +619,7 @@ $('#btn-check-update')?.addEventListener('click', async () => {
     const latestVer = (release.tag_name || '').replace(/^v/i, '');
     const currentClean = currentVer.replace(/^v/i, '');
 
-    if (latestVer === currentClean || latestVer <= currentClean) {
+    if (compareVersions(latestVer, currentClean) <= 0) {
       statusEl.textContent = '✅ 已是最新版';
       detailEl.classList.remove('hidden');
       detailEl.innerHTML = `<p style="color:var(--green);font-size:0.82rem;">当前 v${currentClean} 已是最新版本。</p>
@@ -507,6 +676,17 @@ $('#btn-check-update')?.addEventListener('click', async () => {
   }
 });
 
+// 练习详情弹窗关闭
+const practiceDetailModal = document.getElementById('practice-detail-modal');
+if (practiceDetailModal) {
+  document.getElementById('btn-close-practice-detail')?.addEventListener('click', () => {
+    practiceDetailModal.classList.add('hidden');
+  });
+  practiceDetailModal.addEventListener('click', (e) => {
+    if (e.target === practiceDetailModal) practiceDetailModal.classList.add('hidden');
+  });
+}
+
 // 自动检查（静默，启动时）
 (async function autoCheckUpdate() {
   try {
@@ -516,8 +696,14 @@ $('#btn-check-update')?.addEventListener('click', async () => {
     if (!resp.ok) return;
     const release = await resp.json();
     const latestVer = (release.tag_name || '').replace(/^v/i, '');
-    const currentVer = (window.__ELECTRON_VERSION__ || '1.2.0').replace(/^v/i, '');
-    if (latestVer > currentVer) {
+    let currentVerRaw = window.__ELECTRON_VERSION__ || '1.2.0';
+    try {
+      if (window.electronAPI?.getVersion) {
+        currentVerRaw = await window.electronAPI.getVersion();
+      }
+    } catch {}
+    const currentVer = currentVerRaw.replace(/^v/i, '');
+    if (compareVersions(latestVer, currentVer) > 0) {
       // 在右上角设置按钮旁显示小红点
       const btn = document.getElementById('btn-open-settings');
       if (btn) {
@@ -600,7 +786,7 @@ function switchTab(tabName) {
   if (!content?.dataset.loaded) {
     content?.setAttribute('data-loaded', '1');
     if (tabName === 'bank') loadBank();
-    if (tabName === 'company') {/* company research loads on demand */}
+    if (tabName === 'company') { renderCompanyResearchHistory(); }
   }
 
   if (tabName === 'dashboard') loadDashboard();
@@ -1443,6 +1629,9 @@ $('#btn-interview-start').addEventListener('click', async () => {
     $('#interview-chat').innerHTML = '';
     addChatMsg('interviewer', result.message, result.stage);
     setStatus('🎤 面试中');
+    setTimeout(function() { showInterviewModelAnswerButton(); }, 300);
+    // 显示标准答案按钮
+    showInterviewModelAnswerButton();
   } catch (e) { toast('启动失败: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = '开始模拟面试'; }
 });
@@ -1475,6 +1664,8 @@ async function submitInterviewAnswer() {
       addChatMsg('interviewer', result.message);
     } else {
       addChatMsg('interviewer', result.message, result.stage);
+      // 更新标准答案按钮的题目
+      showInterviewModelAnswerButton();
     }
   } catch (e) { toast('处理失败: ' + e.message); }
   finally { btn.disabled = false; }
@@ -1844,18 +2035,136 @@ async function checkAndAutoScore() {
 }
 
 // ============================================================
-// 设置面板 — AI供应商管理
+// ============================================================
+// 自我介绍生成
+// ============================================================
+function checkAndShowSelfIntroCard() {
+  var card = document.getElementById('self-intro-card');
+  if (!card) return;
+  var resumeText = (document.getElementById('resume-input')?.value?.trim() || state.resumeText || '');
+  if (resumeText.length > 20) {
+    card.style.display = 'block';
+  }
+}
+
+// 切换到简历页时检查
+var _origSwitchTab = switchTab;
+switchTab = function(tabName) {
+  _origSwitchTab(tabName);
+  if (tabName === 'resume') {
+    setTimeout(checkAndShowSelfIntroCard, 200);
+  }
+};
+
+// 生成自我介绍按钮
+document.getElementById('btn-generate-self-intro')?.addEventListener('click', async function() {
+  var btn = document.getElementById('btn-generate-self-intro');
+  var resultEl = document.getElementById('self-intro-result');
+  var saveBtn = document.getElementById('btn-save-self-intro');
+  if (!btn || !resultEl) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="ai-action-icon">⏳</span>AI正在生成自我介绍...';
+  resultEl.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--muted);"><div class="spinner" style="margin:0 auto 0.5rem;"></div>正在分析简历并生成自我介绍...</div>';
+  if (saveBtn) saveBtn.style.display = 'none';
+
+  try {
+    var jd = state.analysis ? (state.analysis.jd || {}) : {};
+    var jdSummary = jd.position
+      ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || jd.responsibilities || '')
+      : (jd.requirements || jd.responsibilities || '');
+    var resumeText = (document.getElementById('resume-input')?.value?.trim() || state.resumeText || '');
+
+    var result = await fetchRetry('/api/generate-self-intro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jdSummary: jdSummary.slice(0, 400),
+        resumeText: resumeText.slice(0, 4000)
+      })
+    }).then(function(r) { return r.json(); });
+
+    if (result.self_intro) {
+      var highlights = result.highlights && result.highlights.length > 0
+        ? '<div class="self-intro-highlights">' + result.highlights.map(function(h) { return '<span class="anchor-tag">' + h + '</span>'; }).join('') + '</div>'
+        : '';
+      var duration = result.duration_estimate ? '<span class="self-intro-duration">⏱ ' + result.duration_estimate + '</span>' : '';
+
+      resultEl.innerHTML = '<div class="model-answer-card">' +
+        '<div class="model-answer-header">🎙️ AI生成的自我介绍 ' + duration + '</div>' +
+        '<div class="model-answer-body">' + result.self_intro.replace(/\n/g, '<br>') + '</div>' +
+        (result.tips ? '<div class="model-answer-tips">💡 ' + result.tips + '</div>' : '') +
+        highlights +
+        '</div>';
+
+      window._currentSelfIntro = result.self_intro;
+      if (saveBtn) saveBtn.style.display = 'inline-flex';
+      resultEl.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      resultEl.innerHTML = '<p style="color:var(--red);padding:1rem;">生成失败：未获取到内容，请重试</p>';
+    }
+  } catch (e) {
+    resultEl.innerHTML = '<p style="color:var(--red);padding:1rem;">生成失败: ' + e.message + '</p>';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="ai-action-icon">✨</span>重新生成';
+  }
+});
+
+// 保存自我介绍到话术库
+document.getElementById('btn-save-self-intro')?.addEventListener('click', async function() {
+  var btn = document.getElementById('btn-save-self-intro');
+  if (!btn || !window._currentSelfIntro) return toast('请先生成自我介绍');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="ai-action-icon">⏳</span>保存中...';
+
+  try {
+    await fetchRetry('/api/phrases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: '面试自我介绍',
+        answer: window._currentSelfIntro,
+        tags: ['自我介绍', '简历'],
+        type: '自我介绍',
+        score: 0
+      })
+    });
+    toast('✅ 自我介绍已保存到话术库');
+    btn.innerHTML = '<span class="ai-action-icon">✅</span>已保存';
+    setTimeout(function() {
+      btn.innerHTML = '<span class="ai-action-icon">💾</span>保存';
+      btn.disabled = false;
+    }, 2000);
+  } catch (e) {
+    toast('保存失败: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '<span class="ai-action-icon">💾</span>保存';
+  }
+});
+
+// ============================================================
+// 设置面板
 // ============================================================
 
 // 打开/关闭设置
-$('#btn-open-settings').addEventListener('click', async () => {
+$('#btn-open-settings')?.addEventListener('click', async () => {
   $('#settings-modal').classList.remove('hidden');
   loadSettingsData();
   loadTemperatures();
-  // 默认显示当前版本号
-  if (window.__ELECTRON_VERSION__) {
-    $('#current-version').textContent = 'v' + window.__ELECTRON_VERSION__;
-  }
+  // 默认显示当前版本号（从 Electron 主进程获取或使用注入值）
+  const showVersion = async () => {
+    try {
+      if (window.electronAPI?.getVersion) {
+        const ver = await window.electronAPI.getVersion();
+        $('#current-version').textContent = 'v' + ver;
+      } else if (window.__ELECTRON_VERSION__) {
+        $('#current-version').textContent = 'v' + window.__ELECTRON_VERSION__;
+      }
+    } catch { /* fallback */ }
+  };
+  showVersion();
   // 同时加载 opencli 环境状态
   try {
     const h = await fetchRetry('/api/health').then(r => r.json());
@@ -1889,7 +2198,8 @@ $('#btn-close-settings').addEventListener('click', () => $('#settings-modal').cl
 $('#settings-modal').addEventListener('click', (e) => {
   if (e.target === $('#settings-modal')) $('#settings-modal').classList.add('hidden');
 });
-$('#btn-opencli-setup-settings').onclick = () => startOpencliSetup();
+const opencliSetupBtn = $('#btn-opencli-setup-settings');
+if (opencliSetupBtn) opencliSetupBtn.onclick = () => startOpencliSetup();
 
 async function loadSettingsData() {
   // 加载供应商预设
@@ -2515,6 +2825,58 @@ function autoFillMianjingFields() {
 // ============================================================
 // 公司调研 — 面试导向 · 进度条 + 知识图谱
 // ============================================================
+
+// 公司调研历史记录
+async function saveCompanyResearchHistory(company, position, result) {
+  try {
+    const resp = await fetchRetry('/api/company-research/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company, position, result })
+    });
+    const data = await resp.json();
+    if (data.ok) renderCompanyResearchHistory();
+  } catch { /* 静默失败 */ }
+}
+
+async function loadCompanyResearchHistory() {
+  try {
+    const resp = await fetchRetry('/api/company-research/history');
+    const data = await resp.json();
+    return data.history || [];
+  } catch { return []; }
+}
+
+async function renderCompanyResearchHistory() {
+  const el = document.getElementById('company-history-list');
+  if (!el) return;
+  const history = await loadCompanyResearchHistory();
+  if (!history.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:0.82rem;">暂无调研记录</p>';
+    return;
+  }
+  el.innerHTML = history.slice(0, 20).map((h, i) => {
+    const d = h.createdAt ? new Date(h.createdAt).toLocaleDateString('zh-CN') + ' ' + new Date(h.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+    return `<div class="company-history-item" data-idx="${i}" style="padding:0.4rem 0.6rem;margin:4px 0;background:var(--tag-bg);border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;" title="点击查看详情">
+      <span>🏢 ${h.company || ''}${h.position ? ' · ' + h.position : ''}</span>
+      <span style="color:var(--muted);font-size:0.72rem;">${d}</span>
+    </div>`;
+  }).join('');
+
+  // 点击历史记录查看详情
+  el.querySelectorAll('.company-history-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const idx = parseInt(item.dataset.idx);
+      const h = history[idx];
+      if (h && h.result) {
+        renderCompanyInterviewPrep(h.result, h.company);
+        // 滚动到结果区域
+        const resultEl = document.getElementById('company-result');
+        if (resultEl) resultEl.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+}
 async function doCompanyResearch() {
   const company = $('#company-search-input')?.value?.trim();
   if (!company) return toast('请输入公司名');
@@ -2602,6 +2964,8 @@ async function doCompanyResearch() {
       pd.textContent = '✅ 调研完成';
 
       renderCompanyInterviewPrep(result, company);
+      // 自动保存到调研历史
+      saveCompanyResearchHistory(company, position, result);
     }
   } catch (e) {
     pd.textContent = '❌ ' + e.message;
@@ -3230,6 +3594,8 @@ function downloadFile(filename, content, mimeType) {
       for (var i = 0; i < allQs.length; i++) { if (allQs[i].question === question) { found = allQs[i]; break; } }
       var questionType = found ? (found.type || '') : '';
       await saveDrillRecord(question, questionType, answer, result);
+      // 同时保存到话术库（练习历史），确保仪表盘和练习历史都能看到
+      await autoSavePracticeRecord(question, answer, result);
       document.getElementById('btn-drill-retry').classList.remove('hidden');
       loadDrillAttemptInfo(question);
       loadDrillHistory(question);
