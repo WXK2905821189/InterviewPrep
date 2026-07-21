@@ -3,6 +3,14 @@
 // ============================================================
 
 const API = '/api';
+// HTML 转义
+function escapeHtml(str) {
+  if (!str) return '';
+  var div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 
 // 防抖工具函数
 function debounce(fn, ms = 300) {

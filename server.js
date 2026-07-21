@@ -345,6 +345,8 @@ app.post('/api/analyze', async (req, res) => {
       gapAnalysis = gapResult.value;
       stepOk(res, 'gap_analysis', '差距分析', `匹配度 ${gapAnalysis.match_score || '--'} 分`);
     }
+    // 写入 JD 分析缓存
+    setJdCache(jdText, { jdParsed, gapAnalysis });
     if (aborted) return;
 
     // ---- 步骤4: 押题生成（分题型并行） ----

@@ -49,7 +49,9 @@ async function runAnalysisPipeline(jdText, resumeText, useMianjing = false) {
     jd_parsed: jdParsed,
     resume_parsed: resumeParsed,
     gap_analysis: gapAnalysis,
-    mianjing_data: mianjingData || '无面经数据，请基于JD和简历差距分析生成题目'
+    position: jdParsed.position || '',
+    mianjing_data: mianjingData || '无面经数据，请基于JD和简历差距分析生成题目',
+    focus_type: '综合'
   });
   const questions = await llm(questionPrompt, '', { temperature: 0.8 });
 
