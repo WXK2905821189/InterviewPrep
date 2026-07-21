@@ -1,0 +1,97 @@
+{
+  "name": "interview-prep-mvp",
+  "version": "1.4.1",
+  "description": "InterviewPrep MVP - AI面试押题与模拟面试官",
+  "author": "wxk29",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "electron": "electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {
+    "docx": "^9.7.1",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "mammoth": "^1.12.0",
+    "multer": "^2.2.0",
+    "openai": "^4.73.0",
+    "pdf-parse": "^2.4.5",
+    "tesseract.js": "^5.1.1"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^3.1.1",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.interviewprep.mvp",
+    "productName": "InterviewPrep",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "server.js",
+      "package.json",
+      "package-lock.json",
+      "public/**/*",
+      "chatflow/**/*",
+      "knowledge/**/*",
+      "ai-provider-kit/**/*",
+      "node_modules/**/*",
+      "!.data",
+      "!.local",
+      "!logs",
+      "!.env",
+      "!*.zip"
+    ],
+    "extraResources": [],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icon.png",
+      "sign": null,
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "InterviewPrep",
+      "installerIcon": "electron/icon.png",
+      "uninstallerIcon": "electron/icon.png",
+      "installerHeaderIcon": "electron/icon.png",
+      "license": "LICENSE"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "electron/icon.png",
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": false,
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "electron/icon.png",
+      "category": "Office"
+    }
+  }
+}
