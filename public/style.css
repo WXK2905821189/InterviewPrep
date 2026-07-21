@@ -1618,3 +1618,27 @@ select:focus, .styled-select:focus {
   transition: color 0.5s ease;
 }
 
+/* ===== 群面模拟 ===== */
+.group-msg { margin-bottom: 0.8rem; padding: 0.6rem; background: var(--tag-bg); border-radius: var(--radius-sm); }
+.group-msg-user { background: var(--accent-glow); border-left: 3px solid var(--accent); }
+.group-msg-header { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.3rem; }
+.group-msg-speaker { font-weight: 600; font-size: 0.9rem; }
+.group-msg-role { font-size: 0.72rem; color: var(--muted); background: var(--bg); padding: 0.1rem 0.4rem; border-radius: 4px; }
+.group-msg-body { font-size: 0.9rem; line-height: 1.6; }
+
+/* 语音/朗读按钮 */
+.btn-mic, .btn-speak {
+  width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--rule);
+  background: var(--bg2); cursor: pointer; font-size: 1rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition);
+}
+.btn-mic:hover, .btn-speak:hover { background: var(--tag-bg); border-color: var(--accent); }
+.btn-mic:active { background: var(--red); color: white; }
+
+/* 知识库标签按钮 */
+.kb-tab-btn { font-size: 0.75rem; padding: 0.3rem 0.6rem; }
+
+/* 群面计时器 */
+#group-timer { font-variant-numeric: tabular-nums; font-family: 'DM Sans', monospace; }
+

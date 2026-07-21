@@ -42,6 +42,7 @@
     <button class="nav-tab" data-tab="bank">真题库</button>
     <button class="nav-tab" data-tab="company">公司调研</button>
     <button class="nav-tab" data-tab="wrongbook">📝 错题集</button>
+    <button class="nav-tab" data-tab="group">👥 群面模拟<span class="tab-dot" data-dot-tab="group"></span></button>
   </div>
 </nav>
 
@@ -264,7 +265,10 @@
       <!-- 回答区 -->
       <div class="card" style="margin-bottom:0.8rem;">
         <label style="font-weight:600;margin-bottom:0.5rem;display:block;">✍️ 你的回答</label>
-        <textarea id="practice-answer" rows="6" placeholder="输入你的回答..." style="width:100%;min-height:160px;height:200px;resize:vertical;line-height:1.7;"></textarea>
+        <div style="display:flex;gap:0.5rem;align-items:flex-start;">
+          <textarea id="practice-answer" rows="6" placeholder="输入你的回答..." style="width:100%;min-height:160px;height:200px;resize:vertical;line-height:1.7;"></textarea>
+          <button class="btn-mic" data-voice-target="practice-answer" title="语音输入" style="flex-shrink:0;">🎤</button>
+        </div>
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <button id="btn-practice-submit" class="btn-primary" style="font-size:0.95rem;padding:0.5rem 1.5rem;font-weight:600;">提交评估</button>
           <button id="btn-save-phrase" class="btn-outline hidden" title="保存当前优质回答到话术库">⭐ 存入话术库</button>
@@ -348,7 +352,10 @@
     <div id="interview-area" class="hidden">
       <div class="interview-chat" id="interview-chat"></div>
       <div class="interview-input">
-        <textarea id="interview-answer" rows="3" placeholder="输入你的回答... (Enter发送，Ctrl+Enter/Shift+Enter换行)"></textarea>
+        <div style="display:flex;gap:0.5rem;align-items:flex-start;">
+          <textarea id="interview-answer" rows="3" placeholder="输入你的回答... (Enter发送，Ctrl+Enter/Shift+Enter换行)" style="flex:1;"></textarea>
+          <button class="btn-mic" data-voice-target="interview-answer" title="语音输入" style="flex-shrink:0;">🎤</button>
+        </div>
         <div class="interview-actions">
           <button id="btn-interview-submit" class="btn-primary">回答</button>
           <button id="btn-interview-skip" class="btn-outline">跳过此题</button>
@@ -466,6 +473,18 @@
       </div>
       <div id="mj-question-list" style="margin-top:0.5rem;"></div>
     </div>
+
+    <!-- 面经整合分析 -->
+    <div class="card" style="margin-top:1rem;">
+      <h3>📊 面经整合分析</h3>
+      <p style="color:var(--muted);margin-bottom:0.8rem;">基于已采集的面经数据，进行跨公司/跨岗位的整合分析</p>
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.8rem;">
+        <input type="text" id="mj-analysis-company" placeholder="公司名（可选）" style="flex:1;">
+        <input type="text" id="mj-analysis-position" placeholder="岗位名（可选）" style="flex:1;">
+        <button class="btn-primary btn-sm" id="btn-mj-analysis">🔍 分析</button>
+      </div>
+      <div id="mj-analysis-result" style="display:none;"></div>
+    </div>
   </section>
 
   <!-- ====== Tab 5: 真题库 ====== -->
@@ -578,6 +597,59 @@
     </div>
     <div id="wrongbook-stats" style="margin-bottom:1rem;"></div>
     <div id="wrongbook-list"></div>
+  </section>
+
+  <!-- ====== 群面模拟 ====== -->
+  <section id="tab-group" class="tab-content">
+    <div class="card hero-card">
+      <h1>👥 群面模拟</h1>
+      <p class="subtitle">模拟无领导小组讨论，AI扮演多位候选人，训练你的群面能力</p>
+    </div>
+    
+    <!-- 群面知识库入口 -->
+    <div class="card" style="margin-bottom:1rem;">
+      <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+        <h3 style="margin:0;">📚 群面知识库</h3>
+        <button class="btn-outline btn-sm" id="btn-group-kb">📖 查看群面攻略</button>
+      </div>
+      <div id="group-kb-content" style="display:none;margin-top:1rem;"></div>
+    </div>
+    
+    <!-- 开始区域 -->
+    <div class="card" id="group-start-card">
+      <h3>开始群面模拟</h3>
+      <p style="color:var(--muted);margin-bottom:1rem;">AI 将扮演面试官和3位候选人，模拟真实无领导小组讨论场景。你需要在讨论中积极发言、展现自己的观点。</p>
+      <div id="group-topic-info" style="display:none;margin-bottom:1rem;"></div>
+      <button class="btn-primary" id="btn-group-start" disabled>🚀 开始群面模拟</button>
+      <p style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem;" id="group-start-hint">请先在"分析&押题"中完成JD分析</p>
+    </div>
+    
+    <!-- 讨论区域 -->
+    <div class="card" id="group-discussion-card" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h3 style="margin:0;">💬 自由讨论</h3>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <span style="font-size:0.85rem;color:var(--muted);" id="group-stage">准备阶段</span>
+          <span style="font-size:0.85rem;font-weight:600;color:var(--accent);" id="group-timer">00:00</span>
+        </div>
+      </div>
+      <div id="group-discussion-log" style="max-height:450px;overflow-y:auto;margin-bottom:1rem;padding:0.5rem;background:var(--bg);border-radius:var(--radius-sm);"></div>
+      <div style="display:flex;gap:0.5rem;">
+        <textarea id="group-input" placeholder="输入你的发言..." rows="2" style="flex:1;"></textarea>
+        <button class="btn-primary" id="btn-group-speak" style="align-self:flex-end;">💬 发言</button>
+        <button class="btn-mic" id="btn-group-mic" data-voice-target="group-input" title="语音输入" style="align-self:flex-end;">🎤</button>
+      </div>
+      <div style="display:flex;gap:0.5rem;margin-top:0.5rem;justify-content:flex-end;">
+        <button class="btn-outline btn-sm" id="btn-group-skip">⏭ 跳过本轮</button>
+        <button class="btn-outline btn-sm" id="btn-group-end">⏹ 结束讨论</button>
+      </div>
+    </div>
+    
+    <!-- 评估报告 -->
+    <div class="card" id="group-report-card" style="display:none;">
+      <h3>📊 群面评估报告</h3>
+      <div id="group-report-content"></div>
+    </div>
   </section>
 
   <!-- ====== 公司调研 ====== -->

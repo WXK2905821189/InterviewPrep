@@ -7,6 +7,17 @@ const starFramework = require('./star-framework.json');
 const path = require('path');
 const fs = require('fs');
 
+// 加载群面知识库
+let groupInterviewKB = null;
+try {
+  const groupFile = path.join(__dirname, 'group-interview.json');
+  if (fs.existsSync(groupFile)) {
+    groupInterviewKB = JSON.parse(fs.readFileSync(groupFile, 'utf-8'));
+  }
+} catch (e) {
+  console.warn('[Knowledge] 群面知识库加载失败:', e.message);
+}
+
 // 加载行业题库
 function loadIndustryKB() {
   const dir = path.join(__dirname, 'industry');
@@ -80,6 +91,82 @@ function searchKnowledgeBase({ company, position, industry, keywords = [] } = {}
           results.push({ ...item, kb_source: `公司档案-${company}`, relevance: 10 });
         }
       } catch (e) { /* skip */ }
+    }
+  }
+
+  // 4. 搜索群面知识库（当关键词包含群面相关术语时）
+  const groupKeywords = ['群面', '无领导', '小组讨论', '无领导小组', 'leaderless', 'LGD', '集体面试', '群组面试'];
+  const hasGroupKeyword = allKeywords.some(kw => groupKeywords.some(gk => kw.includes(gk)));
+  if (hasGroupKeyword && groupInterviewKB) {
+    // 提取群面知识库中的结构化信息作为参考条目
+    const overview = groupInterviewKB.overview;
+    if (overview) {
+      results.push({
+        question: '群面概览：' + (overview.definition || '').slice(0, 100),
+        type: '群面知识',
+        category: '群面基础知识',
+        kb_source: '群面知识库-概览',
+        relevance: 8,
+        _detail: overview
+      });
+    }
+
+    // 添加角色策略
+    if (groupInterviewKB.roles && groupInterviewKB.roles.roles) {
+      for (const role of groupInterviewKB.roles.roles) {
+        results.push({
+          question: `群面角色-${role.name}：${role.responsibility}`,
+          type: '群面知识',
+          category: '角色策略',
+          kb_source: '群面知识库-角色',
+          relevance: 7,
+          _detail: role
+        });
+      }
+    }
+
+    // 添加题型策略
+    if (groupInterviewKB.question_types && groupInterviewKB.question_types.types) {
+      for (const qt of groupInterviewKB.question_types.types) {
+        results.push({
+          question: `群面题型-${qt.name}：${qt.characteristics}`,
+          type: '群面知识',
+          category: '题型策略',
+          kb_source: '群面知识库-题型',
+          relevance: 7,
+          _detail: qt
+        });
+      }
+    }
+
+    // 添加话术模板
+    if (groupInterviewKB.speech_templates && groupInterviewKB.speech_templates.templates) {
+      for (const [key, templates] of Object.entries(groupInterviewKB.speech_templates.templates)) {
+        if (templates.length > 0) {
+          results.push({
+            question: `群面话术-${key}：${templates[0]}`,
+            type: '群面知识',
+            category: '话术模板',
+            kb_source: '群面知识库-话术',
+            relevance: 6,
+            _detail: { category: key, templates }
+          });
+        }
+      }
+    }
+
+    // 添加经典案例
+    if (groupInterviewKB.classic_cases) {
+      for (const cs of groupInterviewKB.classic_cases) {
+        results.push({
+          question: `群面经典案例-${cs.title}：${cs.scenario ? cs.scenario.slice(0, 80) : ''}`,
+          type: '群面知识',
+          category: '经典案例',
+          kb_source: '群面知识库-案例',
+          relevance: 5,
+          _detail: cs
+        });
+      }
     }
   }
 

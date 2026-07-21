@@ -59,7 +59,10 @@ const {
   interviewStart,
   interviewRespond,
   evaluateFullSession,
-  optimizeResume
+  optimizeResume,
+  groupInterviewStart,
+  groupInterviewRespond,
+  groupInterviewEvaluate
 } = require('./chatflow/engine');
 
 // ---- ai-provider-kit 集成（云端自动降级） ----
@@ -2268,6 +2271,155 @@ app.post('/api/mianjing-collect', async (req, res) => {
   } catch (e) {
     sse({ step: 'error', detail: '采集异常: ' + (e.message || '未知'), status: 'error' });
     res.end();
+  }
+});
+
+// ============================================================
+// API: 群面模拟 - 开始
+// ============================================================
+app.post('/api/group-interview/start', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.analysis) {
+      return res.status(400).json({ error: '请先完成分析（调用 /api/analyze）' });
+    }
+
+    const jdParsed = session.analysis.jd;
+    const resumeParsed = session.analysis.resume;
+
+    const groupSession = await groupInterviewStart(jdParsed, resumeParsed);
+    session.groupInterview = groupSession;
+    saveSessions();
+
+    res.json({
+      topic: groupSession.topic,
+      candidates: groupSession.candidates,
+      stage: groupSession.stage
+    });
+  } catch (e) {
+    logError('群面开始失败: ' + (e.stack || e.message));
+    res.status(500).json({ error: '群面初始化失败: ' + (e.message || '未知错误') });
+  }
+});
+
+// ============================================================
+// API: 群面模拟 - 用户发言
+// ============================================================
+app.post('/api/group-interview/respond', async (req, res) => {
+  try {
+    const { sessionId, message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: '请提供发言内容' });
+    }
+
+    const session = sessions.get(sessionId);
+    if (!session?.groupInterview) {
+      return res.status(400).json({ error: '请先开始群面模拟（调用 /api/group-interview/start）' });
+    }
+
+    const result = await groupInterviewRespond(session.groupInterview, message);
+    saveSessions();
+
+    res.json({
+      speaker: result.speaker,
+      role: result.role,
+      message: result.message,
+      action: result.action
+    });
+  } catch (e) {
+    logError('群面发言处理失败: ' + (e.stack || e.message));
+    res.status(500).json({ error: '群面发言处理失败: ' + (e.message || '未知错误') });
+  }
+});
+
+// ============================================================
+// API: 群面模拟 - 评估
+// ============================================================
+app.post('/api/group-interview/evaluate', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.groupInterview) {
+      return res.status(400).json({ error: '请先开始群面模拟（调用 /api/group-interview/start）' });
+    }
+
+    const evaluation = await groupInterviewEvaluate(session.groupInterview);
+    saveSessions();
+
+    res.json(evaluation);
+  } catch (e) {
+    logError('群面评估失败: ' + (e.stack || e.message));
+    res.status(500).json({ error: '群面评估失败: ' + (e.message || '未知错误') });
+  }
+});
+
+// ============================================================
+// API: 面经整合分析 (SSE 流式)
+// ============================================================
+app.post('/api/mianjing-analysis', async (req, res) => {
+  sseInit(res);
+  const { sessionId, company, position } = req.body;
+
+  try {
+    // 从真题库中加载相关题目
+    const bank = loadMianjingBank();
+    const targetCompany = company || '';
+    const targetPosition = position || '';
+
+    if (!targetCompany && !targetPosition) {
+      sseError(res, '请提供公司名或岗位名');
+      return;
+    }
+
+    sseSend(res, { step: 'loading', detail: '正在从真题库加载相关数据...', status: 'running' });
+
+    // 筛选相关题目
+    const relevantQuestions = bank.filter(q => {
+      const companyMatch = !targetCompany || (q.company && q.company.includes(targetCompany));
+      const positionMatch = !targetPosition || (q.position && q.position.includes(targetPosition));
+      return companyMatch || positionMatch;
+    });
+
+    if (relevantQuestions.length === 0) {
+      sseDone(res, {
+        step: 'done',
+        detail: '未找到相关面经数据，请先采集面经（调用 /api/mianjing-collect）',
+        status: 'warn',
+        result: {
+          company_analysis: { interview_rounds: '未知', common_questions: [], difficulty_level: '未知', salary_range: '面经中未提及', interview_style: '未知' },
+          position_analysis: { skill_requirements: [], common_topics: [], pass_rate_estimate: '面经数据不足以估计' },
+          trends: [],
+          comparison: { same_position_different_company: [], same_company_different_position: [] },
+          preparation_advice: ['请先采集面经数据后再进行分析']
+        }
+      });
+      return;
+    }
+
+    sseSend(res, { step: 'analyzing', detail: `找到 ${relevantQuestions.length} 道相关真题，正在分析...`, status: 'running' });
+
+    // 调用 LLM 进行分析
+    const { llm } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const analysisPrompt = require('./chatflow/llm-client').fillTemplate(prompts.MIANJING_ANALYSIS, {
+      company: targetCompany,
+      position: targetPosition,
+      mianjing_data: JSON.stringify(relevantQuestions.slice(0, 50), null, 2)
+    });
+
+    const analysisResult = await llm(analysisPrompt, '', { temperature: 0.5 });
+
+    sseDone(res, {
+      step: 'done',
+      detail: `分析完成：${relevantQuestions.length} 道真题，覆盖 ${targetCompany || targetPosition}`,
+      status: 'ok',
+      result: analysisResult
+    });
+  } catch (e) {
+    logError('面经分析失败: ' + (e.stack || e.message));
+    sseError(res, '面经分析失败: ' + (e.message || '未知错误'));
   }
 });
 

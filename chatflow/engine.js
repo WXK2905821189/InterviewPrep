@@ -289,6 +289,77 @@ async function optimizeResume(jdParsed, resumeText) {
   return result;
 }
 
+// ============================================================
+// Chatflow 4: 群面模拟
+// ============================================================
+async function groupInterviewStart(jdParsed, resumeParsed) {
+  const topicPrompt = fillTemplate(prompts.GROUP_DISCUSSION_TOPIC, {
+    jd_parsed: typeof jdParsed === 'string' ? jdParsed : JSON.stringify(jdParsed, null, 2),
+    position: (jdParsed && jdParsed.position) || '通用岗位'
+  });
+  const topic = await llm(topicPrompt, '', { temperature: 0.8 });
+
+  return {
+    topic,
+    discussionHistory: [],
+    stage: 'intro',
+    candidates: [
+      { id: 'A', name: '候选人A', role: '激进型', style: '观点鲜明，抢先发言，偶尔强势' },
+      { id: 'B', name: '候选人B', role: '协作型', style: '温和友善，补充观点，推动共识' },
+      { id: 'C', name: '候选人C', role: '分析型', style: '数据驱动，提出质疑，逻辑严密' }
+    ]
+  };
+}
+
+async function groupInterviewRespond(session, userMessage) {
+  if (!session.discussionHistory) {
+    session.discussionHistory = [];
+  }
+  session.discussionHistory.push({ speaker: '我', message: userMessage });
+
+  // 判断下一个发言者
+  const nextSpeaker = getNextSpeaker(session);
+
+  const responsePrompt = fillTemplate(prompts.GROUP_CANDIDATE_RESPONSE, {
+    role: nextSpeaker.name + '（' + nextSpeaker.role + '）',
+    topic: JSON.stringify(session.topic),
+    discussion_history: JSON.stringify(session.discussionHistory.slice(-10)),
+    user_last_message: userMessage
+  });
+
+  const response = await llm(responsePrompt, '', { temperature: 0.7 });
+  session.discussionHistory.push({ speaker: nextSpeaker.name, message: response.message });
+
+  return { speaker: nextSpeaker.name, role: nextSpeaker.role, message: response.message, action: response.action };
+}
+
+function getNextSpeaker(session) {
+  const history = session.discussionHistory || [];
+  const lastSpeaker = history[history.length - 1]?.speaker;
+  // 轮流发言逻辑：如果用户刚发言，随机选一个AI候选人
+  if (lastSpeaker === '我') {
+    const candidates = session.candidates;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  // 如果AI刚发言，返回面试官做阶段性总结（每5轮）
+  const aiCount = history.filter(m => m.speaker !== '我' && m.speaker !== '面试官').length;
+  if (aiCount > 0 && aiCount % 5 === 0) {
+    return { id: 'interviewer', name: '面试官', role: '面试官' };
+  }
+  // 轮换下一个候选人
+  const lastAi = session.candidates.findIndex(c => c.name === lastSpeaker);
+  const next = lastAi >= 0 ? (lastAi + 1) % session.candidates.length : 0;
+  return session.candidates[next];
+}
+
+async function groupInterviewEvaluate(session) {
+  const evalPrompt = fillTemplate(prompts.GROUP_EVALUATION, {
+    discussion_log: JSON.stringify(session.discussionHistory || []),
+    topic: JSON.stringify(session.topic)
+  });
+  return await llm(evalPrompt, '', { temperature: 0.5 });
+}
+
 module.exports = {
   runAnalysisPipeline,
   createInterviewSession,
@@ -297,5 +368,8 @@ module.exports = {
   interviewNextQuestion,
   evaluateAnswer,
   evaluateFullSession,
-  optimizeResume
+  optimizeResume,
+  groupInterviewStart,
+  groupInterviewRespond,
+  groupInterviewEvaluate
 };

@@ -531,7 +531,7 @@ function loadModelAnswerHandler(mode, question, section) {
 
       if (result.model_answer) {
         var html = '<div class=\"model-answer-card\">';
-        html += '<div class=\"model-answer-header\">✨ AI标准答案参考</div>';
+        html += '<div class=\"model-answer-header\">✨ AI标准答案参考 <button class=\"btn-speak\" data-text=\"' + result.model_answer.replace(/"/g, '&quot;').replace(/\n/g, ' ') + '\" style=\"width:24px;height:24px;font-size:0.7rem;margin-left:0.4rem;vertical-align:middle;\">🔊</button></div>';
         html += '<div class=\"model-answer-body\">' + result.model_answer.replace(/\n/g, '<br>') + '</div>';
         if (result.resume_anchors && result.resume_anchors.length > 0) {
           html += '<div class=\"model-answer-anchors\"><b>📎 引用的简历经历：</b>' +
@@ -813,6 +813,18 @@ function switchTab(tabName) {
     loadDrillStats();
   }
   if (tabName === 'wrongbook') { loadWrongBook(); }
+  if (tabName === 'group') {
+    // 检查是否有分析结果，有则启用开始按钮
+    var btnStart = document.getElementById('btn-group-start');
+    var hint = document.getElementById('group-start-hint');
+    if (state.analysis && state.analysis.jdParsed) {
+      if (btnStart) btnStart.disabled = false;
+      if (hint) hint.textContent = '已检测到JD分析结果，可以开始群面模拟';
+    } else {
+      if (btnStart) btnStart.disabled = true;
+      if (hint) hint.textContent = '请先在"分析&押题"中完成JD分析';
+    }
+  }
 }
 
 $$('.nav-tab').forEach(tab => {
@@ -1650,6 +1662,24 @@ function addChatMsg(role, content, stage) {
   div.className = `chat-msg ${role}`;
   if (stage) div.innerHTML = `<div class="chat-stage">${stage}</div>${content}`;
   else div.textContent = content;
+  // Add speak button for interviewer messages
+  if (role === 'interviewer') {
+    var speakBtn = document.createElement('button');
+    speakBtn.className = 'btn-speak';
+    speakBtn.textContent = '🔊';
+    speakBtn.dataset.text = content;
+    speakBtn.style.cssText = 'margin-left:0.4rem;width:28px;height:28px;font-size:0.8rem;flex-shrink:0;';
+    div.style.display = 'flex';
+    div.style.alignItems = 'flex-start';
+    div.style.gap = '0.3rem';
+    var textSpan = document.createElement('span');
+    textSpan.style.flex = '1';
+    if (stage) textSpan.innerHTML = `<div class="chat-stage">${stage}</div>${content}`;
+    else textSpan.textContent = content;
+    div.textContent = '';
+    div.appendChild(textSpan);
+    div.appendChild(speakBtn);
+  }
   $('#interview-chat').appendChild(div);
   $('#interview-chat').scrollTop = $('#interview-chat').scrollHeight;
 }
@@ -2152,7 +2182,7 @@ document.getElementById('btn-generate-self-intro')?.addEventListener('click', as
       var duration = result.duration_estimate ? '<span class="self-intro-duration">⏱ ' + result.duration_estimate + '</span>' : '';
 
       resultEl.innerHTML = '<div class="model-answer-card">' +
-        '<div class="model-answer-header">🎙️ AI生成的自我介绍 ' + duration + '</div>' +
+        '<div class="model-answer-header">🎙️ AI生成的自我介绍 ' + duration + ' <button class="btn-speak" data-text="' + result.self_intro.replace(/"/g, '&quot;').replace(/\n/g, ' ') + '" style="width:24px;height:24px;font-size:0.7rem;margin-left:0.4rem;vertical-align:middle;">🔊</button></div>' +
         '<div class="model-answer-body">' + result.self_intro.replace(/\n/g, '<br>') + '</div>' +
         (result.tips ? '<div class="model-answer-tips">💡 ' + result.tips + '</div>' : '') +
         highlights +
@@ -4500,4 +4530,479 @@ function redoWrongQuestion(question) {
     btn.disabled = false;
     btn.textContent = '\u89E3\u6790\u94FE\u63A5';
   });
+})();
+
+// ============================================================
+// Phase 3: Voice Input (Web Speech API)
+// ============================================================
+var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+var recognition = null;
+var currentVoiceTarget = null;
+
+function initSpeechRecognition() {
+  if (!SpeechRecognition) { console.warn('\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BED\u97F3\u8BC6\u522B'); return; }
+  recognition = new SpeechRecognition();
+  recognition.lang = 'zh-CN';
+  recognition.interimResults = true;
+  recognition.continuous = false;
+  
+  recognition.onresult = function(event) {
+    var final = '', interim = '';
+    for (var i = 0; i < event.results.length; i++) {
+      if (event.results[i].isFinal) final += event.results[i][0].transcript;
+      else interim += event.results[i][0].transcript;
+    }
+    if (currentVoiceTarget) {
+      currentVoiceTarget.value = (currentVoiceTarget.dataset.origValue || '') + final;
+      if (interim) currentVoiceTarget.placeholder = '\u8BC6\u522B\u4E2D: ' + interim;
+    }
+  };
+  
+  recognition.onend = function() {
+    if (currentVoiceTarget) {
+      var btn = document.querySelector('[data-voice-target=\"' + currentVoiceTarget.id + '\"]');
+      if (btn) btn.textContent = '\uD83C\uDFA4';
+    }
+  };
+  
+  recognition.onerror = function() {
+    if (currentVoiceTarget) {
+      var btn = document.querySelector('[data-voice-target=\"' + currentVoiceTarget.id + '\"]');
+      if (btn) btn.textContent = '\uD83C\uDFA4';
+    }
+    currentVoiceTarget = null;
+  };
+}
+
+function startVoiceInput(targetId) {
+  if (!recognition) { alert('\u60A8\u7684\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BED\u97F3\u8BC6\u522B\uFF0C\u8BF7\u4F7F\u7528Chrome/Edge'); return; }
+  var el = document.getElementById(targetId);
+  if (!el) return;
+  currentVoiceTarget = el;
+  el.dataset.origValue = el.value;
+  var btn = document.querySelector('[data-voice-target=\"' + targetId + '\"]');
+  if (btn) btn.textContent = '\uD83D\uDD34';
+  try { recognition.start(); } catch(e) {}
+}
+
+// Global binding: all .btn-mic click triggers voice input
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('.btn-mic');
+  if (!btn) return;
+  var targetId = btn.dataset.voiceTarget;
+  if (targetId) startVoiceInput(targetId);
+});
+
+// Initialize voice recognition on load
+initSpeechRecognition();
+
+// ============================================================
+// Phase 3: TTS (SpeechSynthesis)
+// ============================================================
+function speakText(text) {
+  if (!window.speechSynthesis) { alert('\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BED\u97F3\u6717\u8BFB'); return; }
+  window.speechSynthesis.cancel();
+  var utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'zh-CN';
+  utter.rate = 1.0;
+  utter.pitch = 1.0;
+  // Select Chinese voice
+  var voices = window.speechSynthesis.getVoices();
+  var zhVoice = voices.find(function(v) { return v.lang.startsWith('zh'); });
+  if (zhVoice) utter.voice = zhVoice;
+  window.speechSynthesis.speak(utter);
+}
+
+function stopSpeaking() {
+  window.speechSynthesis.cancel();
+}
+
+// Global binding: all .btn-speak click reads data-text content
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('.btn-speak');
+  if (!btn) return;
+  var text = btn.dataset.text;
+  if (text) speakText(text);
+});
+
+// ============================================================
+// Phase 3: Group Interview (群面模拟)
+// ============================================================
+var groupSession = null;
+var groupTimer = null;
+
+function getCurrentSession() {
+  return { sessionId: state.sessionId, analysis: state.analysis };
+}
+
+async function startGroupInterview() {
+  var session = getCurrentSession();
+  if (!session || !session.analysis) { alert('\u8BF7\u5148\u5728\u201C\u5206\u6790&\u62BC\u9898\u201D\u4E2D\u5B8C\u6210JD\u5206\u6790'); return; }
+  
+  try {
+    var resp = await fetchRetry('/api/group-interview/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jdParsed: session.analysis.jdParsed, resumeParsed: session.analysis.resumeParsed })
+    });
+    var data = await resp.json();
+    if (data.error) { alert(data.error); return; }
+    
+    groupSession = data;
+    renderGroupTopic(data.topic);
+    document.getElementById('group-start-card').style.display = 'none';
+    document.getElementById('group-discussion-card').style.display = '';
+    document.getElementById('group-discussion-log').innerHTML = '';
+    
+    // Add interviewer opening
+    addGroupMessage('\u9762\u8BD5\u5B98', '\u9762\u8BD5\u5B98', '\u9898\u76EE\uFF1A' + data.topic.topic + '\n\n\u80CC\u666F\uFF1A' + data.topic.background + '\n\n\u8BF7\u5404\u4F4D\u5019\u9009\u4EBA\u75282\u5206\u949F\u65F6\u95F4\u601D\u8003\uFF0C\u7136\u540E\u81EA\u7531\u8BA8\u8BBA\u3002\u8BA8\u8BBA\u65F6\u95F415\u5206\u949F\u3002');
+    startGroupTimer(900); // 15 min
+  } catch(e) { alert('\u542F\u52A8\u7FA4\u9762\u5931\u8D25: ' + e.message); }
+}
+
+function addGroupMessage(speaker, role, message) {
+  var log = document.getElementById('group-discussion-log');
+  var isUser = speaker === '\u6211';
+  var div = document.createElement('div');
+  div.className = 'group-msg' + (isUser ? ' group-msg-user' : '');
+  div.innerHTML = 
+    '<div class=\"group-msg-header\">' +
+    '<span class=\"group-msg-speaker\" style=\"color:' + getGroupRoleColor(role) + '\">' + speaker + '</span>' +
+    '<span class=\"group-msg-role\">' + role + '</span>' +
+    '</div>' +
+    '<div class=\"group-msg-body\">' + escapeHtml(message) + '</div>' +
+    (!isUser ? '<button class=\"btn-speak\" data-text=\"' + escapeHtml(message).replace(/\"/g, '&quot;') + '\" style=\"width:24px;height:24px;font-size:0.7rem;margin-top:0.3rem;\">\uD83D\uDD0A</button>' : '');
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function getGroupRoleColor(role) {
+  if (role === '\u9762\u8BD5\u5B98') return '#6366f1';
+  if (role === '\u6FC0\u8FDB\u578B') return '#ef4444';
+  if (role === '\u534F\u4F5C\u578B') return '#22c55e';
+  if (role === '\u5206\u6790\u578B') return '#3b82f6';
+  return 'var(--accent)';
+}
+
+async function submitGroupMessage() {
+  var input = document.getElementById('group-input');
+  var msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  
+  addGroupMessage('\u6211', '\u5019\u9009\u4EBA', msg);
+  
+  try {
+    var resp = await fetchRetry('/api/group-interview/respond', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg })
+    });
+    var data = await resp.json();
+    if (data.error) { alert(data.error); return; }
+    addGroupMessage(data.speaker, data.role, data.message);
+  } catch(e) { alert('\u53D1\u8A00\u5931\u8D25: ' + e.message); }
+}
+
+async function endGroupInterview() {
+  clearInterval(groupTimer);
+  try {
+    var resp = await fetchRetry('/api/group-interview/evaluate', { method: 'POST' });
+    var data = await resp.json();
+    document.getElementById('group-discussion-card').style.display = 'none';
+    document.getElementById('group-report-card').style.display = '';
+    renderGroupReport(data);
+  } catch(e) { alert('\u8BC4\u4F30\u5931\u8D25: ' + e.message); }
+}
+
+function renderGroupTopic(topic) {
+  var info = document.getElementById('group-topic-info');
+  info.style.display = '';
+  info.innerHTML = 
+    '<div style=\"background:var(--tag-bg);padding:0.8rem;border-radius:var(--radius-sm);\">' +
+    '<strong>' + escapeHtml(topic.topic) + '</strong>' +
+    '<p style=\"margin:0.5rem 0 0;color:var(--muted);\">' + escapeHtml(topic.background) + '</p>' +
+    '<span style=\"font-size:0.75rem;color:var(--accent);\">\u9898\u578B\uFF1A' + escapeHtml(topic.type) + '</span>' +
+    '</div>';
+}
+
+function renderGroupReport(report) {
+  var content = document.getElementById('group-report-content');
+  var dimsHTML = (report.dimensions || []).map(function(d) {
+    return '<div style=\"margin-bottom:0.8rem;\">' +
+      '<div style=\"display:flex;justify-content:space-between;\">' +
+      '<span>' + d.name + '</span><span style=\"color:var(--accent);\">' + d.score + '/100</span>' +
+      '</div>' +
+      '<div style=\"background:var(--rule);height:6px;border-radius:3px;margin-top:0.3rem;\">' +
+      '<div style=\"background:var(--accent);height:100%;border-radius:3px;width:' + d.score + '%;\"></div>' +
+      '</div>' +
+      '<div style=\"font-size:0.8rem;color:var(--muted);\">' + d.comment + '</div>' +
+      '</div>';
+  }).join('');
+  content.innerHTML = 
+    '<div style=\"text-align:center;margin-bottom:1rem;\">' +
+    '<div style=\"font-size:3rem;font-weight:700;color:var(--accent);\">' + report.overall_score + '</div>' +
+    '<div style=\"color:var(--muted);\">\u7EFC\u5408\u8BC4\u5206</div>' +
+    '</div>' +
+    dimsHTML +
+    '<div style=\"margin-top:1rem;\">' +
+    '<strong>\uD83D\uDCAA \u4F18\u52BF</strong><ul>' + (report.strengths || []).map(function(s) { return '<li>' + escapeHtml(s) + '</li>'; }).join('') + '</ul>' +
+    '<strong>\uD83D\uDD27 \u5F85\u6539\u8FDB</strong><ul>' + (report.weaknesses || []).map(function(w) { return '<li>' + escapeHtml(w) + '</li>'; }).join('') + '</ul>' +
+    '<strong>\uD83D\uDCA1 \u5EFA\u8BAE</strong><ul>' + (report.suggestions || []).map(function(s) { return '<li>' + escapeHtml(s) + '</li>'; }).join('') + '</ul>' +
+    '</div>' +
+    '<div style=\"margin-top:1rem;padding:0.8rem;background:var(--tag-bg);border-radius:var(--radius-sm);\">' +
+    '<strong>\u89D2\u8272\u5206\u6790\uFF1A</strong>' + escapeHtml(report.role_analysis || '') +
+    '</div>';
+}
+
+function startGroupTimer(seconds) {
+  clearInterval(groupTimer);
+  var remaining = seconds;
+  updateGroupTimer(remaining);
+  groupTimer = setInterval(function() {
+    remaining--;
+    updateGroupTimer(remaining);
+    if (remaining <= 0) { clearInterval(groupTimer); endGroupInterview(); }
+  }, 1000);
+}
+
+function updateGroupTimer(seconds) {
+  var m = Math.floor(seconds / 60);
+  var s = seconds % 60;
+  document.getElementById('group-timer').textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+// Group interview knowledge base
+function showGroupKnowledgeBase() {
+  var content = document.getElementById('group-kb-content');
+  if (content.style.display === 'none') {
+    content.style.display = '';
+    fetch('/knowledge/group-interview.json')
+      .then(function(r) { return r.json(); })
+      .then(function(kb) { renderGroupKB(kb, content); })
+      .catch(function() { content.innerHTML = '<p>\u52A0\u8F7D\u77E5\u8BC6\u5E93\u5931\u8D25</p>'; });
+  } else {
+    content.style.display = 'none';
+  }
+}
+
+function renderGroupKB(kb, container) {
+  var html = '<div style=\"display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;\">';
+  var sections = ['overview', 'interview_flow', 'roles', 'question_types', 'evaluation_criteria', 'speech_templates', 'classic_cases', 'common_mistakes', 'preparation_checklist'];
+  var labels = ['\u6982\u8FF0', '\u9762\u8BD5\u6D41\u7A0B', '\u89D2\u8272\u7B56\u7565', '\u9898\u578B\u5206\u7C7B', '\u8BC4\u5206\u6807\u51C6', '\u8BDD\u672F\u6A21\u677F', '\u7ECF\u5178\u6848\u4F8B', '\u5E38\u89C1\u9519\u8BEF', '\u51C6\u5907\u6E05\u5355'];
+  sections.forEach(function(s, i) {
+    html += '<button class=\"btn-outline btn-sm kb-tab-btn\" data-kb-section=\"' + s + '\">' + labels[i] + '</button>';
+  });
+  html += '</div><div id=\"group-kb-detail\"></div>';
+  container.innerHTML = html;
+  
+  document.querySelectorAll('.kb-tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var section = btn.dataset.kbSection;
+      var detail = document.getElementById('group-kb-detail');
+      detail.innerHTML = renderKBSection(kb, section);
+    });
+  });
+  // Default: show overview
+  document.getElementById('group-kb-detail').innerHTML = renderKBSection(kb, 'overview');
+}
+
+function renderKBSection(kb, section) {
+  var data = kb[section];
+  if (!data) return '<p>\u6682\u65E0\u5185\u5BB9</p>';
+  
+  if (section === 'overview') {
+    return '<div style=\"line-height:1.8;\">' +
+      '<p><strong>\u5B9A\u4E49\uFF1A</strong>' + data.definition + '</p>' +
+      '<p><strong>\u76EE\u7684\uFF1A</strong>' + data.purpose + '</p>' +
+      '<p><strong>\u5F62\u5F0F\uFF1A</strong>' + data.typical_format + '</p>' +
+      '<p><strong>\u901A\u8FC7\u7387\uFF1A</strong>' + data.pass_rate + '</p>' +
+      '<p style=\"color:var(--accent);\"><strong>\u6838\u5FC3\u6D1E\u5BDF\uFF1A</strong>' + data.key_insight + '</p>' +
+      '</div>';
+  }
+  
+  if (section === 'interview_flow') {
+    return data.stages.map(function(s) {
+      return '<div style=\"margin-bottom:1rem;padding:0.8rem;background:var(--tag-bg);border-radius:var(--radius-sm);\">' +
+        '<strong>' + s.name + '</strong> <span style=\"color:var(--muted);\">(' + s.duration + ')</span>' +
+        '<p style=\"margin:0.3rem 0;\">' + s.description + '</p>' +
+        '<ul>' + s.tips.map(function(t) { return '<li>' + t + '</li>'; }).join('') + '</ul>' +
+        '</div>';
+    }).join('');
+  }
+  
+  if (section === 'roles') {
+    return '<p style=\"margin-bottom:0.8rem;\">' + data.description + '</p>' +
+      data.roles.map(function(r) {
+        return '<div style=\"margin-bottom:0.8rem;padding:0.8rem;background:var(--tag-bg);border-radius:var(--radius-sm);\">' +
+          '<strong>' + r.icon + ' ' + r.name + '</strong>' +
+          '<p style=\"margin:0.3rem 0;\">' + r.responsibility + '</p>' +
+          '<p style=\"font-size:0.85rem;color:var(--accent);\">\uD83D\uDCA1 ' + r.how_to + '</p>' +
+          '<p style=\"font-size:0.8rem;color:var(--red);\">\u26A0 ' + r.risk + '</p>' +
+          '</div>';
+      }).join('') + '<p style=\"color:var(--muted);\">' + data.role_selection_advice + '</p>';
+  }
+  
+  if (section === 'question_types') {
+    return data.types.map(function(t) {
+      return '<div style=\"margin-bottom:0.8rem;padding:0.8rem;background:var(--tag-bg);border-radius:var(--radius-sm);\">' +
+        '<strong>' + t.name + '</strong> <span style=\"color:var(--accent);\">\u96BE\u5EA6\uFF1A' + t.difficulty + '</span>' +
+        '<p style=\"margin:0.3rem 0;\"><em>\u793A\u4F8B\uFF1A' + t.example + '</em></p>' +
+        '<p style=\"font-size:0.85rem;\">' + t.characteristics + '</p>' +
+        '<p style=\"font-size:0.85rem;color:var(--accent2);\">\u7B56\u7565\uFF1A' + t.strategy + '</p>' +
+        '</div>';
+    }).join('');
+  }
+  
+  if (section === 'evaluation_criteria') {
+    return data.dimensions.map(function(d) {
+      return '<div style=\"margin-bottom:0.6rem;display:flex;justify-content:space-between;align-items:center;\">' +
+        '<span>' + d.name + ' (' + d.weight + ')</span>' +
+        '<span style=\"font-size:0.8rem;color:var(--muted);\">' + d.description + '</span>' +
+        '</div>';
+    }).join('');
+  }
+  
+  if (section === 'speech_templates') {
+    return Object.entries(data.templates).map(function(entry) {
+      var key = entry[0], templates = entry[1];
+      var labelMap = { ice_breaker: '\u7834\u51B0\u53D1\u8A00', time_management: '\u65F6\u95F4\u7BA1\u7406', building_on_others: '\u627F\u63A5\u4ED6\u4EBA', polite_disagreement: '\u793C\u8C8C\u53CD\u9A73', redirecting: '\u62C9\u56DE\u6B63\u9898', building_consensus: '\u5EFA\u7ACB\u5171\u8BC6', summary: '\u603B\u7ED3\u9648\u8FF0' };
+      return '<div style=\"margin-bottom:1rem;\">' +
+        '<strong>' + (labelMap[key] || key) + '</strong>' +
+        templates.map(function(t) { return '<p style=\"font-size:0.85rem;padding:0.4rem;background:var(--tag-bg);border-radius:4px;margin:0.3rem 0;\">' + t + '</p>'; }).join('') +
+        '</div>';
+    }).join('');
+  }
+  
+  if (section === 'classic_cases') {
+    return data.map(function(c) {
+      return '<div style=\"margin-bottom:1rem;padding:0.8rem;background:var(--tag-bg);border-radius:var(--radius-sm);\">' +
+        '<strong>' + c.title + '</strong> <span style=\"color:var(--accent);\">[' + c.type + ']</span>' +
+        '<p style=\"margin:0.3rem 0;\">' + c.scenario + '</p>' +
+        (c.analysis_framework ? '<p style=\"font-size:0.85rem;color:var(--accent2);\">\u5206\u6790\u6846\u67B6\uFF1A' + c.analysis_framework + '</p>' : '') +
+        (c.items ? '<p style=\"font-size:0.8rem;color:var(--muted);\">\u7269\u54C1\uFF1A' + c.items + '</p>' : '') +
+        '<p style=\"font-size:0.85rem;color:var(--accent);\">\uD83D\uDCA1 ' + c.key_insight + '</p>' +
+        '</div>';
+    }).join('');
+  }
+  
+  if (section === 'common_mistakes') {
+    return data.mistakes.map(function(m) {
+      return '<div style=\"margin-bottom:0.6rem;padding:0.6rem;background:var(--tag-bg);border-radius:var(--radius-sm);\">' +
+        '<strong style=\"color:var(--red);\">\u274C ' + m.mistake + '</strong>' +
+        '<p style=\"margin:0.2rem 0;font-size:0.85rem;\">\u540E\u679C\uFF1A' + m.consequence + '</p>' +
+        '<p style=\"font-size:0.85rem;color:var(--accent2);\">\u2705 \u5BF9\u7B56\uFF1A' + m.fix + '</p>' +
+        '</div>';
+    }).join('');
+  }
+  
+  if (section === 'preparation_checklist') {
+    return '<ul>' + data.map(function(item) { return '<li>' + item + '</li>'; }).join('') + '</ul>';
+  }
+  
+  return '<p>\u6682\u65E0\u5185\u5BB9</p>';
+}
+
+// ============================================================
+// Phase 3: Mianjing Analysis (面经整合分析)
+// ============================================================
+async function doMianjingAnalysis() {
+  var company = document.getElementById('mj-analysis-company').value.trim();
+  var position = document.getElementById('mj-analysis-position').value.trim();
+  if (!company && !position) { alert('\u8BF7\u81F3\u5C11\u8F93\u5165\u516C\u53F8\u540D\u6216\u5C97\u4F4D\u540D'); return; }
+  
+  var result = document.getElementById('mj-analysis-result');
+  result.style.display = '';
+  result.innerHTML = '<p>\u6B63\u5728\u5206\u6790\u4E2D...</p>';
+  
+  try {
+    var resp = await fetchRetry('/api/mianjing-analysis', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: company, position: position })
+    });
+    
+    var body = resp.body;
+    var reader = body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    
+    while (true) {
+      var readResult = await reader.read();
+      if (readResult.done) break;
+      buffer += decoder.decode(readResult.value, { stream: true });
+      var lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.startsWith('data: ')) {
+          try {
+            var data = JSON.parse(line.slice(6));
+            if (data._done) break;
+            if (data.error) { result.innerHTML = '<p style=\"color:var(--red);\">' + data.error + '</p>'; return; }
+            renderMianjingAnalysis(data, result);
+          } catch(e) {}
+        }
+      }
+    }
+  } catch(e) { result.innerHTML = '<p style=\"color:var(--red);\">\u5206\u6790\u5931\u8D25: ' + e.message + '</p>'; }
+}
+
+function renderMianjingAnalysis(data, container) {
+  var html = '';
+  if (data.company_analysis) {
+    html += '<div style=\"margin-bottom:1rem;\"><h4>\uD83C\uDFE2 ' + (data.company_analysis.company || '\u516C\u53F8\u5206\u6790') + '</h4>';
+    html += '<p>\u9762\u8BD5\u6D41\u7A0B\uFF1A' + (data.company_analysis.interview_rounds || '\u6682\u65E0\u6570\u636E') + '</p>';
+    html += '<p>\u96BE\u5EA6\uFF1A' + (data.company_analysis.difficulty_level || '\u6682\u65E0\u6570\u636E') + '</p>';
+    html += '<p>\u85AA\u8D44\u8303\u56F4\uFF1A' + (data.company_analysis.salary_range || '\u6682\u65E0\u6570\u636E') + '</p>';
+    html += '<p>\u9762\u8BD5\u98CE\u683C\uFF1A' + (data.company_analysis.interview_style || '\u6682\u65E0\u6570\u636E') + '</p>';
+    if (data.company_analysis.common_questions) {
+      html += '<strong>\u9AD8\u9891\u9898\uFF1A</strong><ul>' + data.company_analysis.common_questions.slice(0, 10).map(function(q) { return '<li>' + escapeHtml(q.question) + ' (' + q.frequency + '\u6B21)</li>'; }).join('') + '</ul>';
+    }
+    html += '</div>';
+  }
+  if (data.position_analysis) {
+    html += '<div style=\"margin-bottom:1rem;\"><h4>\uD83D\uDCBC \u5C97\u4F4D\u5206\u6790</h4>';
+    if (data.position_analysis.skill_requirements) {
+      html += '<strong>\u6280\u80FD\u8981\u6C42\uFF1A</strong>' + data.position_analysis.skill_requirements.map(function(s) { return '<span style=\"display:inline-block;background:var(--tag-bg);padding:0.2rem 0.5rem;border-radius:4px;margin:0.2rem;\">' + escapeHtml(s.skill) + ' (' + s.frequency + '\u6B21)</span>'; }).join('');
+    }
+    html += '</div>';
+  }
+  if (data.preparation_advice) {
+    html += '<div><h4>\uD83D\uDCA1 \u51C6\u5907\u5EFA\u8BAE</h4><ul>' + data.preparation_advice.map(function(a) { return '<li>' + escapeHtml(a) + '</li>'; }).join('') + '</ul></div>';
+  }
+  container.innerHTML = html;
+}
+
+// ============================================================
+// Phase 3: Group Interview Event Bindings
+// ============================================================
+(function() {
+  var btnStart = document.getElementById('btn-group-start');
+  if (btnStart) btnStart.addEventListener('click', startGroupInterview);
+  
+  var btnSpeak = document.getElementById('btn-group-speak');
+  if (btnSpeak) btnSpeak.addEventListener('click', submitGroupMessage);
+  
+  var btnEnd = document.getElementById('btn-group-end');
+  if (btnEnd) btnEnd.addEventListener('click', endGroupInterview);
+  
+  var btnSkip = document.getElementById('btn-group-skip');
+  if (btnSkip) btnSkip.addEventListener('click', function() {
+    submitGroupMessage(); // For now, skip just sends an empty or placeholder
+  });
+  
+  var btnKb = document.getElementById('btn-group-kb');
+  if (btnKb) btnKb.addEventListener('click', showGroupKnowledgeBase);
+  
+  var btnMjAnalysis = document.getElementById('btn-mj-analysis');
+  if (btnMjAnalysis) btnMjAnalysis.addEventListener('click', doMianjingAnalysis);
+  
+  // Enter key in group input submits message
+  var groupInput = document.getElementById('group-input');
+  if (groupInput) {
+    groupInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) {
+        e.preventDefault();
+        submitGroupMessage();
+      }
+    });
+  }
 })();
