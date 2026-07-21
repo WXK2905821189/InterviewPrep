@@ -124,6 +124,27 @@ function saveSessions() {
 }
 loadSessions();
 
+// ---- JD 分析缓存 ----
+const jdCache = new Map(); // key: jdHash -> { jdParsed, gapAnalysis, questions, timestamp }
+const JD_CACHE_TTL = 24 * 60 * 60 * 1000; // 24小时过期
+function getJdCacheKey(jdText) { return require('crypto').createHash('md5').update(jdText.slice(0, 2000)).digest('hex'); }
+function getJdCache(jdText) {
+  const key = getJdCacheKey(jdText);
+  const entry = jdCache.get(key);
+  if (entry && Date.now() - entry.timestamp < JD_CACHE_TTL) return entry;
+  return null;
+}
+function setJdCache(jdText, data) {
+  const key = getJdCacheKey(jdText);
+  jdCache.set(key, { ...data, timestamp: Date.now() });
+  // 限制缓存大小
+  if (jdCache.size > 50) {
+    const oldest = [...jdCache.entries()].sort((a,b) => a[1].timestamp - b[1].timestamp)[0];
+    if (oldest) jdCache.delete(oldest[0]);
+  }
+}
+
+
 // 真题库持久化
 function loadMianjingBank() {
   try { if (fs.existsSync(MIANJING_BANK_FILE)) return JSON.parse(fs.readFileSync(MIANJING_BANK_FILE,'utf-8')); }
@@ -185,6 +206,55 @@ async function safeCall(fn, retries = 1) {
   return { error: lastError };
 }
 
+
+// ============================================================
+// JD 链接自动解析
+// ============================================================
+app.post('/api/parse-jd-url', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: '请提供JD链接' });
+
+    const { llm } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    // 尝试 fetch 页面
+    let pageText = '';
+    try {
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(15000)
+      });
+      const html = await resp.text();
+      // 简单提取文本
+      pageText = html.replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 8000);
+    } catch (e) {
+      return res.status(400).json({ error: '无法访问该链接: ' + e.message });
+    }
+
+    if (!pageText || pageText.length < 100) {
+      return res.status(400).json({ error: '页面内容为空或太短，请手动粘贴JD' });
+    }
+
+    // 用 LLM 提取 JD
+    const result = await llm(
+      `你是一个JD提取助手。从以下网页文本中提取招聘岗位的完整JD信息。
+      输出JSON格式: {"company":"公司名","position":"岗位名","jd_text":"完整的JD内容（包括职责、要求、福利等）","location":"工作地点","source":"来源网站"}
+      如果页面不是招聘页面，返回 {"error":"不是招聘页面"}`,
+      pageText, { temperature: 0.3 }
+    );
+
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: '解析失败: ' + e.message });
+  }
+});
+
 // ============================================================
 // API 1: 一键分析（SSE 流式 + 进度 + 预估剩余时间）
 // ============================================================
@@ -197,6 +267,12 @@ app.post('/api/analyze', async (req, res) => {
   // 快速模式：跳过面经，只用3类核心题型
 
   sseInit(res);
+
+  // 检查 JD 缓存
+  const cachedJD = getJdCache(jdText);
+  if (cachedJD) {
+    sseSend(res, { step: 'cache', label: '缓存命中', detail: 'JD分析结果已缓存，跳过解析...', status: 'ok' });
+  }
 
   let aborted = false;
   res.on('close', () => { aborted = true; });
@@ -228,14 +304,23 @@ app.post('/api/analyze', async (req, res) => {
     const { llm, fillTemplate } = require('./chatflow/llm-client');
     const { searchKnowledgeBase } = require('./knowledge');
 
-    // ---- 步骤1: JD解析 (快速拿到公司/岗位名) ----
-    sseSend(res, { step: 'jd_parse', label: '解析JD', detail: '正在理解岗位要求...', status: 'running' });
-    const jdResult = await safeCall(() => llm(prompts.JD_PARSE_SYSTEM, jdText, { temperature: 0.3 }));
-    if (jdResult.error) { sseError(res, `JD解析失败: ${jdResult.error}`); return; }
-    const jdParsed = jdResult.value;
-    const company = jdParsed.company || '';
-    const position = jdParsed.position || '';
-    stepOk(res, 'jd_parse', '解析JD', `识别到: ${position || '未知'} · ${company || '未知'}`);
+    // ---- 步骤1: JD解析 (优先使用缓存) ----
+    let jdParsed, company, position;
+    if (cachedJD && cachedJD.jdParsed) {
+      jdParsed = cachedJD.jdParsed;
+      company = jdParsed.company || '';
+      position = jdParsed.position || '';
+      sseSend(res, { step: 'jd_parse', label: '解析JD', detail: `从缓存加载: ${position || '未知'} · ${company || '未知'}`, status: 'ok' });
+      completedSteps++;
+    } else {
+      sseSend(res, { step: 'jd_parse', label: '解析JD', detail: '正在理解岗位要求...', status: 'running' });
+      const jdResult = await safeCall(() => llm(prompts.JD_PARSE_SYSTEM, jdText, { temperature: 0.3 }));
+      if (jdResult.error) { sseError(res, `JD解析失败: ${jdResult.error}`); return; }
+      jdParsed = jdResult.value;
+      company = jdParsed.company || '';
+      position = jdParsed.position || '';
+      stepOk(res, 'jd_parse', '解析JD', `识别到: ${position || '未知'} · ${company || '未知'}`);
+    }
     if (aborted) return;
 
     // ---- 步骤2: 简历解析 ----
@@ -246,13 +331,20 @@ app.post('/api/analyze', async (req, res) => {
     stepOk(res, 'resume_parse', '解析简历', `${resumeParsed.internships?.length || 0} 段实习, ${resumeParsed.projects?.length || 0} 个项目`);
     if (aborted) return;
 
-    // ---- 步骤3: 差距分析 ----
-    sseSend(res, { step: 'gap_analysis', label: '差距分析', detail: '对比JD与简历...', status: 'running' });
-    const gapPrompt = fillTemplate(prompts.GAP_ANALYSIS_SYSTEM, { jd_parsed: jdParsed, resume_parsed: resumeParsed });
-    const gapResult = await safeCall(() => llm(gapPrompt, '', { temperature: 0.5 }));
-    if (gapResult.error) { sseError(res, `差距分析失败: ${gapResult.error}`); return; }
-    const gapAnalysis = gapResult.value;
-    stepOk(res, 'gap_analysis', '差距分析', `匹配度 ${gapAnalysis.match_score || '--'} 分`);
+    // ---- 步骤3: 差距分析 (优先使用缓存) ----
+    let gapAnalysis;
+    if (cachedJD && cachedJD.gapAnalysis) {
+      gapAnalysis = cachedJD.gapAnalysis;
+      sseSend(res, { step: 'gap_analysis', label: '差距分析', detail: `从缓存加载 匹配度 ${gapAnalysis.match_score || '--'} 分`, status: 'ok' });
+      completedSteps++;
+    } else {
+      sseSend(res, { step: 'gap_analysis', label: '差距分析', detail: '对比JD与简历...', status: 'running' });
+      const gapPrompt = fillTemplate(prompts.GAP_ANALYSIS_SYSTEM, { jd_parsed: jdParsed, resume_parsed: resumeParsed });
+      const gapResult = await safeCall(() => llm(gapPrompt, '', { temperature: 0.5 }));
+      if (gapResult.error) { sseError(res, `差距分析失败: ${gapResult.error}`); return; }
+      gapAnalysis = gapResult.value;
+      stepOk(res, 'gap_analysis', '差距分析', `匹配度 ${gapAnalysis.match_score || '--'} 分`);
+    }
     if (aborted) return;
 
     // ---- 步骤4: 押题生成（分题型并行） ----
@@ -1217,6 +1309,109 @@ app.delete('/api/custom-questions/:id', (req, res) => {
   }
 });
 
+
+// ============================================================
+// 面试准备度评分
+// ============================================================
+app.get('/api/dashboard/readiness-score', (req, res) => {
+  try {
+    const records = loadDrillRecords();
+    const sessions = []; // mock sessions not yet stored separately
+    const today = new Date();
+    const days30 = new Date(today - 30*86400000);
+
+    // 计算维度
+    const recentRecords = records.filter(r => r.createdAt && new Date(r.createdAt) >= days30);
+    const uniqueDays = new Set(recentRecords.map(r => r.createdAt?.slice(0,10))).size;
+    const uniqueQuestions = new Set(recentRecords.map(r => r.question)).size;
+    const avgScore = recentRecords.length ? recentRecords.reduce((s,r) => s + (r.score||0), 0) / recentRecords.length : 0;
+    const questionTypes = new Set(recentRecords.map(r => r.questionType)).size;
+    const mockCount = sessions.length;
+    const rawScores = recentRecords.map(r => r.score||0).filter(s => s > 0);
+
+    // 分维度计算
+    const dimensions = {
+      practice_volume: Math.min(100, recentRecords.length * 5),  // 每题5分，上限100
+      score_quality: recentRecords.length ? Math.min(100, avgScore * 100 / 90) : 0, // 目标是90分
+      consistency: Math.min(100, uniqueDays * 100 / 14),  // 14天=满分
+      breadth: Math.min(100, questionTypes * 25),  // 4种题型=满分
+      mock_experience: Math.min(100, mockCount * 25),  // 4次模拟=满分
+      improvement: rawScores.length >= 3 ? (() => {
+        const recent = rawScores.slice(-3).reduce((a,b) => a+b, 0) / 3;
+        const older = rawScores.slice(0, -3).length ? rawScores.slice(0, -3).reduce((a,b) => a+b, 0) / rawScores.slice(0, -3).length : recent;
+        return Math.min(100, Math.max(0, 50 + (recent - older) * 10));
+      })() : 50
+    };
+
+    const overall = Math.round(
+      dimensions.practice_volume * 0.2 +
+      dimensions.score_quality * 0.3 +
+      dimensions.consistency * 0.1 +
+      dimensions.breadth * 0.15 +
+      dimensions.mock_experience * 0.15 +
+      dimensions.improvement * 0.1
+    );
+
+    const level = overall >= 85 ? 'ready' : overall >= 60 ? 'approaching' : 'needs_work';
+    const suggestions = [];
+    if (dimensions.practice_volume < 50) suggestions.push('建议增加练习量，每天至少练3-5题');
+    if (dimensions.score_quality < 60) suggestions.push('当前平均得分偏低，建议先看标准答案学习思路');
+    if (dimensions.consistency < 40) suggestions.push('练习不够连续，建议每天固定时间练习');
+    if (dimensions.breadth < 50) suggestions.push('题型覆盖不足，建议尝试不同题型');
+    if (dimensions.mock_experience < 50) suggestions.push('建议至少完成一次全真模拟面试');
+    if (suggestions.length === 0) suggestions.push('🎉 准备度良好，继续保持！');
+
+    res.json({
+      overall, level, dimensions, suggestions,
+      stats: { total_practice: recentRecords.length, unique_days: uniqueDays, avg_score: Math.round(avgScore), mock_count: mockCount }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ============================================================
+// 错题集 API
+// ============================================================
+app.get('/api/drill/wrong-answers', (req, res) => {
+  try {
+    const records = loadDrillRecords();
+    const minScore = parseInt(req.query.min_score) || 60;
+    const type = req.query.type || '';
+
+    // 按题目聚合，取最低分
+    const questionMap = {};
+    records.forEach(r => {
+      const key = r.question;
+      if (!questionMap[key]) {
+        questionMap[key] = { question: key, questionType: r.questionType || '', attempts: [], bestScore: r.score || 0, worstScore: r.score || 0, latestAnswer: r.answer || '', latestFeedback: r.feedback || '' };
+      }
+      const entry = questionMap[key];
+      entry.attempts.push({ score: r.score || 0, answer: r.answer || '', createdAt: r.createdAt });
+      entry.bestScore = Math.max(entry.bestScore, r.score || 0);
+      entry.worstScore = Math.min(entry.worstScore, r.score || 0);
+      if (r.answer) entry.latestAnswer = r.answer;
+      if (r.feedback) entry.latestFeedback = r.feedback;
+    });
+
+    let wrong = Object.values(questionMap).filter(q => q.bestScore < minScore);
+    if (type) wrong = wrong.filter(q => q.questionType === type);
+
+    wrong.sort((a, b) => a.bestScore - b.bestScore);
+
+    const stats = {
+      total_practice: records.length,
+      wrong_count: wrong.length,
+      improvement_rate: records.length > 5 ? Math.round(wrong.filter(q => q.attempts.length >= 2 && q.attempts.slice(-1)[0].score > q.attempts[0].score).length / wrong.length * 100) : 0
+    };
+
+    res.json({ wrong, stats, all_types: [...new Set(records.map(r => r.questionType))].filter(Boolean) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ============================================================
 // P2: 快速复习卡片
 // ============================================================
@@ -1929,6 +2124,48 @@ ${questionsText}
 }
 
 // ============================================================
+
+// ============================================================
+// 批量生成题目（一次生成10-20道）
+// ============================================================
+app.post('/api/generate-questions-batch', async (req, res) => {
+  try {
+    const { jdText, resumeText, count = 15 } = req.body;
+    if (!jdText) return res.status(400).json({ error: '请提供JD文本' });
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const questionTypes = ['行为面试', '专业能力', '项目深挖', '压力测试', 'HR面'];
+    const qCount = Math.min(Math.max(parseInt(count) || 15, 10), 20);
+    const perType = Math.ceil(qCount / questionTypes.length);
+
+    const allQuestions = [];
+    const promises = questionTypes.map(async (qType) => {
+      const genPrompt = `你是面试出题专家。请根据JD和候选人简历，生成${perType}道「${qType}」类面试题目。
+输出JSON数组: [{"question":"题目","difficulty":"简单/中等/困难","examiner_intent":"考察意图","suggested_answer":"建议回答要点"}]`;
+      const userPrompt = `JD: ${jdText.slice(0, 2000)}\n简历: ${(resumeText || "").slice(0, 2000)}\n请生成${qType}题目。`;
+      try {
+        const result = await llm(genPrompt, userPrompt, { temperature: 0.8 });
+        if (Array.isArray(result)) {
+          result.forEach(q => { q._type = qType; q._source = 'batch'; });
+          allQuestions.push(...result);
+        } else if (result.questions && Array.isArray(result.questions)) {
+          result.questions.forEach(q => { q._type = qType; q._source = 'batch'; });
+          allQuestions.push(...result.questions);
+        }
+      } catch (e) {
+        console.warn('[BatchQ] ' + qType + ' generated failed:', e.message);
+      }
+    });
+
+    await Promise.all(promises);
+    res.json({ questions: allQuestions, total: allQuestions.length, types: questionTypes });
+  } catch (e) {
+    res.status(500).json({ error: 'batch gen failed: ' + e.message });
+  }
+});
+
 // 面经采集 — 独立触发
 // ============================================================
 app.post('/api/mianjing-collect', async (req, res) => {

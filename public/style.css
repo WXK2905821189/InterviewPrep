@@ -1574,3 +1574,73 @@ select:focus, .styled-select:focus {
 #btn-save-self-intro {
   transition: all 0.2s ease;
 }
+
+/* ============================================================
+   Phase 1+2 新样式
+   ============================================================ */
+/* 快捷键提示标签 */
+.shortcut-tag {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  background: rgba(200,135,43,0.08);
+  border: 1px solid rgba(200,135,43,0.15);
+  border-radius: 4px;
+  font-size: 0.68rem;
+  color: var(--muted);
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+.shortcut-tag:hover { opacity: 1; }
+
+/* 对比视图按钮 */
+.btn-compare {
+  transition: all 0.2s ease;
+}
+.btn-compare:hover {
+  background: rgba(200,135,43,0.15) !important;
+  transform: translateY(-1px);
+}
+
+/* 错题集卡片 */
+#tab-wrongbook .card { transition: transform 0.15s ease; }
+#tab-wrongbook .card:hover { transform: translateY(-1px); }
+
+/* 准备度分数动画 */
+#readiness-score {
+  transition: color 0.5s ease;
+}
+
+/* ============================================================
+   Phase 1+2: new styles
+   ============================================================ */
+.shortcut-tag {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  background: rgba(200,135,43,0.08);
+  border: 1px solid rgba(200,135,43,0.15);
+  border-radius: 4px;
+  font-size: 0.68rem;
+  color: var(--muted);
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+.shortcut-tag:hover { opacity: 1; }
+.btn-compare {
+  transition: all 0.2s ease;
+  background: rgba(200,135,43,0.08);
+  color: var(--accent);
+  border: 1px solid rgba(200,135,43,0.2);
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.btn-compare:hover {
+  background: rgba(200,135,43,0.15) !important;
+  transform: translateY(-1px);
+}
+#tab-wrongbook .card { transition: transform 0.15s ease; }
+#tab-wrongbook .card:hover { transform: translateY(-1px); }
+#readiness-score { transition: color 0.5s ease; }

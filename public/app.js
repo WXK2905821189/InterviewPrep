@@ -789,7 +789,7 @@ function switchTab(tabName) {
     if (tabName === 'company') { renderCompanyResearchHistory(); }
   }
 
-  if (tabName === 'dashboard') loadDashboard();
+  if (tabName === 'dashboard') { loadDashboard(); loadReadinessScore(); }
   if (tabName === 'interview') renderInterviewTabHistory();
   if (tabName === 'practice') {
     if (state.analysis) renderPracticeQuestions();
@@ -804,6 +804,7 @@ function switchTab(tabName) {
     if (state.analysis) { renderDrillQuestions(); renderDrillMode(); }
     loadDrillStats();
   }
+  if (tabName === 'wrongbook') { loadWrongBook(); }
 }
 
 $$('.nav-tab').forEach(tab => {
@@ -4272,5 +4273,223 @@ function downloadFile(filename, content, mimeType) {
     var active = document.getElementById('study-plan-active');
     if (empty) empty.style.display = 'block';
     if (active) active.style.display = 'none';
+  });
+
+})();
+
+// ============================================================
+// Phase 1: Keyboard Shortcuts
+// ============================================================
+(function initKeyboardShortcuts() {
+  var shortcuts = {
+    ' ': function() { var btn = document.getElementById('btn-pause'); if (btn && btn.offsetParent) btn.click(); },
+    '1': function() { var el = document.getElementById('score-1'); if (el && el.offsetParent) el.click(); },
+    '2': function() { var el = document.getElementById('score-2'); if (el && el.offsetParent) el.click(); },
+    '3': function() { var el = document.getElementById('score-3'); if (el && el.offsetParent) el.click(); },
+    '4': function() { var el = document.getElementById('score-4'); if (el && el.offsetParent) el.click(); },
+    '5': function() { var el = document.getElementById('score-5'); if (el && el.offsetParent) el.click(); },
+    'Enter': function() { var btn = document.getElementById('btn-submit-answer'); if (btn && !btn.disabled) btn.click(); },
+    'Escape': function() {
+      var modal = document.querySelector('.modal-overlay.show');
+      if (modal) { var close = modal.querySelector('.modal-close'); if (close) close.click(); else modal.remove(); }
+    }
+  };
+  document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    var handler = shortcuts[e.key];
+    if (handler) { e.preventDefault(); handler(); }
+  });
+  function updateShortcutHints() {
+    var existing = document.getElementById('shortcut-hints');
+    if (existing) existing.remove();
+    var isPractice = document.getElementById('tab-practice') && document.getElementById('tab-practice').classList.contains('active');
+    var isInterview = document.getElementById('tab-interview') && document.getElementById('tab-interview').classList.contains('active');
+    if (isPractice || isInterview) {
+      var hints = document.createElement('div');
+      hints.id = 'shortcut-hints';
+      hints.style.cssText = 'position:fixed;bottom:12px;right:12px;display:flex;gap:6px;flex-wrap:wrap;z-index:100;pointer-events:none;';
+      hints.innerHTML = '<span class="shortcut-tag">Space \u6682\u505C</span><span class="shortcut-tag">1-5 \u8BC4\u5206</span><span class="shortcut-tag">Enter \u63D0\u4EA4</span><span class="shortcut-tag">Esc \u5173\u95ED</span>';
+      document.body.appendChild(hints);
+    }
+  }
+  var observer = new MutationObserver(updateShortcutHints);
+  document.querySelectorAll('.tab-content').forEach(function(el) { observer.observe(el, { attributes: true, attributeFilter: ['class'] }); });
+  updateShortcutHints();
+})();
+
+// ============================================================
+// Phase 1: Auto Theme
+// ============================================================
+(function initAutoTheme() {
+  var setting = localStorage.getItem('autoTheme');
+  if (setting === 'off') return;
+  function applyAutoTheme() {
+    var hour = new Date().getHours();
+    var isDark = hour < 6 || hour >= 18;
+    var currentIsDark = document.documentElement.classList.contains('dark');
+    if (isDark !== currentIsDark) {
+      document.documentElement.classList.toggle('dark', isDark);
+      var moonBtn = document.getElementById('btn-toggle-theme');
+      if (moonBtn) moonBtn.textContent = isDark ? '\u2600' : '\uD83C\uDF19';
+    }
+  }
+  applyAutoTheme();
+  setInterval(applyAutoTheme, 3600000);
+  var moonBtn = document.getElementById('btn-toggle-theme');
+  if (moonBtn) {
+    moonBtn.addEventListener('click', function() {
+      localStorage.setItem('autoTheme', 'off');
+      setTimeout(function() { localStorage.removeItem('autoTheme'); }, 3600000);
+    });
+  }
+})();
+
+// ============================================================
+// Phase 1: Readiness Score
+// ============================================================
+async function loadReadinessScore() {
+  try {
+    var resp = await fetch(API + '/dashboard/readiness-score');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    var scoreEl = document.getElementById('readiness-score');
+    var levelEl = document.getElementById('readiness-level');
+    if (scoreEl) scoreEl.textContent = data.overall;
+    if (levelEl) {
+      levelEl.textContent = data.level === 'ready' ? 'ready' : data.level === 'approaching' ? 'approaching' : 'need work';
+      levelEl.style.color = data.level === 'ready' ? 'var(--green)' : data.level === 'approaching' ? 'var(--accent)' : 'var(--red)';
+    }
+    var dims = data.dimensions;
+    var dimNames = { practice_volume: '\u7EC3\u4E60\u91CF', score_quality: '\u5F97\u5206\u8D28\u91CF', consistency: '\u8FDE\u7EED\u6027', breadth: '\u5E7F\u5EA6', mock_experience: '\u6A21\u62DF\u7ECF\u9A8C', improvement: '\u8FDB\u6B65\u8D8B\u52BF' };
+    var dimHTML = '';
+    Object.entries(dims).forEach(function(entry) {
+      var key = entry[0], val = entry[1];
+      var color = val >= 80 ? 'var(--green)' : val >= 50 ? 'var(--accent)' : 'var(--red)';
+      dimHTML += '<div style="margin-bottom:4px;"><span style="font-size:0.72rem;color:var(--muted);">' + (dimNames[key]||key) + '</span><div style="background:var(--rule);border-radius:3px;height:6px;margin-top:2px;"><div style="background:' + color + ';border-radius:3px;height:100%;width:' + val + '%;transition:width 0.8s ease;"></div></div></div>';
+    });
+    var dimEl = document.getElementById('readiness-dimensions');
+    if (dimEl) dimEl.innerHTML = dimHTML;
+    var sugHTML = '';
+    (data.suggestions || []).slice(0, 3).forEach(function(s) { sugHTML += '<div style="font-size:0.76rem;color:var(--muted);margin-bottom:3px;">\uD83D\uDCA1 ' + escapeHtml(s) + '</div>'; });
+    var sugEl = document.getElementById('readiness-suggestions');
+    if (sugEl) sugEl.innerHTML = sugHTML || '<div style="font-size:0.76rem;color:var(--muted);">\u6682\u65E0\u5EFA\u8BAE</div>';
+  } catch (e) { console.warn('Readiness score load failed:', e); }
+}
+
+// ============================================================
+// Phase 1: Comparison View
+// ============================================================
+function showComparisonView(question, userAnswer, modelAnswer, feedback) {
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay show';
+  overlay.innerHTML = '<div class="modal-card" style="max-width:900px;max-height:85vh;overflow-y:auto;">' +
+    '<div class="modal-header"><h3>\u56DE\u7B54\u5BF9\u6BD4\u5206\u6790</h3><button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">\u2715</button></div>' +
+    '<div class="modal-body" style="padding:1rem;">' +
+    '<div style="background:var(--bg);border-radius:8px;padding:0.8rem;margin-bottom:1rem;"><strong>\u9898\u76EE: </strong>' + escapeHtml(question) + '</div>' +
+    (feedback ? '<div style="background:rgba(200,135,43,0.06);border-radius:8px;padding:0.8rem;margin-bottom:1rem;font-size:0.82rem;"><strong>AI \u70B9\u8BC4: </strong>' + escapeHtml(feedback) + '</div>' : '') +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">' +
+    '<div><h4 style="color:var(--muted);margin-bottom:0.5rem;">\u4F60\u7684\u56DE\u7B54</h4><div style="background:var(--bg);border:1px solid var(--rule);border-radius:8px;padding:0.8rem;font-size:0.82rem;line-height:1.7;white-space:pre-line;min-height:100px;">' + escapeHtml(userAnswer || '(\u672A\u4F5C\u7B54)') + '</div></div>' +
+    '<div><h4 style="color:var(--accent);margin-bottom:0.5rem;">AI \u6807\u51C6\u7B54\u6848</h4><div style="background:rgba(200,135,43,0.04);border:1px solid rgba(200,135,43,0.15);border-radius:8px;padding:0.8rem;font-size:0.82rem;line-height:1.7;white-space:pre-line;min-height:100px;">' + escapeHtml(modelAnswer || '(\u6682\u65E0)') + '</div></div>' +
+    '</div></div></div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+}
+
+// ============================================================
+// Phase 2: Batch Questions
+// ============================================================
+async function generateBatchQuestions(jdText, resumeText) {
+  var btn = document.createElement('button');
+  btn.textContent = '\u6279\u91CF\u751F\u621015\u9898';
+  btn.className = 'btn-primary';
+  btn.style.cssText = 'margin-top:0.5rem;';
+  btn.onclick = async function() {
+    btn.disabled = true;
+    btn.textContent = '\u751F\u6210\u4E2D...';
+    try {
+      var resp = await fetch(API + '/generate-questions-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jdText: jdText, resumeText: resumeText, count: 15 }) });
+      var data = await resp.json();
+      if (data.questions && data.questions.length) {
+        renderBatchResults(data.questions);
+        btn.textContent = '\u5DF2\u5B8C\u6210 ' + data.total + ' \u9898';
+      } else { btn.textContent = '\u5931\u8D25\uFF0C\u91CD\u8BD5'; }
+    } catch (e) { btn.textContent = '\u7F51\u7EDC\u9519\u8BEF'; }
+    btn.disabled = false;
+  };
+  return btn;
+}
+function renderBatchResults(questions) {
+  var byType = {};
+  questions.forEach(function(q) { var t = q._type || '\u5176\u4ED6'; if (!byType[t]) byType[t] = []; byType[t].push(q); });
+  var html = '<div class="card" style="margin-top:1rem;"><h3>\u6279\u91CF\u751F\u6210\u7ED3\u679C</h3>';
+  Object.entries(byType).forEach(function(entry) {
+    var type = entry[0], qs = entry[1];
+    html += '<h4 style="margin-top:0.8rem;">' + type + ' (' + qs.length + ' \u9898)</h4>';
+    qs.forEach(function(q, i) {
+      html += '<div style="background:var(--bg);border-radius:6px;padding:0.6rem;margin-bottom:0.4rem;"><div style="font-weight:600;font-size:0.82rem;">' + (i+1) + '. ' + escapeHtml(q.question) + '</div><div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.3rem;font-size:0.72rem;color:var(--muted);"><span>\u96BE\u5EA6: ' + (q.difficulty||'\u4E2D\u7B49') + '</span><span>\u610F\u56FE: ' + (q.examiner_intent||'--') + '</span></div></div>';
+    });
+  });
+  html += '</div>';
+  var container = document.getElementById('batch-questions-container');
+  if (container) container.innerHTML = html;
+}
+
+// ============================================================
+// Phase 2: WrongBook
+// ============================================================
+async function loadWrongBook() {
+  var minScore = (document.getElementById('wrongbook-score-filter') ? document.getElementById('wrongbook-score-filter').value : '60');
+  var type = (document.getElementById('wrongbook-type-filter') ? document.getElementById('wrongbook-type-filter').value : '');
+  try {
+    var resp = await fetch(API + '/drill/wrong-answers?min_score=' + minScore + (type ? '&type=' + encodeURIComponent(type) : ''));
+    if (!resp.ok) return;
+    var data = await resp.json();
+    var statsEl = document.getElementById('wrongbook-stats');
+    if (statsEl) {
+      statsEl.innerHTML = '<div style="display:flex;gap:1rem;flex-wrap:wrap;">' +
+        '<div class="card" style="flex:1;min-width:120px;text-align:center;"><div style="font-size:2rem;font-weight:700;color:var(--red);">' + data.stats.wrong_count + '</div><div style="font-size:0.78rem;color:var(--muted);">\u9519\u9898</div></div>' +
+        '<div class="card" style="flex:1;min-width:120px;text-align:center;"><div style="font-size:2rem;font-weight:700;color:var(--green);">' + data.stats.improvement_rate + '%</div><div style="font-size:0.78rem;color:var(--muted);">\u8FDB\u6B65\u7387</div></div>' +
+        '<div class="card" style="flex:1;min-width:120px;text-align:center;"><div style="font-size:2rem;font-weight:700;color:var(--accent);">' + data.stats.total_practice + '</div><div style="font-size:0.78rem;color:var(--muted);">\u603B\u7EC3\u4E60</div></div></div>';
+    }
+    var typeFilter = document.getElementById('wrongbook-type-filter');
+    if (typeFilter) typeFilter.innerHTML = '<option value="">\u5168\u90E8\u9898\u578B</option>' + (data.all_types || []).map(function(t) { return '<option value="' + t + '">' + t + '</option>'; }).join('');
+    var listHTML = '';
+    (data.wrong || []).forEach(function(q, i) {
+      var color = q.bestScore < 40 ? 'var(--red)' : q.bestScore < 60 ? 'var(--accent)' : 'var(--green)';
+      listHTML += '<div class="card" style="margin-bottom:0.6rem;"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;"><div style="flex:1;"><div style="font-weight:600;font-size:0.85rem;">' + (i+1) + '. ' + escapeHtml(q.question) + '</div><div style="display:flex;gap:0.5rem;margin-top:0.3rem;flex-wrap:wrap;"><span style="font-size:0.72rem;background:rgba(200,135,43,0.1);color:var(--accent);padding:0.1rem 0.4rem;border-radius:3px;">' + q.questionType + '</span><span style="font-size:0.72rem;color:' + color + ';font-weight:600;">\u6700\u4F73: ' + q.bestScore + '</span><span style="font-size:0.72rem;color:var(--muted);">\u5C1D\u8BD5: ' + q.attempts.length + ' \u6B21</span></div></div><button class="btn-ai-action btn-ai-followup" onclick="redoWrongQuestion(\'' + escapeHtml(q.question).replace(/'/g, "\\'") + '\')" style="flex-shrink:0;">\u91CD\u505A</button></div></div>';
+    });
+    var listEl = document.getElementById('wrongbook-list');
+    if (listEl) listEl.innerHTML = listHTML || '<p style="color:var(--muted);text-align:center;padding:2rem;">\u6CA1\u6709\u9519\u9898\uFF01</p>';
+  } catch (e) { console.warn('Wrong book load failed:', e); }
+}
+function redoWrongQuestion(question) {
+  switchTab('practice');
+  setTimeout(function() { var input = document.getElementById('practice-question'); if (input) input.value = question; }, 300);
+}
+
+// ============================================================
+// Phase 2: JD URL Parse
+// ============================================================
+(function initJdUrlParse() {
+  var btn = document.getElementById('btn-jd-fetch');
+  if (!btn) return;
+  btn.addEventListener('click', async function() {
+    var url = (document.getElementById('jd-url-input') ? document.getElementById('jd-url-input').value : '').trim();
+    if (!url) { toast('\u8BF7\u8F93\u5165URL'); return; }
+    btn.disabled = true;
+    btn.textContent = '\u89E3\u6790\u4E2D...';
+    try {
+      var resp = await fetch(API + '/parse-jd-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) });
+      var data = await resp.json();
+      if (data.error) { toast('\u89E3\u6790\u5931\u8D25: ' + data.error); }
+      else if (data.jd_text) {
+        var jdInput = document.getElementById('jd-input');
+        if (jdInput) jdInput.value = data.jd_text;
+        toast('\u5DF2\u89E3\u6790: ' + (data.company || '') + ' ' + (data.position || ''));
+      } else { toast('\u65E0\u6CD5\u8BC6\u522BJD\uFF0C\u8BF7\u624B\u52A8\u7C98\u8D34'); }
+    } catch (e) { toast('\u7F51\u7EDC\u9519\u8BEF: ' + e.message); }
+    btn.disabled = false;
+    btn.textContent = '\u89E3\u6790\u94FE\u63A5';
   });
 })();

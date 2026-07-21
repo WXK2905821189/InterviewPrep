@@ -41,6 +41,7 @@
     <button class="nav-tab" data-tab="drill">🎯 专项训练<span class="tab-dot" data-dot-tab="drill"></span></button>
     <button class="nav-tab" data-tab="bank">真题库</button>
     <button class="nav-tab" data-tab="company">公司调研</button>
+    <button class="nav-tab" data-tab="wrongbook">📝 错题集</button>
   </div>
 </nav>
 
@@ -51,6 +52,19 @@
     <div class="card hero-card">
       <h1>📊 面试仪表盘</h1>
       <p class="subtitle">追踪练习进度，发现薄弱环节，见证成长轨迹</p>
+    </div>
+
+    <!-- 面试准备度 -->
+    <div class="card" style="margin-bottom:1rem;">
+      <h3>面试准备度</h3>
+      <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;margin-top:0.8rem;">
+        <div style="text-align:center;min-width:120px;">
+          <div style="font-size:3rem;font-weight:700;color:var(--accent);" id="readiness-score">--</div>
+          <div style="font-size:0.85rem;margin-top:0.2rem;" id="readiness-level">加载中...</div>
+        </div>
+        <div style="flex:1;min-width:200px;" id="readiness-dimensions"></div>
+        <div style="flex:1;min-width:200px;" id="readiness-suggestions"></div>
+      </div>
     </div>
 
     <!-- Stats row -->
@@ -198,7 +212,9 @@
       <div class="progress-detail" id="progress-detail"></div>
     </div>
 
-    <div id="analysis-result" class="hidden">
+    <div id="analysis-result">
+      <div id="batch-questions-container"></div>
+      <div class="hidden">
       <div class="result-header">
         <h2>分析结果</h2>
         <div class="result-meta" id="result-meta"></div>
@@ -551,7 +567,20 @@
     </div>
   </section>
 
-    <!-- ====== 公司调研 ====== -->
+    <!-- ====== 错题集 ====== -->
+  <section id="tab-wrongbook" class="tab-content">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
+      <h1>📝 错题集</h1>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <select id="wrongbook-type-filter" style="padding:0.3rem 0.5rem;border:1px solid var(--rule);border-radius:6px;font-size:0.8rem;background:var(--bg);" onchange="loadWrongBook()"><option value="">全部题型</option></select>
+        <select id="wrongbook-score-filter" style="padding:0.3rem 0.5rem;border:1px solid var(--rule);border-radius:6px;font-size:0.8rem;background:var(--bg);" onchange="loadWrongBook()"><option value="60">低于60分</option><option value="70">低于70分</option><option value="80">低于80分</option></select>
+      </div>
+    </div>
+    <div id="wrongbook-stats" style="margin-bottom:1rem;"></div>
+    <div id="wrongbook-list"></div>
+  </section>
+
+  <!-- ====== 公司调研 ====== -->
   <section id="tab-company" class="tab-content">
     <div class="card">
       <h2>🏢 公司调研</h2>
@@ -682,6 +711,6 @@
 </div>
 
 <script src="echarts.min.js" defer></script>
-<script src="app.js?v=1784531200" defer></script>
+<script src="app.js?v=1784535000" defer></script>
 </body>
 </html>
