@@ -605,6 +605,82 @@ app.post('/api/score-resume', async (req, res) => {
 });
 
 // ============================================================
+// API 6c: 简历优化 SSE 流式
+// ============================================================
+app.post('/api/optimize-resume-stream', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId || !sessions.has(sessionId)) {
+      return res.status(404).json({ error: '会话不存在' });
+    }
+    const session = sessions.get(sessionId);
+    const jdParsed = session.analysis?.jd;
+    const resumeText = session.resumeText || '';
+
+    if (!jdParsed) return res.status(400).json({ error: '请先完成JD分析' });
+
+    // SSE headers
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no'
+    });
+
+    const send = (data) => {
+      res.write('data: ' + JSON.stringify(data) + '\n\n');
+    };
+
+    send({ type: 'start', message: '开始分析简历...' });
+
+    const prompts = require('./chatflow/prompts');
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const optPrompt = fillTemplate(prompts.RESUME_OPTIMIZE_SYSTEM, {
+      jd_parsed: JSON.stringify(jdParsed, null, 2),
+      resume_text: resumeText
+    });
+
+    send({ type: 'progress', message: 'AI 正在逐段优化简历...' });
+
+    try {
+      const { llmStream } = require('./chatflow/llm-client');
+      let fullText = '';
+      for await (const chunk of llmStream(optPrompt, '', { temperature: 0.5 })) {
+        fullText += chunk;
+        send({ type: 'stream', chunk: chunk, partial: fullText.slice(-200) });
+      }
+      // Parse JSON result
+      try {
+        const codeBlock = fullText.match(/```(?:json)?\s*([\s\S]*?)```/);
+        const candidate = codeBlock ? codeBlock[1] : fullText;
+        const braceMatch = candidate.match(/\{[\s\S]*\}/);
+        const result = JSON.parse(braceMatch ? braceMatch[0] : candidate);
+        send({ type: 'done', result });
+      } catch (parseErr) {
+        send({ type: 'done', result: { raw: fullText, parse_error: true } });
+      }
+    } catch (streamErr) {
+      console.warn('[SSE] 流式不可用，回退到普通调用:', streamErr.message);
+      send({ type: 'progress', message: '流式暂不可用，正在获取优化结果...' });
+      const result = await llm(optPrompt, '', { temperature: 0.5 });
+      send({ type: 'done', result });
+    }
+
+    send({ type: 'end' });
+    res.end();
+  } catch (e) {
+    console.error('[API] 简历优化 SSE 失败:', e);
+    if (!res.headersSent) {
+      res.status(500).json({ error: '简历优化失败: ' + e.message });
+    } else {
+      res.write('data: ' + JSON.stringify({ type: 'error', message: e.message }) + '\n\n');
+      res.end();
+    }
+  }
+});
+
+
+// ============================================================
 // API 7: 单题评估（不依赖面试会话）
 // ============================================================
 app.post('/api/evaluate-single', async (req, res) => {
@@ -2174,6 +2250,10 @@ const PORT = process.env.PORT || 3456;
 const GATEWAY_PORT = process.env.GATEWAY_PORT || 8787;
 const IS_ELECTRON = process.env.ELECTRON_MODE === '1';
 
+// 网关就绪标志（用于 SSE 流式等依赖网关的功能）
+let _gatewayReady = false;
+function isGatewayReady() { return _gatewayReady; }
+
 function startServer() {
   return new Promise((resolve, reject) => {
     const listener = app.listen(PORT, async () => {
@@ -2183,19 +2263,26 @@ function startServer() {
       console.log(`   应用地址: http://localhost:${PORT}`);
       console.log(`   AI Provider Kit: ${PROVIDER_KIT_PATH}`);
 
-      // 云端部署时跳过 AI 网关（只暴露一个端口）
+      // 立即 resolve，不阻塞窗口显示
+      resolve(listener);
+
+      // 网关异步启动（不阻塞 server 就绪）
       if (process.env.NO_GATEWAY === '1') {
         console.log(`   网关: 云端模式跳过`);
       } else {
-        try {
-          const { url } = await startGateway(GATEWAY_PORT);
-          logInfo(`网关已启动: ${url}`);
-          console.log(`   网关地址: ${url} (OpenAI-compatible)`);
-        } catch (e) {
-          logWarn(`网关未启动: ${e.message?.slice(0, 80)}`);
-          console.log(`   网关: 未启动 (${e.message?.slice(0, 80)})`);
-        }
-        console.log();
+        // 延迟 500ms 让 Electron 窗口先渲染
+        setTimeout(async () => {
+          try {
+            const { url } = await startGateway(GATEWAY_PORT);
+            _gatewayReady = true;
+            logInfo(`网关已启动: ${url}`);
+            console.log(`   网关地址: ${url} (OpenAI-compatible)`);
+          } catch (e) {
+            logWarn(`网关未启动: ${e.message?.slice(0, 80)}`);
+            console.log(`   网关: 未启动 (${e.message?.slice(0, 80)})`);
+          }
+          console.log();
+        }, process.env.ELECTRON_MODE === '1' ? 2000 : 500);
       }
 
       // Electron 模式下不打开外部浏览器
@@ -2213,8 +2300,6 @@ function startServer() {
           logInfo('浏览器已自动打开: ' + appUrl);
         } catch { /* 打开浏览器失败不阻塞 */ }
       }
-
-      resolve(listener);
     });
     listener.on('error', reject);
   });
@@ -2226,7 +2311,7 @@ if (!IS_ELECTRON || require.main === module) {
 }
 
 // Electron 主进程引用用
-module.exports = { app, startServer, PORT };
+module.exports = { app, startServer, PORT, isGatewayReady };
 
 // 优雅退出
 process.on('SIGINT', () => { logInfo('收到 SIGINT，正在关闭...'); process.exit(0); });

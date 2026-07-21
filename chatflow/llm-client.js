@@ -52,4 +52,16 @@ function fillTemplate(template, vars) {
   return result;
 }
 
-module.exports = { llm, fillTemplate };
+async function* llmStream(systemPrompt, userContent, opts = {}) {
+  // 尝试从 ai-provider 获取流式接口
+  try {
+    const provider = require('./ai-provider');
+    if (provider.llmStream) {
+      yield* provider.llmStream(systemPrompt, userContent, opts);
+      return;
+    }
+  } catch {}
+  throw new Error('llmStream not available');
+}
+
+module.exports = { llm, fillTemplate, llmStream };

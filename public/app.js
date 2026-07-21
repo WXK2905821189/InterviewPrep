@@ -1868,45 +1868,80 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
   emptyEl.classList.remove('hidden');
   emptyEl.innerHTML = '<div style="text-align:center;padding:2rem;">'
     + '<div class="spinner"></div>'
-    + '<p style="margin-top:0.8rem;color:var(--muted);">AI 正在分析简历并生成优化建议…</p>'
-    + '<div class="progress-bar-wrap" style="margin-top:1rem;"><div class="progress-bar-fill" style="width:0%"></div></div>'
-    + '<span class="progress-eta" style="font-size:0.78rem;color:var(--muted);">请耐心等待约 20-40 秒</span>'
+    + '<p style="margin-top:0.8rem;color:var(--muted);" id="opt-status-text">AI 正在分析简历并生成优化建议...</p>'
+    + '<div id="opt-stream-preview" style="max-height:200px;overflow-y:auto;margin-top:0.8rem;text-align:left;font-size:0.82rem;color:var(--muted);background:var(--bg);border-radius:8px;padding:0.8rem;display:none;"></div>'
     + '</div>';
-  let progressTimer = 0;
-  const progressInterval = setInterval(() => {
-    progressTimer += 1;
-    const pct = Math.min(90, progressTimer * 4);
-    const barEl = document.querySelector('.progress-bar-fill');
-    if (barEl) barEl.style.width = pct + '%';
-    const etaEl = document.querySelector('.progress-eta');
-    if (etaEl && progressTimer > 3) {
-      const remaining = Math.max(0, Math.ceil((90 - pct) / 4));
-      etaEl.textContent = `预计还需 ${remaining} 秒…`;
-    }
-  }, 1000);
+
+  const statusEl = document.getElementById('opt-status-text');
+  const previewEl = document.getElementById('opt-stream-preview');
+
+  const updateStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
 
   // 超时保护：90秒后强制中断
+  const controller = new AbortController();
   const timeoutId = setTimeout(() => {
-    clearInterval(progressInterval);
-    const b = document.querySelector('.progress-bar-fill');
-    if (b) b.style.width = '100%';
-    const e = document.querySelector('.progress-eta');
-    if (e) e.textContent = '⚠️ 超时，请重试';
+    controller.abort();
     btn.disabled = false; btn.textContent = '重新生成';
     emptyEl.innerHTML = '<p style="text-align:center;color:var(--red);padding:2rem;">❌ AI 响应超时，请检查网络或 AI 供应商连接后重试</p>';
   }, 90000);
 
   try {
-    const result = await apiOptimizeResume();
-    clearTimeout(timeoutId);
-    clearInterval(progressInterval);
-    // 填充进度条到100%
-    const barEl = document.querySelector('.progress-bar-fill');
-    if (barEl) barEl.style.width = '100%';
-    const etaEl = document.querySelector('.progress-eta');
-    if (etaEl) etaEl.textContent = '✅ 完成';
+    const resp = await fetch(`${API}/optimize-resume-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: state.sessionId }),
+      signal: controller.signal
+    });
 
-    if (!result || (!result.optimizations?.length && !result.elevator_pitch)) {
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || 'HTTP ' + resp.status);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            switch (data.type) {
+              case 'start':
+              case 'progress':
+                updateStatus(data.message);
+                break;
+              case 'stream':
+                if (previewEl) {
+                  previewEl.style.display = 'block';
+                  previewEl.textContent = data.partial || '';
+                  previewEl.scrollTop = previewEl.scrollHeight;
+                }
+                break;
+              case 'done':
+                result = data.result;
+                break;
+              case 'error':
+                throw new Error(data.message);
+            }
+          } catch (e) {
+            if (e.message && !e.message.startsWith('Unexpected')) throw e;
+          }
+        }
+      }
+    }
+
+    clearTimeout(timeoutId);
+
+    if (!result || (!result.optimizations?.length && !result.elevator_pitch && !result.raw)) {
       emptyEl.innerHTML = '<p style="text-align:center;color:#D97706;padding:2rem;">⚠️ AI 返回了空结果，请确认AI供应商连接正常后重试</p>';
       btn.disabled = false; btn.textContent = '重新生成';
       return;

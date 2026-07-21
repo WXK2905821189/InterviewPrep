@@ -115,6 +115,81 @@ async function getClient() {
   return _client;
 }
 
+
+// ---- 流式 LLM 调用（直接调用供应商 API，绕过网关） ----
+async function* llmStream(systemPrompt, userContent, { temperature = 0.7 } = {}) {
+  // 读取活跃连接配置
+  let conn = null;
+  try {
+    const raw = fs.readFileSync(CONNECTIONS_FILE, 'utf-8');
+    const state = JSON.parse(raw);
+    const activeId = state.activeConnectionId;
+    const connections = state.aiConnections || [];
+    conn = activeId
+      ? connections.find(c => c.id === activeId)
+      : connections[0];
+  } catch {}
+
+  if (!conn || !conn.apiBaseUrl || !conn.apiKey) {
+    throw new Error('llmStream: 没有可用的 AI 连接配置');
+  }
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: typeof userContent === 'string' ? userContent : JSON.stringify(userContent, null, 2) }
+  ];
+
+  const baseUrl = conn.apiBaseUrl.replace(/\/+$/, '');
+  const url = baseUrl + '/v1/chat/completions';
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + conn.apiKey
+    },
+    body: JSON.stringify({
+      model: conn.model || 'gpt-4o-mini',
+      messages,
+      temperature,
+      stream: true,
+      max_tokens: 4096
+    })
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    throw new Error('llmStream HTTP ' + resp.status + ': ' + errText.slice(0, 200));
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('data: ')) {
+        const data = trimmed.slice(6);
+        if (data === '[DONE]') return;
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        } catch {}
+      }
+    }
+  }
+}
+
+
 // ---- 封装的 LLM 调用（完全兼容原 llm-client.js 接口） ----
 async function llm(systemPrompt, userContent, { jsonMode = true, temperature = 0.7 } = {}) {
   const client = await getClient();
@@ -273,6 +348,7 @@ async function startGateway(port = 8787) {
 module.exports = {
   // 兼容原 llm-client.js 接口
   llm,
+  llmStream,
   fillTemplate,
 
   // 连接管理
