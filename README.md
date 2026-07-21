@@ -27,6 +27,12 @@
 git clone https://github.com/WXK2905821189/InterviewPrep.git
 cd InterviewPrep
 npm install
+npm start
+# → 浏览器打开 http://localhost:3456
+```
+
+```bash
+# 或以 Electron 桌面客户端运行
 npm run electron
 ```
 
