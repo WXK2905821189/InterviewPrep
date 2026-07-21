@@ -93,6 +93,7 @@ const {
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/knowledge', express.static(path.join(__dirname, 'knowledge')));
 
 // 文件上传
 const upload = multer({

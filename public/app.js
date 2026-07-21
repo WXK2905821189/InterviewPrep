@@ -4770,21 +4770,19 @@ function updateGroupTimer(seconds) {
   document.getElementById('group-timer').textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }
 
-// Group interview knowledge base
+// Group interview knowledge base (iframe embed Feishu wiki)
 function showGroupKnowledgeBase() {
   var content = document.getElementById('group-kb-content');
   if (content.style.display === 'none') {
     content.style.display = '';
-    fetch('/knowledge/group-interview.json')
-      .then(function(r) { return r.json(); })
-      .then(function(kb) { renderGroupKB(kb, content); })
-      .catch(function() { content.innerHTML = '<p>\u52A0\u8F7D\u77E5\u8BC6\u5E93\u5931\u8D25</p>'; });
+    content.innerHTML = '<iframe src=\"/group-kb-embed.html\" style=\"width:100%;height:600px;border:none;border-radius:var(--radius-sm);\"></iframe>';
   } else {
     content.style.display = 'none';
   }
 }
 
-function renderGroupKB(kb, container) {
+// (removed renderGroupKB and renderKBSection - replaced by iframe embed)
+function _unused_renderGroupKB(kb, container) {
   var html = '<div style=\"display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;\">';
   var sections = ['overview', 'interview_flow', 'roles', 'question_types', 'evaluation_criteria', 'speech_templates', 'classic_cases', 'common_mistakes', 'preparation_checklist'];
   var labels = ['\u6982\u8FF0', '\u9762\u8BD5\u6D41\u7A0B', '\u89D2\u8272\u7B56\u7565', '\u9898\u578B\u5206\u7C7B', '\u8BC4\u5206\u6807\u51C6', '\u8BDD\u672F\u6A21\u677F', '\u7ECF\u5178\u6848\u4F8B', '\u5E38\u89C1\u9519\u8BEF', '\u51C6\u5907\u6E05\u5355'];
@@ -4805,7 +4803,7 @@ function renderGroupKB(kb, container) {
   document.getElementById('group-kb-detail').innerHTML = renderKBSection(kb, 'overview');
 }
 
-function renderKBSection(kb, section) {
+function _unused_renderKBSection(kb, section) {
   var data = kb[section];
   if (!data) return '<p>\u6682\u65E0\u5185\u5BB9</p>';
   
