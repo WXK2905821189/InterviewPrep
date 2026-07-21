@@ -756,7 +756,7 @@ ${resumeText ? '候选人简历：\n' + resumeText : '（未提供简历）'}
 // ============================================================
 app.post('/api/generate-self-intro', async (req, res) => {
   try {
-    const { jdSummary, resumeText } = req.body;
+    const { jdSummary, resumeText, customPrompt } = req.body;
     if (!resumeText) return res.status(400).json({ error: '请先提供简历内容' });
 
     const { llm } = require('./chatflow/llm-client');
@@ -765,6 +765,8 @@ app.post('/api/generate-self-intro', async (req, res) => {
     const userPrompt = `岗位背景：${jdSummary || '（未提供）'}
 候选人简历：
 ${resumeText.slice(0, 4000)}
+${customPrompt ? `
+用户额外要求：${customPrompt}` : ''}
 
 请基于以上信息生成面试自我介绍。`;
 

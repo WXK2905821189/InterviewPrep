@@ -1300,9 +1300,9 @@ select:focus, .styled-select:focus {
 
 /* 标准答案按钮 */
 .btn-ai-model {
-  background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(16,185,129,0.04));
+  background: linear-gradient(135deg, rgba(200,135,43,0.08), rgba(16,185,129,0.04));
   border-color: rgba(6,182,212,0.25);
-  color: #22d3ee;
+  color: var(--accent);
 }
 .btn-ai-model:hover:not(:disabled) {
   background: linear-gradient(135deg, rgba(6,182,212,0.16), rgba(16,185,129,0.08));
@@ -1316,9 +1316,9 @@ select:focus, .styled-select:focus {
    ============================================================ */
 .model-answer-card {
   margin-top: 0.6rem;
-  border: 1px solid rgba(6,182,212,0.2);
+  border: 1px solid rgba(200,135,43,0.15);
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, rgba(6,182,212,0.04), rgba(16,185,129,0.02));
+  background: linear-gradient(135deg, rgba(200,135,43,0.04), rgba(74,124,89,0.02));
   overflow: hidden;
   animation: modelAnswerIn 0.35s ease-out;
 }
@@ -1330,9 +1330,9 @@ select:focus, .styled-select:focus {
   padding: 0.5rem 0.8rem;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #22d3ee;
-  border-bottom: 1px solid rgba(6,182,212,0.1);
-  background: rgba(6,182,212,0.04);
+  color: var(--accent);
+  border-bottom: 1px solid rgba(200,135,43,0.1);
+  background: rgba(200,135,43,0.04);
 }
 .model-answer-body {
   padding: 0.8rem;
@@ -1345,7 +1345,7 @@ select:focus, .styled-select:focus {
   padding: 0.5rem 0.8rem;
   font-size: 0.76rem;
   color: var(--muted);
-  border-top: 1px solid rgba(6,182,212,0.08);
+  border-top: 1px solid rgba(200,135,43,0.08);
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -1354,16 +1354,16 @@ select:focus, .styled-select:focus {
 .anchor-tag {
   display: inline-block;
   padding: 0.15rem 0.5rem;
-  background: rgba(6,182,212,0.08);
+  background: rgba(200,135,43,0.08);
   border-radius: 3px;
   font-size: 0.72rem;
-  color: #67e8f9;
+  color: var(--accent);
 }
 .model-answer-tips {
   padding: 0.5rem 0.8rem;
   font-size: 0.78rem;
   color: var(--accent2);
-  border-top: 1px solid rgba(6,182,212,0.08);
+  border-top: 1px solid rgba(200,135,43,0.08);
   background: rgba(255,255,255,0.01);
 }
 
@@ -1550,17 +1550,17 @@ select:focus, .styled-select:focus {
    自我介绍卡片
    ============================================================ */
 #self-intro-card {
-  border: 1px solid rgba(6,182,212,0.15);
-  background: linear-gradient(135deg, rgba(6,182,212,0.03), rgba(16,185,129,0.02));
+  border: 1px solid rgba(200,135,43,0.12);
+  background: linear-gradient(135deg, rgba(200,135,43,0.03), rgba(74,124,89,0.02));
   animation: cardIn 0.4s ease-out both;
 }
 .self-intro-duration {
   display: inline-block;
   padding: 0.15rem 0.5rem;
-  background: rgba(6,182,212,0.1);
+  background: rgba(200,135,43,0.1);
   border-radius: 3px;
   font-size: 0.72rem;
-  color: #67e8f9;
+  color: var(--accent);
   margin-left: 0.5rem;
   vertical-align: middle;
 }
@@ -1569,7 +1569,7 @@ select:focus, .styled-select:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  border-top: 1px solid rgba(6,182,212,0.08);
+  border-top: 1px solid rgba(200,135,43,0.08);
 }
 #btn-save-self-intro {
   transition: all 0.2s ease;

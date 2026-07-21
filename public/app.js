@@ -1877,10 +1877,28 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
 
   const updateStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
 
+  // 阶段指示器：显示当前优化阶段
+  var phases = [
+    '正在解析JD与简历的匹配度...',
+    '正在分析硬技能要求...',
+    '正在逐段优化工作经历...',
+    '正在优化项目经验表述...',
+    '正在生成自我评价建议...',
+    '正在整理最终优化结果...'
+  ];
+  var phaseIdx = 0;
+  var phaseTimer = setInterval(function() {
+    if (statusEl && phaseIdx < phases.length) {
+      statusEl.textContent = phases[phaseIdx];
+      phaseIdx++;
+    }
+  }, 8000);
+
   // 超时保护：90秒后强制中断
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort();
+    if (phaseTimer) clearInterval(phaseTimer);
     btn.disabled = false; btn.textContent = '重新生成';
     emptyEl.innerHTML = '<p style="text-align:center;color:var(--red);padding:2rem;">❌ AI 响应超时，请检查网络或 AI 供应商连接后重试</p>';
   }, 90000);
@@ -1920,11 +1938,7 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
                 updateStatus(data.message);
                 break;
               case 'stream':
-                if (previewEl) {
-                  previewEl.style.display = 'block';
-                  previewEl.textContent = data.partial || '';
-                  previewEl.scrollTop = previewEl.scrollHeight;
-                }
+                // Phase indicator: silently accumulate, no display jumping
                 break;
               case 'done':
                 result = data.result;
@@ -1940,6 +1954,7 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
     }
 
     clearTimeout(timeoutId);
+    if (phaseTimer) clearInterval(phaseTimer);
 
     if (!result || (!result.optimizations?.length && !result.elevator_pitch && !result.raw)) {
       emptyEl.innerHTML = '<p style="text-align:center;color:#D97706;padding:2rem;">⚠️ AI 返回了空结果，请确认AI供应商连接正常后重试</p>';
@@ -1951,12 +1966,12 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
     showTabDot('tab-optimize');
   } catch (e) {
     clearTimeout(timeoutId);
-    clearInterval(progressInterval);
+    if (phaseTimer) clearInterval(phaseTimer);
     emptyEl.innerHTML = '<p style="text-align:center;color:var(--red);padding:2rem;">❌ 优化失败: ' + (e.message || '网络错误') + '</p>';
     toast('优化失败: ' + e.message);
   }
   finally {
-    clearInterval(progressInterval);
+    if (phaseTimer) clearInterval(phaseTimer);
     clearTimeout(timeoutId);
     btn.disabled = false; btn.textContent = '重新生成';
   }
@@ -2109,13 +2124,15 @@ document.getElementById('btn-generate-self-intro')?.addEventListener('click', as
       ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || jd.responsibilities || '')
       : (jd.requirements || jd.responsibilities || '');
     var resumeText = (document.getElementById('resume-input')?.value?.trim() || state.resumeText || '');
+    var customPrompt = document.getElementById('self-intro-custom-prompt')?.value?.trim() || '';
 
     var result = await fetchRetry('/api/generate-self-intro', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         jdSummary: jdSummary.slice(0, 400),
-        resumeText: resumeText.slice(0, 4000)
+        resumeText: resumeText.slice(0, 4000),
+        customPrompt: customPrompt.slice(0, 500)
       })
     }).then(function(r) { return r.json(); });
 
