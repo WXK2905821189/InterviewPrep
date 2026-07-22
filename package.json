@@ -59,6 +59,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "electron/icon.png",
@@ -72,9 +78,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "InterviewPrep",
-      "installerIcon": "electron/icon.png",
-      "uninstallerIcon": "electron/icon.png",
-      "installerHeaderIcon": "electron/icon.png",
+      "installerIcon": "electron/icon.ico",
+      "uninstallerIcon": "electron/icon.ico",
+      "installerHeaderIcon": "electron/icon.ico",
       "license": "LICENSE"
     },
     "mac": {
