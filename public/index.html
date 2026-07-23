@@ -268,8 +268,11 @@
           <textarea id="practice-answer" rows="6" placeholder="输入你的回答..." style="width:100%;min-height:160px;height:200px;resize:vertical;line-height:1.7;"></textarea>
           <button class="btn-mic" data-voice-target="practice-answer" title="语音输入" style="flex-shrink:0;">🎤</button>
         </div>
-        <div style="display:flex;gap:0.5rem;align-items:center;">
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
           <button id="btn-practice-submit" class="btn-primary" style="font-size:0.95rem;padding:0.5rem 1.5rem;font-weight:600;">提交评估</button>
+          <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.8rem;color:var(--muted);cursor:pointer;user-select:none;">
+            <input type="checkbox" id="chk-save-history" checked style="cursor:pointer;"> 纳入练习记录
+          </label>
           <button id="btn-save-phrase" class="btn-outline hidden" title="保存当前优质回答到话术库">⭐ 存入话术库</button>
         </div>
       </div>
@@ -612,10 +615,8 @@
     <div class="card" style="margin-bottom:1rem;">
       <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
         <h3 style="margin:0;">📚 群面知识库</h3>
-        <button class="btn-outline btn-sm" id="btn-group-kb">📖 查看群面攻略</button>
-        <a href="https://scnru07xq1cu.feishu.cn/wiki/WtHkwLFXciFtYEky1Chc6N5jnmg" target="_blank" class="btn-outline btn-sm" style="text-decoration:none;">🔗 在飞书打开</a>
+        <a href="https://scnru07xq1cu.feishu.cn/wiki/WtHkwLFXciFtYEky1Chc6N5jnmg" target="_blank" rel="noopener" class="btn-outline btn-sm" style="text-decoration:none;">🔗 在飞书打开</a>
       </div>
-      <div id="group-kb-content" style="display:none;margin-top:1rem;"></div>
     </div>
     
     <!-- 开始区域 -->
