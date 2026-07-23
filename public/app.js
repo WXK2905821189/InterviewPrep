@@ -455,7 +455,10 @@ function showFollowUpButton(mode, question, answer, evalResult) {
             } else {
               renderDrillFeedback(fuResult);
             }
-            autoSavePracticeRecord(followUp.follow_up_question, fuAnswer, fuResult);
+            const saveHistory = document.getElementById('chk-save-history')?.checked !== false;
+            if (saveHistory) {
+              autoSavePracticeRecord(followUp.follow_up_question, fuAnswer, fuResult);
+            }
             toast('追问评估完成');
           } catch(e) { toast('评估失败: ' + e.message); }
           finally { fuBtn.disabled = false; fuBtn.textContent = '重新提交'; }
@@ -1552,8 +1555,11 @@ $('#btn-practice-submit').addEventListener('click', async () => {
     const result = await apiEvaluateSingle(question, answer, jdSummary, resumeText.slice(0, 3000));
     state._lastFeedback = result;
     renderSingleFeedback(result);
-    // 自动保存练习记录到服务端（题目+回答+评估+改进版+关键改进点）
-    autoSavePracticeRecord(question, answer, result);
+    // 根据用户选择决定是否保存练习记录
+    const saveHistory = document.getElementById('chk-save-history')?.checked !== false;
+    if (saveHistory) {
+      autoSavePracticeRecord(question, answer, result);
+    }
     if ((result.overall_score || 0) >= 85) {
       $('#btn-save-phrase').classList.remove('hidden');
     }
@@ -5027,9 +5033,6 @@ function renderMianjingAnalysis(data, container) {
   if (btnSkip) btnSkip.addEventListener('click', function() {
     submitGroupMessage(); // For now, skip just sends an empty or placeholder
   });
-  
-  var btnKb = document.getElementById('btn-group-kb');
-  if (btnKb) btnKb.addEventListener('click', showGroupKnowledgeBase);
   
   var btnMjAnalysis = document.getElementById('btn-mj-analysis');
   if (btnMjAnalysis) btnMjAnalysis.addEventListener('click', doMianjingAnalysis);
