@@ -215,7 +215,6 @@
 
     <div id="analysis-result">
       <div id="batch-questions-container"></div>
-      <div class="hidden">
       <div class="result-header">
         <h2>分析结果</h2>
         <div class="result-meta" id="result-meta"></div>
@@ -280,7 +279,10 @@
 
       <!-- 题目列表（始终可见） -->
       <div class="card" style="margin-top:0.8rem;">
-        <h3 style="margin-bottom:0.6rem;">📋 全部押题清单 (<span id="practice-q-count">0</span>)</h3>
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+          <h3 style="margin:0;">📋 押题清单 (<span id="practice-q-count">0</span>)</h3>
+          <div class="question-filters" id="practice-q-filters" style="margin-left:0;"></div>
+        </div>
         <ul id="practice-question-list" style="max-height:400px;overflow-y:auto;"></ul>
       </div>
 

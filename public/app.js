@@ -737,9 +737,12 @@ $('#resume-file-input').addEventListener('change', async () => {
   try {
     const form = new FormData();
     form.append('file', file);
-    const resp = await fetchRetry('/api/resume-upload', { method: 'POST', body: form });
-    if (!resp.ok) throw new Error((await resp.json()).error);
+    // 注意：FormData 只能消费一次，不能用 fetchRetry（重试会导致空 body）
+    const resp = await fetch('/api/resume-upload', { method: 'POST', body: form });
     const data = await resp.json();
+    if (!resp.ok || data.error) {
+      throw new Error(data.error || `上传失败 (${resp.status})`);
+    }
     $('#resume-input').value = data.text;
     state.resumeFileName = data.fileName || '';
     state.resumeSourceType = data.sourceType || '';
@@ -751,7 +754,11 @@ $('#resume-file-input').addEventListener('change', async () => {
     }
     toast(`✅ 已解析: ${data.fileName}`);
   } catch(e) {
-    toast('解析失败: ' + e.message);
+    // 仅当确实是错误时才提示失败
+    const msg = e.message || String(e);
+    if (msg && msg !== 'undefined') {
+      toast('解析失败: ' + msg);
+    }
     $('#resume-file-name').textContent = '或直接粘贴文本';
   } finally {
     $('#btn-resume-file').disabled = false;
@@ -766,16 +773,21 @@ $('#btn-jd-fetch').addEventListener('click', async () => {
   const btn = $('#btn-jd-fetch');
   btn.disabled = true; btn.textContent = '⏳ 扒取中...';
   try {
-    const resp = await fetchRetry('/api/jd-fetch', {
+    const resp = await fetch('/api/jd-fetch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
     });
     const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error);
+    if (!resp.ok || data.error) {
+      throw new Error(data.error || `扒取失败 (${resp.status})`);
+    }
     $('#jd-input').value = data.text;
     toast(`✅ 已提取 ${data.charCount} 字${data.truncated ? ' (内容较长已截断)' : ''}`);
   } catch(e) {
-    toast('扒取失败: ' + e.message);
+    const msg = e.message || String(e);
+    if (msg && msg !== 'undefined') {
+      toast('扒取失败: ' + msg);
+    }
   } finally {
     btn.disabled = false; btn.textContent = '🔗 扒取';
   }
@@ -1390,45 +1402,70 @@ function renderPracticeQuestions() {
   
   if (allQs.length === 0) return;
   
-  // Render two sections: 押题 + 面经采集(分开标题)
-  const qSection = qs.length + kb.length;
-  const mjSection = mj.length;
+  // 收集所有分类
+  const types = [...new Set(allQs.map(q => q.type || '其他').filter(Boolean))];
+  const sources = [...new Set(allQs.map(q => q._source).filter(Boolean))];
   
-  // 性能优化：一次性 innerHTML 赋值减少 DOM 重排，然后批量绑定事件
-  if (mjSection > 0) {
-    // Two-section layout
-    const renderList = (items, startIdx) => items.map((q, i) => `
-      <li data-idx="${startIdx + i}" data-question="${encodeURIComponent(q.question||'')}" style="${q._source ? 'background:var(--tag-bg);border-radius:4px;margin:2px 0;' : ''}">
-        <span class="q-num">${startIdx + i + 1}</span>
-        ${q._source ? `<span style="font-size:0.65rem;color:var(--accent);margin-right:4px;">${q._source}</span>` : ''}
-        ${q.question || ''}
-      </li>
-    `).join('');
-    
-    const practiceItems = [...qs, ...kb];
-    $('#practice-question-list').innerHTML = 
-      '<div style="margin-bottom:0.5rem;font-weight:600;font-size:0.85rem;">📋 押题清单 (' + (qSection) + '题)</div>' +
-      renderList(practiceItems, 0) +
-      '<div style="margin:0.8rem 0 0.5rem;font-weight:600;font-size:0.85rem;border-top:1px dashed var(--rule);padding-top:0.5rem;">📡 面经采集 (' + mjSection + '题)</div>' +
-      renderList(mj, qSection);
-  } else {
-    // Single section
-    $('#practice-question-list').innerHTML = allQs.map((q, i) => `
-      <li data-idx="${i}" data-question="${encodeURIComponent(q.question||'')}">
-        <span class="q-num">${i + 1}</span>
-        ${q._source ? `<span style="font-size:0.65rem;color:var(--accent);margin-right:4px;">${q._source}</span>` : ''}
-        ${q.question || ''}
-      </li>
-    `).join('');
+  // 渲染分类筛选按钮
+  const filterEl = $('#practice-q-filters');
+  if (filterEl) {
+    filterEl.innerHTML = `
+      <span class="q-filter active" data-type="all">全部(${allQs.length})</span>
+      ${types.map(t => `<span class="q-filter" data-type="${t}">${t}</span>`).join('')}
+      ${sources.length > 0 ? '<span style="margin:0 2px;color:var(--rule);">|</span>' : ''}
+      ${sources.map(s => `<span class="q-filter" data-source="${s.replace(/[^\u4e00-\u9fa5]/g,'')}">${s}</span>`).join('')}
+    `;
+    // 绑定筛选事件
+    filterEl.querySelectorAll('.q-filter').forEach(f => {
+      f.addEventListener('click', () => {
+        filterEl.querySelectorAll('.q-filter').forEach(x => x.classList.remove('active'));
+        f.classList.add('active');
+        const filterType = f.dataset.type;
+        const filterSource = f.dataset.source;
+        renderFilteredPracticeList(allQs, filterType || 'all', filterSource || '');
+      });
+    });
   }
+  
+  // 默认渲染全部
+  renderFilteredPracticeList(allQs, 'all', '');
+  
+  $('#practice-empty').classList.add('hidden');
+  $('#practice-area').classList.remove('hidden');
+}
+
+function renderFilteredPracticeList(allQs, filterType, filterSource) {
+  let filtered = allQs;
+  
+  // 按题型筛选
+  if (filterType !== 'all') {
+    filtered = filtered.filter(q => (q.type || '其他') === filterType);
+  }
+  // 按来源筛选
+  if (filterSource) {
+    filtered = filtered.filter(q => {
+      const src = (q._source || '').replace(/[^\u4e00-\u9fa5]/g, '');
+      return src === filterSource;
+    });
+  }
+  
+  // 渲染列表
+  const qSection = filtered.length;
+  const countEl = document.getElementById('practice-q-count');
+  if (countEl) countEl.textContent = filtered.length;
+  
+  $('#practice-question-list').innerHTML = filtered.map((q, i) => `
+    <li data-idx="${i}" data-question="${encodeURIComponent(q.question||'')}" style="${q._source ? 'background:var(--tag-bg);border-radius:4px;margin:2px 0;' : ''}">
+      <span class="q-num">${i + 1}</span>
+      ${q._source ? `<span style="font-size:0.65rem;color:var(--accent);margin-right:4px;">${q._source}</span>` : ''}
+      ${q.type ? `<span class="q-type ${getTypeClass(q.type)}" style="font-size:0.62rem;padding:1px 4px;margin-right:4px;">${q.type}</span>` : ''}
+      ${q.question || ''}
+    </li>
+  `).join('');
   
   $$('#practice-question-list li').forEach(li => {
     li.addEventListener('click', () => selectPracticeQuestion(decodeURIComponent(li.dataset.question)));
   });
-  const countEl = document.getElementById('practice-q-count');
-  if (countEl) countEl.textContent = allQs.length;
-  $('#practice-empty').classList.add('hidden');
-  $('#practice-area').classList.remove('hidden');
 }
 
 function selectPracticeQuestion(question) {
@@ -4520,12 +4557,16 @@ function redoWrongQuestion(question) {
     try {
       var resp = await fetch(API + '/parse-jd-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) });
       var data = await resp.json();
-      if (data.error) { toast('\u89E3\u6790\u5931\u8D25: ' + data.error); }
-      else if (data.jd_text) {
+      // 优先使用 jd_text 判断是否成功（LLM 有时会同时返回 error 提示和有效数据）
+      if (data.jd_text && data.jd_text.length > 20) {
         var jdInput = document.getElementById('jd-input');
         if (jdInput) jdInput.value = data.jd_text;
         toast('\u5DF2\u89E3\u6790: ' + (data.company || '') + ' ' + (data.position || ''));
-      } else { toast('\u65E0\u6CD5\u8BC6\u522BJD\uFF0C\u8BF7\u624B\u52A8\u7C98\u8D34'); }
+      } else if (data.error && !data.jd_text) {
+        toast('\u89E3\u6790\u5931\u8D25: ' + data.error);
+      } else {
+        toast('\u65E0\u6CD5\u8BC6\u522BJD\uFF0C\u8BF7\u624B\u52A8\u7C98\u8D34');
+      }
     } catch (e) { toast('\u7F51\u7EDC\u9519\u8BEF: ' + e.message); }
     btn.disabled = false;
     btn.textContent = '\u89E3\u6790\u94FE\u63A5';
