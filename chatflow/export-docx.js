@@ -1,5 +1,5 @@
 // ============================================================
-// DOCX 导出 — 话术库 / 真题库
+// DOCX 导出 — 话术库 / 面经库
 // 自动美化排版，支持中文，适合打印复习
 // ============================================================
 const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
@@ -142,11 +142,11 @@ async function generatePhraseDocx(phrases) {
   return Packer.toBuffer(doc);
 }
 
-// ---- 真题库导出 ----
+// ---- 面经库导出 ----
 async function generateMianjingDocx(items) {
   const children = [];
 
-  children.push(title('面经真题库'));
+  children.push(title('面经库'));
   const companies = [...new Set(items.map(i => i.company).filter(Boolean))];
   children.push(subtitle(`${new Date().toLocaleDateString('zh-CN')} 导出 · ${companies.length}家公司 · 共 ${items.length} 题`));
   children.push(new Paragraph({ children: [new PageBreak()] }));

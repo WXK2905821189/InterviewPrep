@@ -808,7 +808,7 @@ function switchTab(tabName) {
   // Record tab activation for lazy loading
   if (!content?.dataset.loaded) {
     content?.setAttribute('data-loaded', '1');
-    if (tabName === 'bank') loadBank();
+    if (tabName === 'behavioral') loadBehavioralQuestions();
     if (tabName === 'company') { renderCompanyResearchHistory(); }
   }
 
@@ -1337,7 +1337,7 @@ function renderQuestionList(questions, filterType) {
             body: JSON.stringify({ question, type, company: analysis.jd?.company || '', position: analysis.jd?.position || '', sessionId: state.sessionId })
           });
           if (!resp.ok) throw new Error((await resp.json()).error);
-          btn.textContent = '✅ 已收藏'; toast('已收藏到真题库');
+          btn.textContent = '✅ 已收藏'; toast('已收藏');
         } catch(e) {
           btn.textContent = '⭐ 收藏'; btn.disabled = false;
           toast('收藏失败: ' + e.message);
@@ -2692,114 +2692,121 @@ $('#btn-delete-session').addEventListener('click', async () => {
 });
 
 // ============================================================
-// Tab 5: 真题库
+// Tab: 通用题库
 // ============================================================
-async function loadBank(filters = {}) {
-  const params = new URLSearchParams(filters).toString();
-  const data = await fetchRetry(`/api/mianjing-bank?${params}`).then(r => r.json());
+let _behavioralQuestions = null;
+let _behavioralAnswers = {}; // { qId: { answer, key_points, tips } }
 
-  // 过滤器
-  const all = '全部';
-  let filterHtml = '<span style="font-weight:700;font-size:0.82rem;">筛选: </span>';
-  filterHtml += `<select class="bank-filter" data-key="company"><option value="">公司 (${data.companies.length})</option>${data.companies.map(c => `<option value="${c}" ${filters.company===c?'selected':''}>${c}</option>`).join('')}</select>`;
-  filterHtml += `<select class="bank-filter" data-key="position"><option value="">岗位 (${data.positions.length})</option>${data.positions.map(p => `<option value="${p}" ${filters.position===p?'selected':''}>${p}</option>`).join('')}</select>`;
-  filterHtml += `<select class="bank-filter" data-key="type"><option value="">类型 (${data.types.length})</option>${data.types.map(t => `<option value="${t}" ${filters.type===t?'selected':''}>${t}</option>`).join('')}</select>`;
-  filterHtml += `<span style="font-size:0.75rem;color:var(--muted);">共 ${data.total} 题${data.filtered !== data.total ? `· 显示 ${data.filtered}` : ''}</span>`;
-  $('#bank-filters').innerHTML = filterHtml;
-
-  // 事件
-  $$('.bank-filter').forEach(el => {
-    el.addEventListener('change', () => {
-      const f = {};
-      $$('.bank-filter').forEach(e => { if (e.value) f[e.dataset.key] = e.value; });
-      loadBank(f);
-    });
-  });
-
-  // 题目列表
-  const qs = data.questions || [];
-  if (!qs.length) {
-    $('#bank-list').innerHTML = '<div class="empty-state"><p>真题库为空。完成一次含面经采集的分析后，面经真题会自动归档。</p></div>';
-    $('#bank-trends').innerHTML = '';
+async function loadBehavioralQuestions(filterCategory = '') {
+  if (!state.analysis) {
+    $('#behavioral-empty').style.display = 'block';
+    $('#behavioral-list').innerHTML = '';
     return;
   }
 
-  // 热趋势：最早/最新采集时间
-  const dates = qs.map(q => q.collectedAt).filter(Boolean).sort();
-  let trendHtml = '';
-  if (dates.length) {
-    trendHtml = `📊 时间跨度: ${new Date(dates[0]).toLocaleDateString('zh-CN')} ~ ${new Date(dates[dates.length-1]).toLocaleDateString('zh-CN')}`;
-    if (qs.length >= 3) trendHtml += ` · 涉及 ${data.companies.length} 家公司`;
+  if (!_behavioralQuestions) {
+    try {
+      _behavioralQuestions = await fetch('/api/behavioral-questions').then(r => r.json());
+    } catch(e) {
+      $('#behavioral-list').innerHTML = '<p style="color:var(--muted);">加载题库失败</p>';
+      return;
+    }
   }
-  trendHtml += ` · <a href="/api/export/mianjing" style="color:var(--accent);">📥 导出DOCX</a>`;
-  $('#bank-trends').innerHTML = trendHtml;
 
-  $('#bank-list').innerHTML = qs.map((q, idx) => `
-    <div class="q-item bank-item" data-question="${encodeURIComponent(q.question)}" data-company="${encodeURIComponent(q.company||'')}">
-      <div class="q-header">
-        <span class="q-type ${getTypeClass(q.type)}">${q.type || ''}</span>
-        <span class="q-source">${q.company || ''} · ${q.position || ''}${q.frequency ? ' · 出现'+q.frequency+'次' : ''}</span>
-        <button class="btn-bank-delete" title="删除此题">✕</button>
-        <button class="btn-outline bank-practice-btn" data-q="${encodeURIComponent(q.question || '')}" style="font-size:0.72rem;padding:0.15rem 0.5rem;margin-left:0.5rem;">练习</button>
+  $('#behavioral-empty').style.display = 'none';
+
+  // 分类筛选
+  const categories = ['全部', ...new Set(_behavioralQuestions.map(q => q.category))];
+  const filterEl = $('#behavioral-filters');
+  filterEl.innerHTML = categories.map(c => 
+    `<span class="q-filter${c === filterCategory || (c === '全部' && !filterCategory) ? ' active' : ''}" data-cat="${c}">${c}</span>`
+  ).join('');
+  filterEl.querySelectorAll('.q-filter').forEach(f => {
+    f.addEventListener('click', () => loadBehavioralQuestions(f.dataset.cat === '全部' ? '' : f.dataset.cat));
+  });
+
+  // 筛选题目
+  const qs = filterCategory
+    ? _behavioralQuestions.filter(q => q.category === filterCategory)
+    : _behavioralQuestions;
+
+  // 渲染卡片
+  $('#behavioral-list').innerHTML = qs.map(q => {
+    const saved = _behavioralAnswers[q.id];
+    return `
+    <div class="card" style="display:flex;flex-direction:column;gap:0.5rem;">
+      <div style="display:flex;align-items:center;gap:0.5rem;">
+        <span class="q-type" style="font-size:0.68rem;padding:2px 6px;">${q.category}</span>
+        <span style="font-size:0.72rem;color:var(--muted);">${q.id.replace('gb','#')}</span>
       </div>
-      <div class="q-text">${q.question}</div>
-      <div class="q-intent" style="font-size:0.72rem;color:var(--muted);">📅 ${new Date(q.collectedAt || '').toLocaleDateString('zh-CN')} · 轮次: ${q.round || '未知'} · 来源: ${q.source || ''}${q.source_platforms?.length ? ' · ' + q.source_platforms.map(s => '📎 ' + s).join(' ') : ''}</div>
-      ${q.sourceUrls?.length ? `<div class="q-intent" style="font-size:0.7rem;color:var(--accent);margin-top:1px;">来源: ${q.sourceUrls.map(s => `<a href="${s.url}" target="_blank" style="color:var(--accent);">${s.title?.slice(0,20) || s.platform}</a>`).join(' | ')}</div>` : ''}
-    </div>
-  `).join('');
+      <div class="q-text" style="font-size:0.92rem;font-weight:600;line-height:1.5;min-height:2.5rem;">${q.question}</div>
+      <details style="font-size:0.75rem;color:var(--muted);">
+        <summary style="cursor:pointer;">📋 回答框架</summary>
+        <p style="margin:0.3rem 0;line-height:1.6;">${q.framework || '无'}</p>
+        <p style="margin:0.3rem 0;color:var(--red);">⚠️ ${q.danger_zones || ''}</p>
+      </details>
+      ${saved ? `
+      <div style="background:var(--bg0);padding:0.6rem;border-radius:6px;font-size:0.8rem;line-height:1.6;max-height:200px;overflow-y:auto;">
+        ${saved.answer}
+        <div style="display:flex;gap:0.5rem;margin-top:0.4rem;flex-wrap:wrap;">
+          <span style="font-size:0.7rem;color:var(--accent);">${saved.duration_estimate || ''}</span>
+          ${saved.tips ? `<span style="font-size:0.7rem;color:var(--muted);">💡 ${saved.tips}</span>` : ''}
+        </div>
+      </div>` : ''}
+      <div style="display:flex;gap:0.4rem;margin-top:auto;">
+        <button class="btn-outline btn-gen-behavioral" data-id="${q.id}" style="font-size:0.78rem;flex:1;">
+          ${saved ? '🔄 重新生成' : '✨ AI 生成标准答案'}
+        </button>
+        ${saved ? `<button class="btn-outline btn-copy-behavioral" data-id="${q.id}" style="font-size:0.72rem;padding:0.2rem 0.6rem;">📋 复制</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
 
-  // 删除按钮事件
-  $$('.btn-bank-delete').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const item = btn.closest('.bank-item');
-      const question = decodeURIComponent(item.dataset.question);
-      const company = decodeURIComponent(item.dataset.company);
-      if (!confirm(`确定删除此题？\n\n「${question.slice(0,60)}」`)) return;
+  // 生成按钮事件
+  document.querySelectorAll('.btn-gen-behavioral').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const qId = btn.dataset.id;
+      const q = _behavioralQuestions.find(x => x.id === qId);
+      if (!q) return;
+      btn.disabled = true; btn.textContent = '⏳ 生成中...';
       try {
-        const resp = await fetchRetry('/api/bank/question', {
-          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question, company })
+        const jd = state.analysis?.jd || {};
+        const jdSummary = jd.position ? `${jd.company||''} ${jd.position} | ${jd.requirements||''}`.slice(0,400) : '';
+        const resp = await fetch('/api/generate-behavioral-answer', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: q.question, framework: q.framework, danger_zones: q.danger_zones,
+            jdSummary, resumeText: state.resumeText || ''
+          })
         });
-        if (!resp.ok) throw new Error((await resp.json()).error);
-        item.remove();
-        toast('已删除');
+        const data = await resp.json();
+        if (data.error) throw new Error(data.error);
+        _behavioralAnswers[qId] = data;
+        // 重新渲染以显示答案
+        loadBehavioralQuestions(filterCategory);
       } catch(e) {
-        toast('删除失败: ' + e.message);
+        toast('生成失败: ' + e.message);
+        btn.disabled = false; btn.textContent = '✨ AI 生成标准答案';
       }
     });
   });
 
-  // 练习按钮事件
-  document.querySelectorAll('.bank-practice-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const question = decodeURIComponent(btn.dataset.q);
-      // Add to practice list if not already there
-      if (!state.analysis) state.analysis = { questions:[], mianjing:[], kb_supplement:[], jd:{}, resume:{} };
-      state.analysis.mianjing = state.analysis.mianjing || [];
-      if (!state.analysis.mianjing.find(mq => mq.question === question)) {
-        // Find the full question object from bank data
-        const fullQ = data.questions.find(q => q.question === question);
-        state.analysis.mianjing.push({ 
-          question, type: fullQ?.type || '真题库', 
-          _source: '题库', sample_answer_points: fullQ?.sample_answer_points || [],
-          examiner_intent: fullQ?.examiner_intent || '', tags: fullQ?.tags || []
-        });
+  // 复制按钮事件
+  document.querySelectorAll('.btn-copy-behavioral').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const qId = btn.dataset.id;
+      const saved = _behavioralAnswers[qId];
+      if (!saved?.answer) return;
+      try {
+        await navigator.clipboard.writeText(saved.answer);
+        btn.textContent = '✅ 已复制';
+        setTimeout(() => { btn.textContent = '📋 复制'; }, 1500);
+      } catch(e) {
+        toast('复制失败');
       }
-      switchTab('practice');
-      setTimeout(() => selectPracticeQuestion(question), 300);
     });
   });
 }
-
-// 切换Tab时加载真题库
-$$('.nav-tab').forEach(tab => {
-  const orig = tab.onclick;
-  tab.addEventListener('click', () => {
-    if (tab.dataset.tab === 'bank') loadBank({});
-  });
-});
 
 // ============================================================
 // 📡 面经采集
@@ -2920,26 +2927,9 @@ function addMjToPractice(q) {
   if (document.getElementById('tab-practice').classList.contains('active')) renderPracticeQuestions();
 }
 
-async function addMjToBank(q) {
-  try {
-    const resp = await fetchRetry('/api/bank/bookmark', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q.question, type: q.type, company: state.analysis?.jd?.company||'', position: state.analysis?.jd?.position||'', sessionId: state.sessionId })
-    });
-    const data = await resp.json();
-    toast(resp.ok ? '已加入真题库' : (data.error || '添加失败'));
-    updateMjButtonStates();
-  } catch { toast('添加失败'); }
-}
-
 $('#btn-mj-add-all-practice').addEventListener('click', () => {
   if (!window._mjQuestions?.length) return toast('无题目');
   window._mjQuestions.forEach(q => addMjToPractice(q));
-});
-$('#btn-mj-add-all-bank').addEventListener('click', async () => {
-  if (!window._mjQuestions?.length) return toast('无题目');
-  for (const q of window._mjQuestions) await addMjToBank(q);
-  toast('全部加入真题库');
 });
 
 function updateMjButtonStates() {

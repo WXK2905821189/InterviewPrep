@@ -505,13 +505,6 @@ html.dark .navbar {
   white-space: nowrap; transition: all var(--transition);
 }
 .q-item .btn-bookmark:hover { border-color: var(--accent); color: var(--accent); }
-.q-item .btn-bank-delete {
-  margin-left: auto; font-size: 0.75rem; padding: 0.1rem 0.4rem;
-  border: 1px solid transparent; border-radius: 4px;
-  background: transparent; color: var(--muted); cursor: pointer;
-  white-space: nowrap; transition: all var(--transition); line-height: 1;
-}
-.q-item .btn-bank-delete:hover { border-color: var(--red); color: var(--red); }
 .q-item .q-text { font-weight: 600; font-size: 0.92rem; margin-bottom: 0.3rem; }
 .q-item .q-intent { font-size: 0.78rem; color: var(--muted); }
 

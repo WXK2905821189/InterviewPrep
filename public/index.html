@@ -39,7 +39,7 @@
     <button class="nav-tab" data-tab="resume">简历优化<span class="tab-dot" data-dot-tab="resume"></span></button>
     <button class="nav-tab" data-tab="mianjing">📡 面经采集<span class="tab-dot" data-dot-tab="mianjing"></span></button>
     <button class="nav-tab" data-tab="drill">🎯 专项训练<span class="tab-dot" data-dot-tab="drill"></span></button>
-    <button class="nav-tab" data-tab="bank">真题库</button>
+    <button class="nav-tab" data-tab="behavioral">💡 通用题库</button>
     <button class="nav-tab" data-tab="company">公司调研</button>
     <button class="nav-tab" data-tab="wrongbook">📝 错题集</button>
     <button class="nav-tab" data-tab="group">👥 群面模拟<span class="tab-dot" data-dot-tab="group"></span></button>
@@ -454,7 +454,7 @@
         <input id="mj-position-input" type="text" placeholder="岗位（自动从JD读取）" style="flex:1;min-width:160px;font-size:0.85rem;padding:0.5rem;border:1px solid var(--rule);border-radius:6px;">
         <button id="btn-mj-search" class="btn-primary" style="font-size:0.9rem;white-space:nowrap;">🔍 开始采集</button>
       </div>
-      <p style="font-size:0.75rem;color:var(--muted);margin-top:0.5rem;">💡 完成后对题目进行「加入练习 / 加入真题库」</p>
+      <p style="font-size:0.75rem;color:var(--muted);margin-top:0.5rem;">💡 完成后对题目进行「加入练习」</p>
     </div>
 
     <div class="card">
@@ -473,7 +473,6 @@
         <h3 style="margin:0;">📋 采集结果 (<span id="mj-q-count">0</span>题)</h3>
         <div style="display:flex;gap:0.4rem;">
           <button id="btn-mj-add-all-practice" class="btn-outline" style="font-size:0.78rem;">➕ 全部加入练习</button>
-          <button id="btn-mj-add-all-bank" class="btn-outline" style="font-size:0.78rem;">📚 全部加入真题库</button>
         </div>
       </div>
       <div id="mj-question-list" style="margin-top:0.5rem;"></div>
@@ -492,15 +491,25 @@
     </div>
   </section>
 
-  <!-- ====== Tab 5: 真题库 ====== -->
-  <section id="tab-bank" class="tab-content">
+  <!-- ====== Tab: 通用题库 ====== -->
+  <section id="tab-behavioral" class="tab-content">
     <div class="card hero-card">
-      <h1>真题库</h1>
-      <p>所有面经采集到的真实面试题，按公司/岗位/类型筛选浏览</p>
+      <h1>💡 通用题库</h1>
+      <p class="subtitle">20 道高频行为面试题，覆盖自我认知、职业规划、行为面试、压力应对、价值观五大类。每道题都可一键生成结合你简历和岗位的标准化回答。</p>
     </div>
-    <div class="card" id="bank-filters" style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;"></div>
-    <div id="bank-trends" style="font-size:0.78rem;color:var(--muted);margin:0.5rem 0;"></div>
-    <div id="bank-list"></div>
+
+    <div class="card" style="margin-bottom:0.8rem;">
+      <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+        <span style="font-weight:600;">分类筛选：</span>
+        <div class="q-filters" id="behavioral-filters"></div>
+      </div>
+    </div>
+
+    <div id="behavioral-empty" class="empty-state">
+      <p>请先在「分析 & 押题」页完成分析，然后这里会加载通用题库</p>
+    </div>
+
+    <div id="behavioral-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:0.8rem;"></div>
   </section>
 
   <!-- ====== Tab: 专项训练 ====== -->

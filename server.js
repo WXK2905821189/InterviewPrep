@@ -149,7 +149,7 @@ function setJdCache(jdText, data) {
 }
 
 
-// 真题库持久化
+// 面经库持久化
 function loadMianjingBank() {
   try { if (fs.existsSync(MIANJING_BANK_FILE)) return JSON.parse(fs.readFileSync(MIANJING_BANK_FILE,'utf-8')); }
   catch(e) { return []; }
@@ -872,6 +872,43 @@ ${customPrompt ? `
     res.json(result);
   } catch (e) {
     console.error('[API] 自我介绍生成失败:', e);
+    res.status(500).json({ error: '生成失败: ' + e.message });
+  }
+});
+
+// 通用题库：获取题目列表
+app.get('/api/behavioral-questions', (req, res) => {
+  try {
+    const qs = require('./knowledge/behavioral-questions.json');
+    res.json(qs);
+  } catch (e) {
+    res.status(500).json({ error: '加载题库失败' });
+  }
+});
+
+// 通用题库：生成标准化回答
+app.post('/api/generate-behavioral-answer', async (req, res) => {
+  try {
+    const { question, framework, danger_zones, jdSummary, resumeText } = req.body;
+    if (!question || !resumeText) return res.status(400).json({ error: '缺少题目或简历内容' });
+
+    const { llm } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const userPrompt = `题目：${question}
+${framework ? `回答框架：${framework}` : ''}
+${danger_zones ? `⚠️ 危险区（绝对不能犯的错误）：${danger_zones}` : ''}
+
+岗位背景：${jdSummary || '（未提供）'}
+候选人简历：
+${resumeText.slice(0, 4000)}
+
+请基于以上信息生成这道题的标准化回答。`;
+
+    const result = await llm(prompts.BEHAVIORAL_ANSWER_SYSTEM, userPrompt, { temperature: 0.8 });
+    res.json(result);
+  } catch (e) {
+    console.error('[API] 通用题库回答生成失败:', e);
     res.status(500).json({ error: '生成失败: ' + e.message });
   }
 });
@@ -1750,7 +1787,7 @@ app.delete('/api/sessions/:id', (req, res) => {
 });
 
 // ============================================================
-// API 11: 真题库
+// API 11: 面经库
 // ============================================================
 
 app.get('/api/mianjing-bank', (req, res) => {
@@ -1777,53 +1814,7 @@ app.get('/api/mianjing-bank', (req, res) => {
   });
 });
 
-// 用户收藏押题到真题库
-app.post('/api/bank/bookmark', (req, res) => {
-  try {
-    const { question, type, company, position, sessionId } = req.body;
-    if (!question) return res.status(400).json({ error: '缺少题目内容' });
 
-    const bank = loadMianjingBank();
-    // 防止重复
-    const exists = bank.find(b => b.question === question && b.company === company);
-    if (exists) return res.status(409).json({ error: '该题已在真题库中' });
-
-    bank.unshift({
-      question,
-      type: type || '未知',
-      frequency: 1,
-      round: '未知',
-      company: company || '',
-      position: position || '',
-      sourceLabel: '用户收藏',
-      source: '用户收藏',
-      sourceUrls: [],
-      source_platforms: ['用户收藏'],
-      sessionId,
-      collectedAt: new Date().toISOString()
-    });
-    saveMianjingBank(bank.slice(0, 500));
-    res.json({ ok: true, total: bank.length });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// 删除真题库中的某道题
-app.delete('/api/bank/question', (req, res) => {
-  try {
-    const { question, company } = req.body;
-    if (!question) return res.status(400).json({ error: '缺少题目内容' });
-    const bank = loadMianjingBank();
-    const before = bank.length;
-    const filtered = bank.filter(b => !(b.question === question && b.company === company));
-    if (filtered.length === before) return res.status(404).json({ error: '未找到该题目' });
-    saveMianjingBank(filtered);
-    res.json({ ok: true, deleted: before - filtered.length, total: filtered.length });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
 // ============================================================
 // Company Research API — 公司调研（SSE流式）
@@ -1937,7 +1928,7 @@ app.post('/api/resume-upload', upload.single('file'), async (req, res) => {
 });
 
 // ============================================================
-// API 13: 导出 DOCX — 话术库 / 真题库
+// API 13: 导出 DOCX — 话术库 / 面经库
 // ============================================================
 app.get('/api/export/phrases', async (req, res) => {
   try {
@@ -1963,7 +1954,7 @@ app.get('/api/export/mianjing', async (req, res) => {
     if (position) filtered = filtered.filter(b => b.position.includes(position));
     const buffer = await generateMianjingDocx(filtered);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('真题库_面试准备.docx')}`);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('面经库_面试准备.docx')}`);
     res.send(buffer);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2237,7 +2228,7 @@ app.post('/api/mianjing-collect', async (req, res) => {
         saveSessions();
       }
       
-      // 真题库写入
+      // 面经库写入
       const label = (session ? session.label : null) || (jdParsed.position || jdParsed.company || '未命名');
       if (mResult.data.questions?.length) {
         const bank = loadMianjingBank();
@@ -2256,7 +2247,7 @@ app.post('/api/mianjing-collect', async (req, res) => {
         const seen = new Set();
         const deduped = bank.filter(b => { const k = (b.company||'') + '|' + (b.position||'') + '|' + (b.question||''); if (seen.has(k)) return false; seen.add(k); return true; });
         saveMianjingBank(deduped.slice(0, 500));
-        console.log(`[Mianjing] 真题库归档: ${mResult.data.questions.length} 条面经题, 题库总量 ${deduped.length}`);
+        console.log(`[Mianjing] 面经库归档: ${mResult.data.questions.length} 条面经题, 题库总量 ${deduped.length}`);
       }
       
       sse({
@@ -2363,7 +2354,7 @@ app.post('/api/mianjing-analysis', async (req, res) => {
   const { sessionId, company, position } = req.body;
 
   try {
-    // 从真题库中加载相关题目
+    // 从面经库中加载相关题目
     const bank = loadMianjingBank();
     const targetCompany = company || '';
     const targetPosition = position || '';
@@ -2373,7 +2364,7 @@ app.post('/api/mianjing-analysis', async (req, res) => {
       return;
     }
 
-    sseSend(res, { step: 'loading', detail: '正在从真题库加载相关数据...', status: 'running' });
+    sseSend(res, { step: 'loading', detail: '正在从面经库加载相关数据...', status: 'running' });
 
     // 筛选相关题目
     const relevantQuestions = bank.filter(q => {
