@@ -22,6 +22,7 @@
       <select id="nav-session-select" class="styled-select">
         <option value="">暂无面试</option>
       </select>
+      <button id="btn-edit-session-label" class="nav-settings-btn" title="编辑岗位名称" style="font-size:0.8rem;background:none;border:1px solid var(--rule);border-radius:4px;padding:0.1rem 0.4rem;cursor:pointer;color:var(--muted);">✏️</button>
     </div>
     <div class="nav-status" id="nav-status">⚪ 就绪</div>
     <div class="nav-actions">
@@ -164,6 +165,28 @@
         </div>
       </div>
     </div>
+
+    <!-- 完整经历补充模块 -->
+    <div class="card" id="experience-section" style="margin-bottom:1rem;border-left:4px solid var(--accent2);">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.6rem;">
+        <div>
+          <h3 style="margin:0;">📝 完整经历补充</h3>
+          <p style="font-size:0.78rem;color:var(--muted);margin:0.2rem 0 0 0;">有些经历简历上写得很精简，在这里补充完整细节，AI生成的标准答案会更贴合你的真实经历</p>
+        </div>
+        <button id="btn-experience-interview" class="btn-ai-action btn-ai-model">
+          <span class="ai-action-icon">🤖</span>AI 经历访谈
+        </button>
+      </div>
+      <div id="experience-list" style="display:flex;flex-direction:column;gap:0.5rem;">
+        <div style="text-align:center;padding:1rem;color:var(--muted);font-size:0.82rem;">
+          暂无补充经历，点击「AI 经历访谈」让AI根据你的简历生成引导问题
+        </div>
+      </div>
+      <div style="margin-top:0.5rem;display:flex;gap:0.5rem;justify-content:flex-end;">
+        <button id="btn-add-experience" class="btn-outline" style="font-size:0.78rem;">+ 手动添加经历</button>
+        <button id="btn-save-experiences" class="btn-primary" style="font-size:0.78rem;display:none;">💾 保存所有经历</button>
+      </div>
+    </div>
   </section><!-- ====== Tab 1: 分析 & 押题 ====== -->
   <section id="tab-analyze" class="tab-content">
     <div class="card hero-card">
@@ -270,6 +293,7 @@
         </div>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
           <button id="btn-practice-submit" class="btn-primary" style="font-size:0.95rem;padding:0.5rem 1.5rem;font-weight:600;">提交评估</button>
+          <button id="btn-practice-model-answer-pre" class="btn-ai-action btn-ai-model" style="font-size:0.82rem;" title="AI基于你的简历生成标准答案参考"><span class="ai-action-icon">✨</span>AI标准答案</button>
           <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.8rem;color:var(--muted);cursor:pointer;user-select:none;">
             <input type="checkbox" id="chk-save-history" checked style="cursor:pointer;"> 纳入练习记录
           </label>
@@ -279,6 +303,9 @@
 
       <!-- 评估反馈 -->
       <div id="practice-feedback" class="hidden"></div>
+
+      <!-- 反问建议 -->
+      <div id="practice-counter-questions" class="hidden card" style="margin-top:0.8rem;"></div>
 
       <!-- 题目列表（始终可见） -->
       <div class="card" style="margin-top:0.8rem;">
@@ -371,9 +398,11 @@
 
     <div id="interview-report" class="hidden"></div>
     <div id="interview-report-actions" class="hidden" style="display:flex;gap:0.4rem;margin-top:0.5rem;justify-content:flex-end;">
+      <button id="btn-interview-counter" class="btn-outline" style="font-size:0.78rem;padding:0.3rem 0.8rem;color:var(--accent);border-color:var(--accent);">🔄 生成反问问题</button>
       <button id="btn-export-interview-md" class="btn-outline" style="font-size:0.72rem;padding:0.2rem 0.5rem;">📥 导出 MD</button>
       <button id="btn-export-interview-docx" class="btn-outline" style="font-size:0.72rem;padding:0.2rem 0.5rem;">📄 导出 DOCX</button>
     </div>
+    <div id="interview-counter-questions" class="hidden card" style="margin-top:0.8rem;"></div>
     
     <!-- 面试历史回顾 -->
     <div class="card" style="margin-top:1.5rem;">
@@ -413,7 +442,7 @@
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
         <div>
           <h3 style="margin:0;">🎙️ 面试自我介绍</h3>
-          <p style="font-size:0.78rem;color:var(--muted);margin:0.2rem 0 0 0;">AI基于你的简历生成1-2分钟口语化自我介绍，可重复生成</p>
+          <p style="font-size:0.78rem;color:var(--muted);margin:0.2rem 0 0 0;">AI基于你的简历生成口语化自我介绍，选择风格和时长后生成</p>
         </div>
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
           <button id="btn-generate-self-intro" class="btn-ai-action btn-ai-model">
@@ -422,6 +451,26 @@
           <button id="btn-save-self-intro" class="btn-ai-action btn-ai-followup" style="display:none;" title="保存到话术库">
             <span class="ai-action-icon">💾</span>保存
           </button>
+        </div>
+      </div>
+      <!-- 风格和时长选择 -->
+      <div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-top:0.6rem;padding:0.6rem 0.8rem;background:var(--bg0);border-radius:8px;align-items:center;">
+        <div style="display:flex;align-items:center;gap:0.4rem;">
+          <span style="font-size:0.82rem;color:var(--muted);">🎭 风格：</span>
+          <select id="self-intro-style" class="styled-select" style="font-size:0.82rem;padding:0.3rem 0.5rem;">
+            <option value="稳重专业型">稳重专业型</option>
+            <option value="活泼自信型">活泼自信型</option>
+            <option value="简洁干练型">简洁干练型</option>
+            <option value="故事叙述型">故事叙述型</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.4rem;">
+          <span style="font-size:0.82rem;color:var(--muted);">⏱ 时长：</span>
+          <select id="self-intro-duration" class="styled-select" style="font-size:0.82rem;padding:0.3rem 0.5rem;">
+            <option value="1分钟">1分钟</option>
+            <option value="1.5分钟" selected>1.5分钟</option>
+            <option value="2分钟">2分钟</option>
+          </select>
         </div>
       </div>
       <details id="self-intro-prompt-toggle" style="margin-top:0.6rem;font-size:0.78rem;">
@@ -498,18 +547,33 @@
       <p class="subtitle">20 道高频行为面试题，覆盖自我认知、职业规划、行为面试、压力应对、价值观五大类。每道题都可一键生成结合你简历和岗位的标准化回答。</p>
     </div>
 
-    <div class="card" style="margin-bottom:0.8rem;">
-      <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
-        <span style="font-weight:600;">分类筛选：</span>
-        <div class="q-filters" id="behavioral-filters"></div>
-      </div>
-    </div>
-
     <div id="behavioral-empty" class="empty-state">
       <p>请先在「分析 & 押题」页完成分析，然后这里会加载通用题库</p>
     </div>
 
-    <div id="behavioral-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:0.8rem;"></div>
+    <div id="behavioral-area" style="display:none;">
+      <!-- 搜索 + 分类栏 -->
+      <div class="card" style="margin-bottom:0.8rem;padding:0.6rem 0.8rem;">
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+          <input id="behavioral-search" type="text" placeholder="🔍 搜索题目关键词..." style="flex:1;min-width:200px;padding:0.4rem 0.6rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);font-size:0.85rem;">
+          <span style="font-size:0.8rem;color:var(--muted);" id="behavioral-search-count"></span>
+        </div>
+        <div style="display:flex;gap:0.3rem;margin-top:0.5rem;flex-wrap:wrap;" class="q-filters" id="behavioral-filters"></div>
+      </div>
+
+      <!-- 主内容区：侧边栏 + 详情 -->
+      <div style="display:flex;gap:0.8rem;align-items:flex-start;">
+        <!-- 左侧题目列表 -->
+        <div id="behavioral-sidebar" style="flex:0 0 320px;max-height:70vh;overflow-y:auto;display:flex;flex-direction:column;gap:0.3rem;position:sticky;top:0.5rem;"></div>
+        <!-- 右侧详情区 -->
+        <div id="behavioral-detail" style="flex:1;min-width:0;">
+          <div class="card" style="text-align:center;padding:3rem 1rem;color:var(--muted);">
+            <div style="font-size:2rem;margin-bottom:0.5rem;">👈</div>
+            <p>从左侧选择一道题目，查看回答框架并生成标准答案</p>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ====== Tab: 专项训练 ====== -->
@@ -569,6 +633,7 @@
         </div>
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <button id="btn-drill-submit" class="btn-primary" style="font-size:0.95rem;padding:0.5rem 1.5rem;font-weight:600;">提交评估</button>
+          <button id="btn-drill-model-answer-pre" class="btn-ai-action btn-ai-model" style="font-size:0.82rem;" title="AI基于你的简历生成标准答案参考"><span class="ai-action-icon">✨</span>AI标准答案</button>
           <button id="btn-drill-retry" class="btn-outline hidden" style="font-size:0.82rem;">🔄 重练此题</button>
         </div>
       </div>

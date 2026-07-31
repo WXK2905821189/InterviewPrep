@@ -409,8 +409,12 @@ function showFollowUpButton(mode, question, answer, evalResult) {
   section.innerHTML = '<div class=\"ai-action-row\">' +
     '<button class=\"btn-ai-action btn-ai-followup\" id=\"btn-follow-up-' + mode + '\" title=\"AI根据你的回答弱点生成追问\"><span class=\"ai-action-icon\">💬</span>AI追问练习</button>' +
     '<button class=\"btn-ai-action btn-ai-model\" id=\"btn-model-answer-' + mode + '\" title=\"AI基于你的简历生成标准答案参考\"><span class=\"ai-action-icon\">✨</span>AI标准答案</button>' +
+    '<button class=\"btn-ai-action btn-ai-counter\" id=\"btn-counter-' + mode + '\" title=\"AI生成你可以反问面试官的问题\"><span class=\"ai-action-icon\">🔄</span>生成反问</button>' +
     '</div>';
   container.appendChild(section);
+
+  // ---- 反问按钮 ----
+  bindCounterButtonHandler(mode, question, answer);
 
   // ---- 追问按钮 ----
   document.getElementById('btn-follow-up-' + mode).addEventListener('click', async function() {
@@ -434,14 +438,16 @@ function showFollowUpButton(mode, question, answer, evalResult) {
         section.innerHTML = '<div class=\"ai-action-row\">' +
           '<button class=\"btn-ai-action btn-ai-followup\" disabled>💬 已追问</button>' +
           '<button class=\"btn-ai-action btn-ai-model\" id=\"btn-model-answer-' + mode + '\" title=\"AI基于你的简历生成标准答案参考\"><span class=\"ai-action-icon\">✨</span>AI标准答案</button>' +
+          '<button class=\"btn-ai-action btn-ai-counter\" id=\"btn-counter-' + mode + '\" title=\"AI生成你可以反问面试官的问题\"><span class=\"ai-action-icon\">🔄</span>生成反问</button>' +
           '</div>' +
           '<div class=\"follow-up-q\">' + (followUp.follow_up_question || '') + '</div>' +
           '<div class=\"follow-up-reason\">追问原因：' + (followUp.reason || '') + ' (' + (followUp.follow_up_type || '') + ')</div>' +
           '<textarea id=\"follow-up-answer-' + mode + '\" rows=\"4\" placeholder=\"输入你的追问回答...\" style=\"width:100%;min-height:100px;resize:vertical;line-height:1.7;padding:0.5rem;border:1px solid var(--rule);border-radius:var(--radius-sm);background:var(--bg);margin-bottom:0.5rem;font-family:var(--font-body);\"></textarea>' +
           '<button class=\"btn-primary\" id=\"btn-follow-up-submit-' + mode + '\" style=\"font-size:0.82rem;\">提交追问回答</button>';
 
-        // 重新绑定标准答案按钮
+        // 重新绑定标准答案按钮 + 反问按钮
         loadModelAnswerHandler(mode, question, section);
+        bindCounterButtonHandler(mode, question, answer);
 
         document.getElementById('btn-follow-up-submit-' + mode).addEventListener('click', async function() {
           var fuAnswer = document.getElementById('follow-up-answer-' + mode).value.trim();
@@ -467,8 +473,10 @@ function showFollowUpButton(mode, question, answer, evalResult) {
         section.innerHTML = '<div class=\"ai-action-row\">' +
           '<p style=\"font-size:0.82rem;color:var(--green);margin:0;\">回答已足够充分，无需追问</p>' +
           '<button class=\"btn-ai-action btn-ai-model\" id=\"btn-model-answer-' + mode + '\" title=\"AI基于你的简历生成标准答案参考\"><span class=\"ai-action-icon\">✨</span>AI标准答案</button>' +
+          '<button class=\"btn-ai-action btn-ai-counter\" id=\"btn-counter-' + mode + '\" title=\"AI生成你可以反问面试官的问题\"><span class=\"ai-action-icon\">🔄</span>生成反问</button>' +
           '</div>';
         loadModelAnswerHandler(mode, question, section);
+        bindCounterButtonHandler(mode, question, answer);
       }
     } catch (e) {
       section.innerHTML = '<p style=\"font-size:0.82rem;color:var(--red);\">追问生成失败: ' + e.message + '</p>';
@@ -505,6 +513,76 @@ function getCurrentInterviewQuestion() {
   return msgs[msgs.length - 1].textContent || '';
 }
 
+// 反问按钮事件绑定（可复用）
+function bindCounterButtonHandler(mode, question, answer) {
+  var btn = document.getElementById('btn-counter-' + mode);
+  if (!btn) return;
+  btn.addEventListener('click', async function() {
+    btn.disabled = true; btn.innerHTML = '<span class=\"ai-action-icon\">⏳</span>生成中...';
+    try {
+      var jd = state.analysis ? (state.analysis.jd || {}) : {};
+      var jdSummary = jd.position ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || '') : '';
+      var resp = await fetchRetry('/api/generate-counter-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: question,
+          answer: answer || '',
+          jdSummary: jdSummary.slice(0, 400),
+          resumeText: (state.resumeText || '').slice(0, 3000)
+        })
+      }).then(function(r) { return r.json(); });
+      renderCounterQuestions(mode, resp);
+      btn.disabled = false; btn.innerHTML = '<span class=\"ai-action-icon\">🔄</span>生成反问';
+    } catch(e) {
+      toast('反问生成失败: ' + e.message);
+      btn.disabled = false; btn.innerHTML = '<span class=\"ai-action-icon\">🔄</span>生成反问';
+    }
+  });
+}
+
+// 渲染反问问题
+function renderCounterQuestions(mode, data) {
+  var containerId = mode === 'interview' ? 'interview-counter-questions' : 'practice-counter-questions';
+  var container = document.getElementById(containerId);
+  if (!container) return;
+
+  if (data.error || !data.questions?.length) {
+    container.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);padding:1rem;">' + (data.error || '暂无反问建议') + '</div>';
+    container.classList.remove('hidden');
+    return;
+  }
+
+  var catColors = {
+    '业务/产品': '#3b82f6',
+    '团队/文化': '#8b5cf6',
+    '个人发展': '#10b981',
+    '行业洞察': '#f59e0b'
+  };
+
+  container.innerHTML = `
+    <div style="font-weight:600;font-size:0.95rem;margin-bottom:0.6rem;color:var(--accent);">🔄 反问面试官 — 高质量问题建议</div>
+    <div style="display:flex;flex-direction:column;gap:0.5rem;">
+      ${data.questions.map(function(q, i) {
+        var color = catColors[q.category] || 'var(--accent)';
+        return `<div style="display:flex;gap:0.5rem;align-items:flex-start;padding:0.5rem 0.6rem;background:var(--bg0);border-radius:8px;border-left:3px solid ${color};">
+          <span style="flex-shrink:0;font-weight:700;color:${color};font-size:0.85rem;">${i+1}.</span>
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:0.85rem;line-height:1.5;margin-bottom:0.2rem;">${q.q}</div>
+            <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+              <span style="font-size:0.7rem;background:${color}22;color:${color};padding:1px 6px;border-radius:4px;">${q.category}</span>
+              <span style="font-size:0.72rem;color:var(--muted);">${q.why || ''}</span>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    ${data.tips ? `<div style="margin-top:0.6rem;font-size:0.78rem;color:var(--muted);padding:0.4rem 0.6rem;background:var(--accent-glow);border-radius:6px;">💡 ${data.tips}</div>` : ''}
+  `;
+  container.classList.remove('hidden');
+  container.scrollIntoView({ behavior: 'smooth' });
+}
+
 // 通用的标准答案生成逻辑
 function loadModelAnswerHandler(mode, question, section) {
   var btnId = mode === 'interview' ? 'btn-interview-model-answer' : 'btn-model-answer-' + mode;
@@ -521,6 +599,7 @@ function loadModelAnswerHandler(mode, question, section) {
         ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || jd.responsibilities || '')
         : (jd.requirements || jd.responsibilities || '');
       var resumeText = state.resumeText || '';
+      var fullExperiences = state._fullExperiences || [];
 
       var result = await fetchRetry('/api/generate-model-answer', {
         method: 'POST',
@@ -528,7 +607,8 @@ function loadModelAnswerHandler(mode, question, section) {
         body: JSON.stringify({
           question: question,
           jdSummary: jdSummary.slice(0, 400),
-          resumeText: resumeText.slice(0, 3000)
+          resumeText: resumeText.slice(0, 3000),
+          fullExperiences: fullExperiences
         })
       }).then(function(r) { return r.json(); });
 
@@ -1939,6 +2019,32 @@ function renderInterviewRadarChart(avg) {
   window.addEventListener('resize', () => chart.resize());
 }
 
+// 全真模拟面试 — 反问按钮事件
+$('#btn-interview-counter')?.addEventListener('click', async function() {
+  var btn = $('#btn-interview-counter');
+  btn.disabled = true; btn.textContent = '⏳ 生成中...';
+  try {
+    var questions = state._interviewState?.askedQuestions || [];
+    var lastQ = questions.length > 0 ? questions[questions.length - 1].question : '';
+    var jd = state.analysis ? (state.analysis.jd || {}) : {};
+    var jdSummary = jd.position ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || '') : '';
+    var resp = await fetchRetry('/api/generate-counter-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: lastQ || '整场面试',
+        answer: '',
+        jdSummary: jdSummary.slice(0, 400),
+        resumeText: (state.resumeText || '').slice(0, 3000)
+      })
+    }).then(function(r) { return r.json(); });
+    renderCounterQuestions('interview', resp);
+  } catch(e) {
+    toast('反问生成失败: ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = '🔄 生成反问问题';
+});
+
 // ============================================================
 // Tab 4: 简历优化
 // ============================================================
@@ -2207,6 +2313,10 @@ document.getElementById('btn-generate-self-intro')?.addEventListener('click', as
       : (jd.requirements || jd.responsibilities || '');
     var resumeText = (document.getElementById('resume-input')?.value?.trim() || state.resumeText || '');
     var customPrompt = document.getElementById('self-intro-custom-prompt')?.value?.trim() || '';
+    var styleEl = document.getElementById('self-intro-style');
+    var durationEl = document.getElementById('self-intro-duration');
+    var style = styleEl ? styleEl.value : '稳重专业型';
+    var duration = durationEl ? durationEl.value : '1.5分钟';
 
     var result = await fetchRetry('/api/generate-self-intro', {
       method: 'POST',
@@ -2214,7 +2324,9 @@ document.getElementById('btn-generate-self-intro')?.addEventListener('click', as
       body: JSON.stringify({
         jdSummary: jdSummary.slice(0, 400),
         resumeText: resumeText.slice(0, 4000),
-        customPrompt: customPrompt.slice(0, 500)
+        customPrompt: customPrompt.slice(0, 500),
+        style: style,
+        duration: duration
       })
     }).then(function(r) { return r.json(); });
 
@@ -2663,6 +2775,8 @@ async function switchToSession(sessionId) {
   $('#jd-input').value = state.jdText;
   $('#resume-input').value = state.resumeText;
   renderAnalysisResult(state.analysis);
+  // 刷新专项训练完成度
+  renderDrillQuestions();
   toast(`已切换到: ${data.label}`);
   setStatus('✅ ' + (data.label || ''));
 }
@@ -2691,16 +2805,39 @@ $('#btn-delete-session').addEventListener('click', async () => {
   } catch(e) { toast('删除失败: ' + e.message); }
 });
 
+// 编辑岗位名称（仅改标签）
+$('#btn-edit-session-label').addEventListener('click', async () => {
+  const id = $('#nav-session-select').value;
+  if (!id) return toast('请先选择一个岗位');
+  const currentLabel = $('#nav-session-label').textContent;
+  const newLabel = prompt('请输入新的岗位名称：', currentLabel === '当前岗位' ? '' : currentLabel);
+  if (!newLabel || !newLabel.trim()) return;
+  try {
+    await fetchRetry(`/api/sessions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: newLabel.trim() })
+    });
+    $('#nav-session-label').textContent = newLabel.trim();
+    await refreshSessionList();
+    toast('✅ 岗位名称已更新');
+  } catch(e) { toast('更新失败: ' + e.message); }
+});
+
 // ============================================================
 // Tab: 通用题库
 // ============================================================
 let _behavioralQuestions = null;
 let _behavioralAnswers = {}; // { qId: { answer, key_points, tips } }
+let _behavioralActiveId = null; // 当前选中的题目ID
+let _behavioralFilterCategory = '';
 
 async function loadBehavioralQuestions(filterCategory = '') {
+  _behavioralFilterCategory = filterCategory;
+
   if (!state.analysis) {
     $('#behavioral-empty').style.display = 'block';
-    $('#behavioral-list').innerHTML = '';
+    $('#behavioral-area').style.display = 'none';
     return;
   }
 
@@ -2708,67 +2845,165 @@ async function loadBehavioralQuestions(filterCategory = '') {
     try {
       _behavioralQuestions = await fetch('/api/behavioral-questions').then(r => r.json());
     } catch(e) {
-      $('#behavioral-list').innerHTML = '<p style="color:var(--muted);">加载题库失败</p>';
+      $('#behavioral-empty').style.display = 'block';
+      $('#behavioral-area').style.display = 'none';
       return;
     }
   }
 
   $('#behavioral-empty').style.display = 'none';
+  $('#behavioral-area').style.display = 'block';
 
-  // 分类筛选
+  // 分类筛选标签
   const categories = ['全部', ...new Set(_behavioralQuestions.map(q => q.category))];
   const filterEl = $('#behavioral-filters');
-  filterEl.innerHTML = categories.map(c => 
+  filterEl.innerHTML = categories.map(c =>
     `<span class="q-filter${c === filterCategory || (c === '全部' && !filterCategory) ? ' active' : ''}" data-cat="${c}">${c}</span>`
   ).join('');
   filterEl.querySelectorAll('.q-filter').forEach(f => {
     f.addEventListener('click', () => loadBehavioralQuestions(f.dataset.cat === '全部' ? '' : f.dataset.cat));
   });
 
-  // 筛选题目
-  const qs = filterCategory
-    ? _behavioralQuestions.filter(q => q.category === filterCategory)
+  renderBehavioralSidebar();
+}
+
+function renderBehavioralSidebar(searchText = '') {
+  // 筛选
+  let qs = _behavioralFilterCategory
+    ? _behavioralQuestions.filter(q => q.category === _behavioralFilterCategory)
     : _behavioralQuestions;
 
-  // 渲染卡片
-  $('#behavioral-list').innerHTML = qs.map(q => {
-    const saved = _behavioralAnswers[q.id];
-    return `
-    <div class="card" style="display:flex;flex-direction:column;gap:0.5rem;">
-      <div style="display:flex;align-items:center;gap:0.5rem;">
-        <span class="q-type" style="font-size:0.68rem;padding:2px 6px;">${q.category}</span>
+  if (searchText) {
+    const kw = searchText.toLowerCase();
+    qs = qs.filter(q => q.question.toLowerCase().includes(kw) || q.category.toLowerCase().includes(kw));
+  }
+
+  $('#behavioral-search-count').textContent = `共 ${qs.length} 题`;
+
+  // 按分类分组
+  const groups = {};
+  qs.forEach(q => {
+    if (!groups[q.category]) groups[q.category] = [];
+    groups[q.category].push(q);
+  });
+
+  const sidebarEl = $('#behavioral-sidebar');
+  let html = '';
+
+  // 统计
+  var answeredCount = Object.keys(_behavioralAnswers).length;
+  var totalCount = _behavioralQuestions.length;
+  html += `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.5rem;margin-bottom:0.5rem;background:var(--bg0);border-radius:6px;font-size:0.78rem;">
+    <span style="color:var(--muted);">进度</span>
+    <span style="font-weight:700;color:var(--accent);">${answeredCount}/${totalCount}</span>
+    <div style="flex:1;height:4px;background:var(--bg2);border-radius:2px;overflow:hidden;">
+      <div style="height:100%;background:var(--accent);border-radius:2px;width:${totalCount > 0 ? Math.round(answeredCount/totalCount*100) : 0}%;transition:width 0.3s;"></div>
+    </div>
+  </div>`;
+
+  for (const [cat, items] of Object.entries(groups)) {
+    var answeredInCat = items.filter(q => _behavioralAnswers[q.id]).length;
+    var hasAnswer = answeredInCat > 0;
+    html += `<details class="behavioral-cat-group" ${_behavioralFilterCategory || items.length <= 5 ? 'open' : ''}>
+      <summary style="cursor:pointer;font-weight:600;font-size:0.82rem;padding:0.4rem 0.5rem;display:flex;align-items:center;gap:0.3rem;border-radius:6px;background:var(--bg0);margin-bottom:0.2rem;transition:background 0.15s;">
+        <span>${cat}</span>
+        <span style="font-size:0.7rem;color:var(--muted);margin-left:auto;">${answeredInCat}/${items.length}</span>
+        ${hasAnswer ? `<span style="font-size:0.65rem;background:var(--accent);color:#fff;padding:1px 5px;border-radius:8px;margin-left:0.3rem;">已答</span>` : ''}
+      </summary>`;
+
+    for (const q of items) {
+      const saved = _behavioralAnswers[q.id];
+      const isActive = _behavioralActiveId === q.id;
+      html += `<div class="behavioral-q-item${isActive ? ' active' : ''}" data-id="${q.id}"
+        style="padding:0.5rem 0.6rem;margin:2px 0;border-radius:6px;cursor:pointer;font-size:0.82rem;line-height:1.4;
+        ${isActive ? 'background:var(--accent-glow);border-left:3px solid var(--accent);' : 'background:var(--bg2);border-left:3px solid transparent;'}
+        transition:all 0.15s;"
+        title="${q.question}">
+        <div style="display:flex;align-items:flex-start;gap:0.3rem;">
+          <span style="color:var(--muted);font-size:0.68rem;flex-shrink:0;">${q.id.replace('gb','#')}</span>
+          <span style="flex:1;">${q.question.length > 40 ? q.question.slice(0,40)+'...' : q.question}</span>
+          ${saved ? '<span style="font-size:0.65rem;color:var(--accent);flex-shrink:0;">✅</span>' : ''}
+        </div>
+      </div>`;
+    }
+
+    html += '</details>';
+  }
+
+  sidebarEl.innerHTML = html;
+
+  // 绑定点击事件
+  sidebarEl.querySelectorAll('.behavioral-q-item').forEach(item => {
+    item.addEventListener('click', () => {
+      _behavioralActiveId = item.dataset.id;
+      renderBehavioralSidebar(searchText);
+      renderBehavioralDetail(item.dataset.id);
+    });
+  });
+}
+
+function renderBehavioralDetail(qId) {
+  const q = _behavioralQuestions.find(x => x.id === qId);
+  if (!q) return;
+
+  const saved = _behavioralAnswers[qId];
+  const detailEl = $('#behavioral-detail');
+
+  // 格式化 answer 文本
+  let answerHtml = '';
+  if (saved?.answer) {
+    answerHtml = formatBehavioralAnswer(saved.answer);
+  }
+
+  detailEl.innerHTML = `
+    <div class="card" style="border-left:4px solid var(--accent);">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+        <span class="q-type" style="font-size:0.7rem;padding:2px 7px;">${q.category}</span>
         <span style="font-size:0.72rem;color:var(--muted);">${q.id.replace('gb','#')}</span>
       </div>
-      <div class="q-text" style="font-size:0.92rem;font-weight:600;line-height:1.5;min-height:2.5rem;">${q.question}</div>
-      <details style="font-size:0.75rem;color:var(--muted);">
-        <summary style="cursor:pointer;">📋 回答框架</summary>
-        <p style="margin:0.3rem 0;line-height:1.6;">${q.framework || '无'}</p>
-        <p style="margin:0.3rem 0;color:var(--red);">⚠️ ${q.danger_zones || ''}</p>
+      <div class="q-text" style="font-size:1.05rem;font-weight:600;line-height:1.6;margin-bottom:0.8rem;">${q.question}</div>
+
+      <!-- 回答框架 -->
+      <details style="margin-bottom:0.8rem;font-size:0.82rem;">
+        <summary style="cursor:pointer;font-weight:600;color:var(--accent);">📋 回答框架 & 危险区</summary>
+        <div style="margin-top:0.4rem;padding:0.5rem;background:var(--bg0);border-radius:6px;line-height:1.6;">
+          <div style="margin-bottom:0.4rem;"><strong>框架：</strong>${q.framework || '无'}</div>
+          <div style="color:var(--red);"><strong>⚠️ 危险区：</strong>${q.danger_zones || '无'}</div>
+        </div>
       </details>
-      ${saved ? `
-      <div style="background:var(--bg0);padding:0.6rem;border-radius:6px;font-size:0.8rem;line-height:1.6;max-height:200px;overflow-y:auto;">
-        ${saved.answer}
-        <div style="display:flex;gap:0.5rem;margin-top:0.4rem;flex-wrap:wrap;">
-          <span style="font-size:0.7rem;color:var(--accent);">${saved.duration_estimate || ''}</span>
-          ${saved.tips ? `<span style="font-size:0.7rem;color:var(--muted);">💡 ${saved.tips}</span>` : ''}
+
+      <!-- 已生成答案 -->
+      ${answerHtml ? `
+      <div class="behavioral-answer-box" style="background:var(--bg0);padding:0.8rem;border-radius:8px;margin-bottom:0.6rem;">
+        <div style="font-weight:600;font-size:0.82rem;color:var(--accent);margin-bottom:0.5rem;">✨ 标准化回答</div>
+        <div class="behavioral-answer-content" style="font-size:0.88rem;line-height:1.8;color:var(--fg);">
+          ${answerHtml}
+        </div>
+        ${saved.key_points?.length ? `
+        <div style="margin-top:0.6rem;display:flex;flex-wrap:wrap;gap:0.3rem;">
+          ${saved.key_points.map(kp => `<span style="font-size:0.72rem;background:var(--accent-glow);color:var(--accent);padding:2px 8px;border-radius:10px;">${kp}</span>`).join('')}
+        </div>` : ''}
+        <div style="display:flex;gap:0.5rem;margin-top:0.6rem;flex-wrap:wrap;align-items:center;">
+          <span style="font-size:0.75rem;color:var(--accent);">⏱ ${saved.duration_estimate || ''}</span>
+          ${saved.tips ? `<span style="font-size:0.75rem;color:var(--muted);">💡 ${saved.tips}</span>` : ''}
         </div>
       </div>` : ''}
-      <div style="display:flex;gap:0.4rem;margin-top:auto;">
-        <button class="btn-outline btn-gen-behavioral" data-id="${q.id}" style="font-size:0.78rem;flex:1;">
+
+      <!-- 按钮 -->
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button class="btn-primary btn-gen-behavioral" data-id="${q.id}" style="font-size:0.82rem;padding:0.4rem 1rem;">
           ${saved ? '🔄 重新生成' : '✨ AI 生成标准答案'}
         </button>
-        ${saved ? `<button class="btn-outline btn-copy-behavioral" data-id="${q.id}" style="font-size:0.72rem;padding:0.2rem 0.6rem;">📋 复制</button>` : ''}
+        ${saved ? `<button class="btn-outline btn-copy-behavioral" data-id="${q.id}" style="font-size:0.78rem;padding:0.4rem 0.8rem;">📋 复制</button>` : ''}
       </div>
-    </div>`;
-  }).join('');
+    </div>
+  `;
 
-  // 生成按钮事件
-  document.querySelectorAll('.btn-gen-behavioral').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const qId = btn.dataset.id;
-      const q = _behavioralQuestions.find(x => x.id === qId);
-      if (!q) return;
-      btn.disabled = true; btn.textContent = '⏳ 生成中...';
+  // 绑定按钮事件
+  const genBtn = detailEl.querySelector('.btn-gen-behavioral');
+  if (genBtn) {
+    genBtn.addEventListener('click', async () => {
+      genBtn.disabled = true; genBtn.textContent = '⏳ 生成中...';
       try {
         const jd = state.analysis?.jd || {};
         const jdSummary = jd.position ? `${jd.company||''} ${jd.position} | ${jd.requirements||''}`.slice(0,400) : '';
@@ -2782,31 +3017,102 @@ async function loadBehavioralQuestions(filterCategory = '') {
         const data = await resp.json();
         if (data.error) throw new Error(data.error);
         _behavioralAnswers[qId] = data;
-        // 重新渲染以显示答案
-        loadBehavioralQuestions(filterCategory);
+        renderBehavioralDetail(qId);
+        renderBehavioralSidebar($('#behavioral-search')?.value || '');
       } catch(e) {
         toast('生成失败: ' + e.message);
-        btn.disabled = false; btn.textContent = '✨ AI 生成标准答案';
+        genBtn.disabled = false; genBtn.textContent = '✨ AI 生成标准答案';
       }
     });
-  });
+  }
 
-  // 复制按钮事件
-  document.querySelectorAll('.btn-copy-behavioral').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const qId = btn.dataset.id;
-      const saved = _behavioralAnswers[qId];
-      if (!saved?.answer) return;
+  const copyBtn = detailEl.querySelector('.btn-copy-behavioral');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      const s = _behavioralAnswers[qId];
+      if (!s?.answer) return;
       try {
-        await navigator.clipboard.writeText(saved.answer);
-        btn.textContent = '✅ 已复制';
-        setTimeout(() => { btn.textContent = '📋 复制'; }, 1500);
+        await navigator.clipboard.writeText(s.answer);
+        copyBtn.textContent = '✅ 已复制';
+        setTimeout(() => { copyBtn.textContent = '📋 复制'; }, 1500);
       } catch(e) {
         toast('复制失败');
       }
     });
-  });
+  }
 }
+
+// 格式化通用题库答案：Markdown 风格 → 高质量 HTML
+function formatBehavioralAnswer(text) {
+  if (!text) return '';
+  var t = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // 按段落分割
+  var paragraphs = t.split(/\n\n+/);
+  var result = '';
+
+  for (var i = 0; i < paragraphs.length; i++) {
+    var p = paragraphs[i].trim();
+    if (!p) continue;
+
+    // 处理标题 (### 开头)
+    if (/^#{1,3}\s/.test(p)) {
+      var level = p.match(/^(#{1,3})\s/)[1].length;
+      var titleText = p.replace(/^#{1,3}\s+/, '');
+      var fontSize = level === 1 ? '1.05rem' : level === 2 ? '0.95rem' : '0.88rem';
+      result += '<h4 style="font-size:' + fontSize + ';font-weight:700;color:var(--accent);margin:0.8rem 0 0.4rem 0;line-height:1.4;">' + titleText + '</h4>';
+      continue;
+    }
+
+    // 处理有序列表
+    if (/^\d+[\.\、]\s/.test(p)) {
+      var items = p.split(/\n/).filter(function(l) { return /^\d+[\.\、]\s/.test(l.trim()); });
+      if (items.length > 0) {
+        result += '<ol style="margin:0.3rem 0;padding-left:1.5rem;line-height:1.8;">';
+        for (var j = 0; j < items.length; j++) {
+          var itemText = items[j].replace(/^\d+[\.\、]\s*/, '');
+          result += '<li style="margin-bottom:0.2rem;">' + itemText + '</li>';
+        }
+        result += '</ol>';
+        continue;
+      }
+    }
+
+    // 处理无序列表
+    if (/^[-•\*]\s/.test(p)) {
+      var bulletItems = p.split(/\n/).filter(function(l) { return /^[-•\*]\s/.test(l.trim()); });
+      if (bulletItems.length > 0) {
+        result += '<ul style="margin:0.3rem 0;padding-left:1.5rem;line-height:1.8;">';
+        for (var k = 0; k < bulletItems.length; k++) {
+          var bulletText = bulletItems[k].replace(/^[-•\*]\s*/, '');
+          result += '<li style="margin-bottom:0.2rem;">' + bulletText + '</li>';
+        }
+        result += '</ul>';
+        continue;
+      }
+    }
+
+    // 普通段落
+    // 处理加粗
+    p = p.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // 处理单行换行
+    p = p.replace(/\n/g, '<br>');
+    result += '<p style="margin:0.4rem 0;line-height:1.8;">' + p + '</p>';
+  }
+
+  return result || '<p style="margin:0.4rem 0;">' + t + '</p>';
+}
+
+// 搜索事件
+document.addEventListener('DOMContentLoaded', () => {
+  const searchInput = $('#behavioral-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      renderBehavioralSidebar(searchInput.value.trim());
+    });
+  }
+});
 
 // ============================================================
 // 📡 面经采集
@@ -3108,7 +3414,10 @@ function renderCompanyInterviewPrep(data, company) {
   }
 
   const html = [];
-  html.push(`<h3 style="margin-bottom:0.5rem;">🎯 「${company}」面试备战手册</h3>`);
+  html.push(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+    <h3 style="margin:0;">🎯 「${company}」面试备战手册</h3>
+    <button class="btn-outline btn-close-company-result" style="font-size:0.72rem;padding:0.2rem 0.6rem;color:var(--muted);" title="关闭调研结果">✕ 收起</button>
+  </div>`);
 
   // ———— 顶部摘要卡 ————
   if (data._summary) {
@@ -3214,6 +3523,11 @@ function renderCompanyInterviewPrep(data, company) {
   }
 
   el.innerHTML = html.join('\n');
+  // 关闭按钮事件
+  el.querySelector('.btn-close-company-result')?.addEventListener('click', () => {
+    el.innerHTML = '';
+    el.scrollIntoView({ behavior: 'smooth' });
+  });
   el.scrollIntoView({ behavior: 'smooth' });
 }
 // ============================================================
@@ -3501,6 +3815,7 @@ function downloadFile(filename, content, mimeType) {
     document.querySelectorAll('.drill-mode-btn').forEach(function(btn) {
       btn.classList.toggle('active', btn.dataset.mode === state._drillMode);
     });
+    // 恢复模式偏好后刷新筛选
     loadDrillTypeFilter();
     renderDrillQuestions();
   }
@@ -3511,16 +3826,24 @@ function downloadFile(filename, content, mimeType) {
     allQs.forEach(function(q) { var t = q.type || '其他'; types[t] = (types[t] || 0) + 1; });
     var filterEl = document.getElementById('drill-filter');
     if (!filterEl) return;
-    var html = '<button class="btn-filter drill-filter-btn active" data="">全部 (' + allQs.length + ')</button>';
+    var html = '<button class="btn-filter drill-filter-btn active" data-type="">全部 (' + allQs.length + ')</button>';
     Object.keys(types).forEach(function(t) {
-      html += '<button class="btn-filter drill-filter-btn" data="' + t + '">' + t + ' (' + types[t] + ')</button>';
+      html += '<button class="btn-filter drill-filter-btn" data-type="' + t + '">' + t + ' (' + types[t] + ')</button>';
     });
     filterEl.innerHTML = html;
+    // 恢复已保存的筛选类型
+    var savedType = localStorage.getItem('drill_pref_type');
     document.querySelectorAll('.drill-filter-btn').forEach(function(btn) {
+      if (savedType && btn.dataset.type === savedType) {
+        btn.classList.add('active');
+        document.querySelector('.drill-filter-btn[data-type=""]')?.classList.remove('active');
+        state._drillType = savedType;
+      }
       btn.addEventListener('click', function() {
         document.querySelectorAll('.drill-filter-btn').forEach(function(b) { b.classList.remove('active'); });
         btn.classList.add('active');
         state._drillType = btn.dataset.type;
+        localStorage.setItem('drill_pref_type', state._drillType || '');
         renderDrillQuestions();
       });
     });
@@ -3553,11 +3876,39 @@ function downloadFile(filename, content, mimeType) {
     var listEl = document.getElementById('drill-question-list');
     var countEl = document.getElementById('drill-q-count');
     if (countEl) countEl.textContent = filtered.length;
+
+    // 完成度指标：从 drill records 计算已答题数
+    var completedCount = 0;
+    try {
+      var stored = localStorage.getItem('drill_completed_' + (state.sessionId || ''));
+      if (stored) {
+        var completedSet = JSON.parse(stored) || {};
+        completedCount = filtered.filter(function(q) { return completedSet[q.question]; }).length;
+      }
+    } catch(e) {}
+    var completionHtml = '';
+    if (completedCount > 0) {
+      var pct = Math.round(completedCount / filtered.length * 100);
+      completionHtml = '<div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.3rem;">' +
+        '<span style="font-size:0.72rem;color:var(--muted);">完成度：' + completedCount + '/' + filtered.length + ' (' + pct + '%)</span>' +
+        '<div style="flex:1;max-width:200px;height:4px;background:var(--rule);border-radius:2px;overflow:hidden;">' +
+        '<div style="width:' + pct + '%;height:100%;background:var(--green);border-radius:2px;transition:width 0.3s;"></div>' +
+        '</div></div>';
+    }
+
     listEl.innerHTML = filtered.map(function(q, i) {
       var source = q._source ? '<span style="font-size:0.65rem;color:var(--accent);margin-right:4px;">' + q._source + '</span>' : '';
-      return '<li data-question="' + encodeURIComponent(q.question || '') + '">' +
-        '<span class="num">' + (i + 1) + '</span>' + source + (q.question || '') + '</li>';
-    }).join('');
+      var done = false;
+      try {
+        var stored2 = localStorage.getItem('drill_completed_' + (state.sessionId || ''));
+        if (stored2) {
+          var cs = JSON.parse(stored2) || {};
+          done = cs[q.question];
+        }
+      } catch(e) {}
+      return '<li data-question="' + encodeURIComponent(q.question || '') + '" style="' + (done ? 'opacity:0.7;' : '') + '">' +
+        '<span class="num">' + (i + 1) + '</span>' + source + (q.question || '') + (done ? ' <span style="font-size:0.65rem;color:var(--green);">✅</span>' : '') + '</li>';
+    }).join('') + (completionHtml ? '<div style="padding:0.5rem 0.8rem 0 0.8rem;">' + completionHtml + '</div>' : '');
     listEl.querySelectorAll('li').forEach(function(li) {
       li.addEventListener('click', function() { selectDrillQuestion(decodeURIComponent(li.dataset.question)); });
     });
@@ -3712,6 +4063,13 @@ function downloadFile(filename, content, mimeType) {
       var resumeText = (state.resumeText || '').slice(0, 3000);
       var result = await apiEvaluateSingle(question, answer, jdSummary, resumeText);
       state._drillFeedback = result;
+      // 标记为已完成
+      try {
+        var key = 'drill_completed_' + (state.sessionId || '');
+        var cs = JSON.parse(localStorage.getItem(key) || '{}');
+        cs[question] = true;
+        localStorage.setItem(key, JSON.stringify(cs));
+      } catch(e) {}
       renderDrillFeedback(result);
       var allQs = getAllDrillQuestions();
       var found = null;
@@ -3811,9 +4169,20 @@ function downloadFile(filename, content, mimeType) {
   document.querySelectorAll('.drill-mode-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       state._drillMode = btn.dataset.mode;
+      localStorage.setItem('drill_pref_mode', state._drillMode);
       renderDrillMode();
     });
   });
+
+  // 恢复偏好设置
+  var savedMode = localStorage.getItem('drill_pref_mode');
+  if (savedMode && ['type', 'free'].indexOf(savedMode) >= 0) {
+    state._drillMode = savedMode;
+  }
+  var savedType = localStorage.getItem('drill_pref_type');
+  if (savedType) {
+    state._drillType = savedType;
+  }
 
   // ===== Drill History =====
   async function loadDrillHistory(question) {
@@ -5037,4 +5406,243 @@ function renderMianjingAnalysis(data, container) {
       }
     });
   }
+})();
+
+// ============================================================
+// 预答题标准答案按钮（始终可见）
+// ============================================================
+(function() {
+  var practiceBtn = document.getElementById('btn-practice-model-answer-pre');
+  if (practiceBtn) {
+    practiceBtn.addEventListener('click', function() {
+      var question = state._practiceQuestion || document.getElementById('practice-q-text')?.textContent || '';
+      if (!question) { toast('请先选择一道题目'); return; }
+      var section = document.createElement('div');
+      section.style.display = 'contents';
+      var feedbackEl = document.getElementById('practice-feedback');
+      if (feedbackEl && feedbackEl.parentNode) {
+        feedbackEl.parentNode.insertBefore(section, feedbackEl);
+      }
+      loadModelAnswerHandler('practice-pre', question, section);
+    });
+  }
+
+  var drillBtn = document.getElementById('btn-drill-model-answer-pre');
+  if (drillBtn) {
+    drillBtn.addEventListener('click', function() {
+      var question = state._drillQuestion || document.getElementById('drill-task-question')?.textContent || '';
+      if (!question) { toast('请先选择一道题目'); return; }
+      var section = document.createElement('div');
+      section.style.display = 'contents';
+      var feedbackEl = document.getElementById('drill-feedback');
+      if (feedbackEl && feedbackEl.parentNode) {
+        feedbackEl.parentNode.insertBefore(section, feedbackEl);
+      }
+      loadModelAnswerHandler('drill-pre', question, section);
+    });
+  }
+})();
+
+// ============================================================
+// 完整经历补充模块
+// ============================================================
+(function() {
+  // 初始化：加载已有经历
+  var _experiences = [];
+  var _saveTimer = null;
+
+  function loadExperiences() {
+    var sid = state.sessionId;
+    if (!sid) { 
+      renderExperienceList([]);
+      return;
+    }
+    fetchRetry('/api/sessions/' + sid + '/experiences')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        _experiences = data.experiences || [];
+        state._fullExperiences = _experiences;
+        renderExperienceList(_experiences);
+      })
+      .catch(function() { renderExperienceList([]); });
+  }
+
+  function renderExperienceList(list) {
+    var container = document.getElementById('experience-list');
+    if (!container) return;
+    if (!list || list.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--muted);font-size:0.82rem;">暂无补充经历，点击「AI 经历访谈」让AI根据你的简历生成引导问题</div>';
+      document.getElementById('btn-save-experiences').style.display = 'none';
+      return;
+    }
+    document.getElementById('btn-save-experiences').style.display = 'inline-flex';
+    container.innerHTML = list.map(function(exp, i) {
+      return '<div style="background:var(--bg0);border-radius:8px;padding:0.6rem 0.8rem;border-left:3px solid var(--accent2);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;margin-bottom:0.3rem;">' +
+        '<input class="experience-name-input" data-idx="' + i + '" type="text" value="' + escapeHtml(exp.name || '') + '" placeholder="经历名称（如：字节跳动实习）" style="flex:1;padding:0.3rem 0.5rem;border:1px solid var(--rule);border-radius:4px;background:var(--bg);font-size:0.82rem;font-weight:600;">' +
+        '<button class="btn-delete-experience" data-idx="' + i + '" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.78rem;padding:0.2rem 0.4rem;">✕</button>' +
+        '</div>' +
+        '<textarea class="experience-detail-input" data-idx="' + i + '" rows="3" placeholder="补充该经历的详细内容（具体任务、团队规模、困难、量化成果等）" style="width:100%;padding:0.4rem;border:1px solid var(--rule);border-radius:4px;background:var(--bg);font-size:0.82rem;line-height:1.6;resize:vertical;font-family:var(--font-body);">' + escapeHtml(exp.detail || '') + '</textarea>' +
+        '</div>';
+    }).join('');
+
+    // 绑定删除事件
+    container.querySelectorAll('.btn-delete-experience').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var idx = parseInt(btn.dataset.idx);
+        _experiences.splice(idx, 1);
+        renderExperienceList(_experiences);
+        scheduleSave();
+      });
+    });
+
+    // 自动保存：输入变更时触发
+    container.querySelectorAll('.experience-name-input, .experience-detail-input').forEach(function(el) {
+      el.addEventListener('input', function() {
+        var idx = parseInt(el.dataset.idx);
+        if (el.classList.contains('experience-name-input')) {
+          _experiences[idx].name = el.value;
+        } else {
+          _experiences[idx].detail = el.value;
+        }
+        scheduleSave();
+      });
+    });
+  }
+
+  function scheduleSave() {
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(doSaveExperiences, 1000);
+  }
+
+  async function doSaveExperiences() {
+    var sid = state.sessionId;
+    if (!sid) return;
+    try {
+      await fetchRetry('/api/sessions/' + sid + '/experiences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ experiences: _experiences })
+      });
+      state._fullExperiences = _experiences;
+    } catch(e) { /* silent */ }
+  }
+
+  // AI 经历访谈
+  document.getElementById('btn-experience-interview')?.addEventListener('click', async function() {
+    var btn = document.getElementById('btn-experience-interview');
+    var resumeText = state.resumeText || document.getElementById('resume-input')?.value?.trim() || '';
+    if (!resumeText) return toast('请先在「分析 & 押题」页上传简历');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="ai-action-icon">⏳</span>AI正在分析简历...';
+
+    try {
+      var resp = await fetchRetry('/api/generate-experience-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resumeText: resumeText.slice(0, 3000) })
+      }).then(function(r) { return r.json(); });
+
+      var questions = resp.questions || [];
+      if (!questions.length) { toast('AI未能生成问题，请重试'); return; }
+
+      // 显示问题选择弹窗
+      var overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+      var modal = document.createElement('div');
+      modal.style.cssText = 'background:var(--bg);border-radius:12px;padding:1.5rem;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);';
+      modal.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">' +
+        '<h3 style="margin:0;">🤖 AI 经历访谈</h3>' +
+        '<button id="btn-close-experience-modal" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--muted);">✕</button>' +
+        '</div>' +
+        '<p style="font-size:0.82rem;color:var(--muted);margin-bottom:1rem;">AI根据你的简历生成了以下问题，选择你想补充的经历，填写详细内容后会自动保存</p>' +
+        '<div style="display:flex;flex-direction:column;gap:0.8rem;">' +
+        questions.map(function(q, i) {
+          return '<div style="background:var(--bg0);border-radius:8px;padding:0.8rem;border-left:3px solid var(--accent2);">' +
+            '<div style="font-weight:600;font-size:0.88rem;margin-bottom:0.3rem;">' + (i+1) + '. ' + escapeHtml(q.experience_ref || '') + '</div>' +
+            '<div style="font-size:0.82rem;color:var(--fg);margin-bottom:0.4rem;line-height:1.5;">' + escapeHtml(q.question || '') + '</div>' +
+            (q.hint ? '<div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.5rem;">💡 ' + escapeHtml(q.hint) + '</div>' : '') +
+            '<textarea class="experience-interview-answer" data-ref="' + escapeHtml(q.experience_ref || '') + '" rows="3" placeholder="在此输入你的完整经历..." style="width:100%;padding:0.4rem;border:1px solid var(--rule);border-radius:4px;background:var(--bg);font-size:0.82rem;line-height:1.6;resize:vertical;font-family:var(--font-body);"></textarea>' +
+            '</div>';
+        }).join('') +
+        '</div>' +
+        '<div style="margin-top:1rem;display:flex;gap:0.5rem;justify-content:flex-end;">' +
+        '<button id="btn-cancel-experience-modal" class="btn-outline" style="font-size:0.82rem;">取消</button>' +
+        '<button id="btn-confirm-experience-modal" class="btn-primary" style="font-size:0.82rem;">✅ 添加到经历库</button>' +
+        '</div>';
+
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      document.getElementById('btn-close-experience-modal').addEventListener('click', function() { overlay.remove(); });
+      document.getElementById('btn-cancel-experience-modal').addEventListener('click', function() { overlay.remove(); });
+
+      document.getElementById('btn-confirm-experience-modal').addEventListener('click', function() {
+        var answers = modal.querySelectorAll('.experience-interview-answer');
+        var added = 0;
+        answers.forEach(function(textarea) {
+          var val = textarea.value.trim();
+          if (val.length > 10) {
+            var ref = textarea.dataset.ref || '经历' + (added + 1);
+            // 检查是否已存在同名经历，有则更新
+            var existing = -1;
+            for (var k = 0; k < _experiences.length; k++) {
+              if (_experiences[k].name === ref) { existing = k; break; }
+            }
+            var exp = { name: ref, detail: val };
+            if (existing >= 0) {
+              _experiences[existing] = exp;
+            } else {
+              _experiences.push(exp);
+            }
+            added++;
+          }
+        });
+        if (added > 0) {
+          renderExperienceList(_experiences);
+          doSaveExperiences();
+          toast('✅ 已添加 ' + added + ' 条完整经历');
+        } else {
+          toast('请至少填写一条经历的详细内容（10字以上）');
+        }
+        overlay.remove();
+      });
+
+      btn.disabled = false;
+      btn.innerHTML = '<span class="ai-action-icon">🤖</span>AI 经历访谈';
+    } catch(e) {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="ai-action-icon">🤖</span>AI 经历访谈';
+      toast('生成失败: ' + e.message);
+    }
+  });
+
+  // 手动添加经历
+  document.getElementById('btn-add-experience')?.addEventListener('click', function() {
+    _experiences.push({ name: '', detail: '' });
+    renderExperienceList(_experiences);
+  });
+
+  // 保存按钮
+  document.getElementById('btn-save-experiences')?.addEventListener('click', async function() {
+    await doSaveExperiences();
+    toast('✅ 经历已保存');
+  });
+
+  // 监听会话切换，重新加载经历
+  var origSwitch = window.switchToSession;
+  if (origSwitch) {
+    var _origSwitch = origSwitch;
+    window.switchToSession = function(sessionId) {
+      return _origSwitch(sessionId).then(function() {
+        loadExperiences();
+      }).catch(function() {});
+    };
+  }
+
+  // 初始加载
+  setTimeout(loadExperiences, 1000);
 })();

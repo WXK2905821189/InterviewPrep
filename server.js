@@ -407,7 +407,7 @@ app.post('/api/analyze', async (req, res) => {
     const label = jdParsed.position || jdParsed.company || '未命名';
     sessions.set(sessionId, { analysis: result, interview: null,
       jdText, resumeText, resumeFileName: resumeFileName || '', resumeSourceType: resumeSourceType || '',
-      label, createdAt: Date.now() });
+      label, createdAt: Date.now(), fullExperiences: [] });
     activeSessionId = sessionId;
     saveSessions();
 
@@ -826,7 +826,7 @@ app.post('/api/follow-up', async (req, res) => {
 // ============================================================
 app.post('/api/generate-model-answer', async (req, res) => {
   try {
-    const { question, jdSummary, resumeText } = req.body;
+    const { question, jdSummary, resumeText, fullExperiences } = req.body;
     if (!question) return res.status(400).json({ error: '请提供题目' });
 
     const { llm, fillTemplate } = require('./chatflow/llm-client');
@@ -835,6 +835,7 @@ app.post('/api/generate-model-answer', async (req, res) => {
     const userPrompt = `面试题目：${question}
 ${jdSummary ? '岗位背景：' + jdSummary : ''}
 ${resumeText ? '候选人简历：\n' + resumeText : '（未提供简历）'}
+${fullExperiences?.length ? '候选人完整经历补充（简历之外的详细经历）：\n' + fullExperiences.map((e, i) => `【经历${i+1}】${e.name || ''}\n${e.detail || ''}`).join('\n\n') : ''}
 
 请基于以上信息生成标准答案。`;
 
@@ -854,7 +855,7 @@ ${resumeText ? '候选人简历：\n' + resumeText : '（未提供简历）'}
 // ============================================================
 app.post('/api/generate-self-intro', async (req, res) => {
   try {
-    const { jdSummary, resumeText, customPrompt } = req.body;
+    const { jdSummary, resumeText, customPrompt, style, duration } = req.body;
     if (!resumeText) return res.status(400).json({ error: '请先提供简历内容' });
 
     const { llm } = require('./chatflow/llm-client');
@@ -866,7 +867,10 @@ ${resumeText.slice(0, 4000)}
 ${customPrompt ? `
 用户额外要求：${customPrompt}` : ''}
 
-请基于以上信息生成面试自我介绍。`;
+风格要求：${style || '稳重专业型'}
+时长要求：${duration || '1.5分钟'}
+
+请基于以上信息，按照指定的风格和时长要求生成面试自我介绍。`;
 
     const result = await llm(prompts.SELF_INTRO_SYSTEM, userPrompt, { temperature: 0.8 });
     res.json(result);
@@ -889,7 +893,7 @@ app.get('/api/behavioral-questions', (req, res) => {
 // 通用题库：生成标准化回答
 app.post('/api/generate-behavioral-answer', async (req, res) => {
   try {
-    const { question, framework, danger_zones, jdSummary, resumeText } = req.body;
+    const { question, framework, danger_zones, jdSummary, resumeText, fullExperiences } = req.body;
     if (!question || !resumeText) return res.status(400).json({ error: '缺少题目或简历内容' });
 
     const { llm } = require('./chatflow/llm-client');
@@ -902,6 +906,7 @@ ${danger_zones ? `⚠️ 危险区（绝对不能犯的错误）：${danger_zone
 岗位背景：${jdSummary || '（未提供）'}
 候选人简历：
 ${resumeText.slice(0, 4000)}
+${fullExperiences?.length ? '候选人完整经历补充（简历之外的详细经历）：\n' + fullExperiences.map((e, i) => `【经历${i+1}】${e.name || ''}\n${e.detail || ''}`).join('\n\n') : ''}
 
 请基于以上信息生成这道题的标准化回答。`;
 
@@ -909,6 +914,33 @@ ${resumeText.slice(0, 4000)}
     res.json(result);
   } catch (e) {
     console.error('[API] 通用题库回答生成失败:', e);
+    res.status(500).json({ error: '生成失败: ' + e.message });
+  }
+});
+
+// 反问生成：为候选人生成反问面试官的问题
+app.post('/api/generate-counter-questions', async (req, res) => {
+  try {
+    const { question, answer, jdSummary, resumeText, fullExperiences } = req.body;
+    if (!question) return res.status(400).json({ error: '缺少题目信息' });
+
+    const { llm } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const userPrompt = `面试中讨论的题目：${question}
+${answer ? `候选人的回答要点：${answer.slice(0, 800)}` : ''}
+
+岗位背景：${jdSummary || '（未提供）'}
+候选人简历概要：
+${resumeText ? resumeText.slice(0, 2000) : '（未提供）'}
+${fullExperiences?.length ? '候选人完整经历补充（简历之外的详细经历）：\n' + fullExperiences.map((e, i) => `【经历${i+1}】${e.name || ''}\n${e.detail || ''}`).join('\n\n') : ''}
+
+请基于以上信息，生成3-5个候选人可以在面试结束时反问面试官的高质量问题。`;
+
+    const result = await llm(prompts.COUNTER_QUESTION_SYSTEM, userPrompt, { temperature: 0.9 });
+    res.json(result);
+  } catch (e) {
+    console.error('[API] 反问生成失败:', e);
     res.status(500).json({ error: '生成失败: ' + e.message });
   }
 });
@@ -1771,7 +1803,8 @@ app.post('/api/sessions/switch', (req, res) => {
     questions: a.questions,
     insights: a.insights,
     mianjing: a.mianjing,
-    kb_supplement: a.kb_supplement
+    kb_supplement: a.kb_supplement,
+    fullExperiences: s.fullExperiences || []
   });
 });
 
@@ -1784,6 +1817,67 @@ app.delete('/api/sessions/:id', (req, res) => {
   }
   saveSessions();
   res.json({ ok: true, activeSessionId });
+});
+
+// 更新会话标签（岗位名称）
+app.patch('/api/sessions/:id', (req, res) => {
+  const id = req.params.id;
+  if (!sessions.has(id)) return res.status(404).json({ error: '会话不存在' });
+  const s = sessions.get(id);
+  const { label } = req.body;
+  if (label) {
+    s.label = label;
+    if (s.analysis && s.analysis.jd) {
+      s.analysis.jd.position = label;
+    }
+    saveSessions();
+  }
+  res.json({ ok: true });
+});
+
+// 获取完整经历列表
+app.get('/api/sessions/:id/experiences', (req, res) => {
+  const id = req.params.id;
+  if (!sessions.has(id)) return res.status(404).json({ error: '会话不存在' });
+  const s = sessions.get(id);
+  res.json({ experiences: s.fullExperiences || [] });
+});
+
+// 保存完整经历列表
+app.put('/api/sessions/:id/experiences', (req, res) => {
+  const id = req.params.id;
+  if (!sessions.has(id)) return res.status(404).json({ error: '会话不存在' });
+  const s = sessions.get(id);
+  s.fullExperiences = req.body.experiences || [];
+  saveSessions();
+  res.json({ ok: true });
+});
+
+// 生成经历回忆访谈问题
+app.post('/api/generate-experience-questions', async (req, res) => {
+  try {
+    const { resumeText } = req.body;
+    const { llm } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+    const userPrompt = `以下是一份简历的文本内容，请根据简历中提到的经历，生成5-8个问题，帮助候选人回忆和补充其经历的更多细节。
+
+简历内容：
+${(resumeText || '').slice(0, 3000)}
+
+每个问题应该针对简历中的一段具体经历（实习、项目、工作等），引导候选人回忆更多细节，如：
+- 具体负责什么任务
+- 团队规模多大
+- 遇到了什么困难
+- 取得了什么量化成果
+- 使用了什么技术/方法
+
+请生成问题列表，让候选人可以选择性回答。`;
+    const result = await llm(prompts.EXPERIENCE_INTERVIEW_SYSTEM, userPrompt, { temperature: 0.8 });
+    res.json(result);
+  } catch (e) {
+    console.error('[API] 经历问题生成失败:', e);
+    res.status(500).json({ error: '生成失败: ' + e.message });
+  }
 });
 
 // ============================================================
