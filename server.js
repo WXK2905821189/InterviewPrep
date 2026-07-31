@@ -1783,6 +1783,228 @@ app.get('/api/dashboard/stats', (req, res) => {
   }
 });
 
+// ============================================================
+// API: 能力趋势数据 — 分数随时间变化曲线
+// ============================================================
+app.get('/api/dashboard/trends', (req, res) => {
+  try {
+    const phrasesPath = path.join(DATA_DIR, '.data', 'phrase-library.json');
+    let phrases = [];
+    try { phrases = JSON.parse(fs.readFileSync(phrasesPath, 'utf8')); } catch {}
+    if (!Array.isArray(phrases)) phrases = [];
+    const drillRecords = loadDrillRecords();
+
+    const dimKeys = ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'];
+    const dimLabels = ['STAR完整度', '量化程度', '岗位匹配', '结构逻辑', '亮点突出'];
+
+    // 按天聚合所有练习记录
+    const dailyMap = {}; // YYYY-MM-DD -> { count, scores: {dim: total}, overallTotal }
+    function addToDaily(createdAt, scores, overallScore) {
+      if (!createdAt) return;
+      const day = new Date(createdAt).toISOString().slice(0, 10);
+      if (!dailyMap[day]) dailyMap[day] = { count: 0, scores: {}, overallTotal: 0, overallCount: 0 };
+      dailyMap[day].count++;
+      if (overallScore) {
+        dailyMap[day].overallTotal += overallScore;
+        dailyMap[day].overallCount++;
+      }
+      if (scores) {
+        dimKeys.forEach(k => {
+          if (typeof scores[k] === 'number' && scores[k] > 0) {
+            if (dailyMap[day].scores[k] === undefined) dailyMap[day].scores[k] = 0;
+            dailyMap[day].scores[k] += scores[k];
+          }
+        });
+      }
+    }
+
+    phrases.forEach(p => {
+      const evalData = p.scores || p.evaluation;
+      addToDaily(p.createdAt, evalData, p.score);
+    });
+    drillRecords.forEach(r => {
+      addToDaily(r.createdAt, r.scores, r.overallScore);
+    });
+
+    // 转为排序数组
+    const sortedDays = Object.keys(dailyMap).sort();
+    const trendData = sortedDays.map(day => {
+      const d = dailyMap[day];
+      const dimAvgs = {};
+      dimKeys.forEach(k => {
+        dimAvgs[k] = d.scores[k] !== undefined ? Math.round(d.scores[k] / d.count) : 0;
+      });
+      return {
+        date: day,
+        count: d.count,
+        overallAvg: d.overallCount > 0 ? Math.round(d.overallTotal / d.overallCount) : 0,
+        scores: dimAvgs
+      };
+    });
+
+    // 计算周聚合趋势（超过14天数据时，按周聚合显示）
+    let weeklyTrend = [];
+    if (sortedDays.length > 14) {
+      const weekMap = {};
+      sortedDays.forEach(day => {
+        const d = new Date(day);
+        // 获取该日所在的周一
+        const dayOfWeek = d.getDay();
+        const monday = new Date(d);
+        monday.setDate(d.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+        const weekKey = monday.toISOString().slice(0, 10);
+        if (!weekMap[weekKey]) weekMap[weekKey] = { count: 0, scores: {}, overallTotal: 0, overallCount: 0 };
+        weekMap[weekKey].count += dailyMap[day].count;
+        weekMap[weekKey].overallTotal += dailyMap[day].overallTotal;
+        weekMap[weekKey].overallCount += dailyMap[day].overallCount;
+        dimKeys.forEach(k => {
+          if (dailyMap[day].scores[k] !== undefined) {
+            if (weekMap[weekKey].scores[k] === undefined) weekMap[weekKey].scores[k] = 0;
+            weekMap[weekKey].scores[k] += dailyMap[day].scores[k];
+          }
+        });
+      });
+      weeklyTrend = Object.keys(weekMap).sort().map(wk => {
+        const w = weekMap[wk];
+        const dimAvgs = {};
+        dimKeys.forEach(k => {
+          dimAvgs[k] = w.scores[k] !== undefined ? Math.round(w.scores[k] / w.count) : 0;
+        });
+        return {
+          date: wk,
+          count: w.count,
+          overallAvg: w.overallCount > 0 ? Math.round(w.overallTotal / w.overallCount) : 0,
+          scores: dimAvgs
+        };
+      });
+    }
+
+    // 计算薄弱点变化趋势：最近5次练习的各维度分数
+    const allRecords = [
+      ...phrases.map(p => ({ createdAt: p.createdAt, scores: p.scores || p.evaluation, overallScore: p.score, source: 'practice' })),
+      ...drillRecords.map(r => ({ createdAt: r.createdAt, scores: r.scores, overallScore: r.overallScore, source: 'drill' }))
+    ].filter(r => r.createdAt && r.scores)
+     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+     .slice(0, 20);
+
+    const dimKeysReadable = ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'];
+
+    // 找出薄弱维度（平均分最低的维度）
+    const dimAverages = {};
+    dimKeysReadable.forEach(k => { dimAverages[k] = { total: 0, count: 0 }; });
+    allRecords.forEach(r => {
+      if (r.scores) {
+        dimKeysReadable.forEach(k => {
+          if (typeof r.scores[k] === 'number' && r.scores[k] > 0) {
+            dimAverages[k].total += r.scores[k];
+            dimAverages[k].count++;
+          }
+        });
+      }
+    });
+    const weakDimensions = dimKeysReadable
+      .map(k => ({ key: k, label: dimLabels[dimKeysReadable.indexOf(k)], avg: dimAverages[k].count > 0 ? Math.round(dimAverages[k].total / dimAverages[k].count) : 0 }))
+      .sort((a, b) => a.avg - b.avg);
+
+    // 最近练习的趋势（最近10条）
+    const recentTrend = allRecords.slice(0, 10).map(r => ({
+      date: new Date(r.createdAt).toISOString().slice(0, 10),
+      overallScore: r.overallScore || 0,
+      scores: dimKeysReadable.reduce((acc, k) => { acc[k] = (r.scores && r.scores[k]) || 0; return acc; }, {})
+    })).reverse();
+
+    res.json({
+      dailyTrend: trendData.slice(-30), // 最多返回30天
+      weeklyTrend,
+      recentTrend,
+      weakDimensions,
+      totalRecords: allRecords.length
+    });
+  } catch (e) {
+    console.error('Trend data error:', e);
+    res.status(500).json({ error: 'Failed to load trend data' });
+  }
+});
+
+// ============================================================
+// API: 练习报告详情
+// ============================================================
+app.get('/api/practice/report/:id', (req, res) => {
+  try {
+    const id = req.params.id;
+    // 先从话术库查找
+    const phrasesPath = path.join(DATA_DIR, '.data', 'phrase-library.json');
+    let phrases = [];
+    try { phrases = JSON.parse(fs.readFileSync(phrasesPath, 'utf8')); } catch {}
+    if (Array.isArray(phrases)) {
+      const found = phrases.find(p => p.id === id);
+      if (found) return res.json({ source: 'practice', ...found });
+    }
+    // 再从专项训练记录查找
+    const drillRecords = loadDrillRecords();
+    const found = drillRecords.find(r => r.id === id);
+    if (found) return res.json({ source: 'drill', ...found });
+    res.status(404).json({ error: '报告未找到' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
+// API: 报告列表（合并话术库和专项训练记录）
+// ============================================================
+app.get('/api/practice/reports', (req, res) => {
+  try {
+    const phrasesPath = path.join(DATA_DIR, '.data', 'phrase-library.json');
+    let phrases = [];
+    try { phrases = JSON.parse(fs.readFileSync(phrasesPath, 'utf8')); } catch {}
+    if (!Array.isArray(phrases)) phrases = [];
+
+    const drillRecords = loadDrillRecords();
+
+    const reports = [];
+    phrases.forEach(p => {
+      const evalData = p.scores || p.evaluation;
+      reports.push({
+        id: p.id,
+        type: 'practice',
+        question: p.question || '',
+        answer: p.answer || '',
+        score: p.score || 0,
+        scores: evalData || {},
+        improvedVersion: p.improvedVersion || '',
+        keyTakeaways: p.keyTakeaways || '',
+        tags: p.tags || [],
+        questionType: p.type || '',
+        createdAt: p.createdAt || ''
+      });
+    });
+    drillRecords.forEach(r => {
+      reports.push({
+        id: r.id,
+        type: 'drill',
+        question: r.question || '',
+        answer: r.answer || '',
+        score: r.overallScore || 0,
+        scores: r.scores || {},
+        improvedVersion: r.improvedVersion || '',
+        keyTakeaways: Array.isArray(r.keyTakeaways) ? r.keyTakeaways.join('；') : (r.keyTakeaways || ''),
+        tags: [],
+        questionType: r.questionType || '',
+        attemptNumber: r.attemptNumber || 1,
+        createdAt: r.createdAt || ''
+      });
+    });
+
+    // 按时间排序
+    reports.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+    res.json({ reports, total: reports.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/sessions/switch', (req, res) => {
   const { sessionId } = req.body;
   if (!sessions.has(sessionId)) return res.status(404).json({ error: '会话不存在' });

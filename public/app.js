@@ -138,6 +138,10 @@ async function loadDashboard() {
     if (welcome) welcome.remove();
 
     renderDashStats(data);
+
+    // 异步加载趋势数据
+    loadTrendData();
+
     // Defer heavy chart rendering
     setTimeout(() => renderRadarChart(data.radarScores || {}), 100);
     renderPieChart(data.typeCoverage || {});
@@ -169,6 +173,188 @@ async function loadDashboard() {
     console.warn('Dashboard load failed:', e);
     $('#dash-stats').innerHTML = '<p style="color:var(--muted);">暂无数据，完成一次练习或模拟面试后开始追踪</p>';
   }
+}
+
+// ============================================================
+// 趋势数据加载与渲染
+// ============================================================
+async function loadTrendData() {
+  try {
+    const data = await fetchRetry('/api/dashboard/trends').then(r => r.json()).catch(() => null);
+    if (!data || (!data.dailyTrend.length && !data.recentTrend.length)) return;
+
+    // 显示趋势卡片
+    const trendCard = $('#dash-trend-card');
+    if (trendCard) trendCard.style.display = '';
+
+    const weaknessCard = $('#dash-weakness-card');
+    if (weaknessCard) weaknessCard.style.display = '';
+
+    const recentTrendCard = $('#dash-recent-trend-card');
+    if (recentTrendCard) recentTrendCard.style.display = '';
+
+    // 渲染趋势图
+    setTimeout(() => renderTrendChart(data), 150);
+    renderWeakDimensions(data.weakDimensions || []);
+    renderRecentTrendChart(data.recentTrend || []);
+  } catch (e) {
+    // 静默失败，趋势图是增强功能
+  }
+}
+
+function renderTrendChart(data) {
+  const el = $('#dash-trend');
+  if (!el) return;
+
+  // 使用每日趋势数据
+  var trendData = data.dailyTrend || [];
+  if (!trendData.length) {
+    // 降级使用周趋势
+    trendData = data.weeklyTrend || [];
+  }
+  if (!trendData.length) {
+    // 尝试使用最近练习趋势
+    if (data.recentTrend && data.recentTrend.length >= 2) {
+      trendData = data.recentTrend;
+    } else {
+      el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem;">完成多次练习后显示趋势</p>';
+      return;
+    }
+  }
+
+  var dates = trendData.map(function(d) { return d.date ? d.date.slice(5) : ''; });
+  var overallScores = trendData.map(function(d) { return d.overallAvg || 0; });
+
+  var dimKeys = ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'];
+  var dimLabels = ['STAR完整度', '量化程度', '岗位匹配', '结构逻辑', '亮点突出'];
+  var dimColors = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+
+  var chart = echarts.init(el);
+
+  // 根据当前激活的按钮决定显示模式
+  var activeMode = 'overall';
+  var toggleBtns = el.parentElement.querySelectorAll('.trend-toggle');
+  toggleBtns.forEach(function(btn) {
+    if (btn.classList.contains('active')) {
+      activeMode = btn.dataset.trend;
+    }
+  });
+
+  var option = {
+    tooltip: {
+      trigger: 'axis',
+      confine: true,
+      formatter: function(params) {
+        var html = '<b>' + params[0].axisValue + '</b><br>';
+        params.forEach(function(p) {
+          html += '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + p.color + ';margin-right:4px;"></span> ' + p.seriesName + ': <b>' + p.value + '</b><br>';
+        });
+        return html;
+      }
+    },
+    legend: { bottom: 0, textStyle: { fontSize: 11 } },
+    grid: { left: 45, right: 16, top: 20, bottom: 40 },
+    xAxis: {
+      type: 'category',
+      data: dates,
+      axisLabel: { fontSize: 10, rotate: dates.length > 10 ? 45 : 0 }
+    },
+    yAxis: { type: 'value', min: 0, max: 100, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+    series: []
+  };
+
+  if (activeMode === 'overall') {
+    option.series = [{
+      name: '总分',
+      type: 'line',
+      data: overallScores,
+      smooth: true,
+      lineStyle: { width: 2, color: '#4F46E5' },
+      itemStyle: { color: '#4F46E5' },
+      areaStyle: { color: 'rgba(79,70,229,0.1)' },
+      connectNulls: true
+    }];
+  } else {
+    option.series = dimKeys.map(function(k, i) {
+      var values = trendData.map(function(d) { return d.scores && d.scores[k] || 0; });
+      return {
+        name: dimLabels[i],
+        type: 'line',
+        data: values,
+        smooth: true,
+        lineStyle: { width: 1.5, color: dimColors[i] },
+        itemStyle: { color: dimColors[i] },
+        symbol: 'circle',
+        symbolSize: 4,
+        connectNulls: true
+      };
+    });
+  }
+
+  chart.setOption(option);
+  chart._trendMode = activeMode;
+
+  // 绑定切换按钮事件
+  toggleBtns.forEach(function(btn) {
+    btn.onclick = null; // 移除旧事件
+    btn.addEventListener('click', function() {
+      toggleBtns.forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      chart._trendMode = btn.dataset.trend;
+      renderTrendChart(data);
+    });
+  });
+
+  window.addEventListener('resize', function() { chart.resize(); });
+}
+
+function renderWeakDimensions(dimensions) {
+  var el = $('#dash-weakness');
+  if (!el || !dimensions.length) return;
+  el.innerHTML = dimensions.map(function(d) {
+    var score = d.avg || 0;
+    var barWidth = Math.max(score, 5);
+    var color = score < 50 ? 'var(--red)' : score < 70 ? '#F59E0B' : 'var(--green)';
+    return '<div style="flex:1;min-width:140px;background:var(--bg1);border-radius:8px;padding:0.8rem;">' +
+      '<div style="font-size:0.82rem;font-weight:600;margin-bottom:0.3rem;">' + d.label + '</div>' +
+      '<div style="font-size:1.2rem;font-weight:700;color:' + color + ';margin-bottom:0.3rem;">' + score + '<span style="font-size:0.7rem;color:var(--muted);">/100</span></div>' +
+      '<div style="background:var(--bg2);border-radius:4px;height:6px;overflow:hidden;">' +
+      '<div style="height:100%;width:' + barWidth + '%;border-radius:4px;background:' + color + ';transition:width 0.5s;"></div></div>' +
+      '</div>';
+  }).join('');
+}
+
+function renderRecentTrendChart(recentTrend) {
+  var el = $('#dash-recent-trend');
+  if (!el || !recentTrend || recentTrend.length < 2) {
+    if (el) el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:1.5rem;">完成更多练习后将显示分数变化趋势</p>';
+    return;
+  }
+
+  var labels = recentTrend.map(function(r) { return r.date ? r.date.slice(5) : ''; });
+  var scores = recentTrend.map(function(r) { return r.overallScore || 0; });
+
+  var chart = echarts.init(el);
+  chart.setOption({
+    tooltip: { trigger: 'axis', confine: true, formatter: function(params) { return '<b>' + params[0].axisValue + '</b><br>总分: <b>' + params[0].value + '</b>'; } },
+    grid: { left: 40, right: 10, top: 10, bottom: 25 },
+    xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 10 } },
+    yAxis: { type: 'value', min: 0, max: 100, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+    series: [{
+      type: 'bar',
+      data: scores.map(function(s, i) {
+        return {
+          value: s,
+          itemStyle: {
+            color: s >= 80 ? '#10B981' : s >= 60 ? '#F59E0B' : '#EF4444',
+            borderRadius: [3, 3, 0, 0]
+          }
+        };
+      }),
+      barWidth: '60%'
+    }]
+  });
+  window.addEventListener('resize', function() { chart.resize(); });
 }
 
 function renderDashStats(data) {
@@ -253,29 +439,134 @@ function renderCalendar(calData) {
   el.innerHTML = html;
 }
 
-// 练习详情弹窗
+// 练习详情弹窗 - 完整报告视图
 function showPracticeDetail(p) {
   const modal = document.getElementById('practice-detail-modal');
   const body = document.getElementById('practice-detail-body');
   if (!modal || !body) return;
 
-  const dateStr = p.date ? new Date(p.date).toLocaleDateString('zh-CN') + ' ' + new Date(p.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
-  const scoreCls = (p.score || 0) >= 80 ? 'color:var(--green);' : (p.score || 0) >= 60 ? 'color:#F59E0B;' : 'color:var(--red);';
+  const dateStr = p.createdAt ? new Date(p.createdAt).toLocaleDateString('zh-CN') + ' ' + new Date(p.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : (p.date ? new Date(p.date).toLocaleDateString('zh-CN') : '');
+  const score = p.score || 0;
+  const scoreCls = score >= 80 ? 'color:var(--green);' : score >= 60 ? 'color:#F59E0B;' : 'color:var(--red);';
+  const scores = p.scores || {};
+  const dimKeys = ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'];
+  const dimLabels = ['STAR完整度', '量化程度', '岗位匹配', '结构逻辑', '亮点突出'];
+  const dimColors = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+
+  // 生成雷达图（使用内联SVG）
+  var radarHtml = '';
+  if (scores && dimKeys.some(function(k) { return scores[k] > 0; })) {
+    var radarData = dimKeys.map(function(k, i) {
+      return { label: dimLabels[i], value: scores[k] || 0, color: dimColors[i] };
+    });
+    radarHtml = '<div style="margin-bottom:1rem;padding:0.8rem;background:var(--bg1);border-radius:8px;">' +
+      '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.5rem;">📊 五维评分</div>' +
+      '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;">' +
+      radarData.map(function(d) {
+        var barPct = Math.max(d.value, 5);
+        var barColor = d.value >= 80 ? 'var(--green)' : d.value >= 60 ? '#F59E0B' : 'var(--red)';
+        return '<div style="flex:1;min-width:100px;">' +
+          '<div style="display:flex;justify-content:space-between;font-size:0.72rem;margin-bottom:0.2rem;">' +
+          '<span style="color:var(--muted);">' + d.label + '</span>' +
+          '<span style="font-weight:600;color:' + barColor + ';">' + d.value + '</span></div>' +
+          '<div style="background:var(--bg2);border-radius:4px;height:8px;overflow:hidden;">' +
+          '<div style="height:100%;width:' + barPct + '%;border-radius:4px;background:' + d.color + ';transition:width 0.5s;"></div></div></div>';
+      }).join('') +
+      '</div></div>';
+  }
+
+  // 关键词提取：从改进点中提取
+  var takeaways = p.keyTakeaways || '';
+  if (Array.isArray(takeaways)) takeaways = takeaways.join('；');
+
+  // 题型标签
+  var typeTag = p.type || p.questionType || '';
+  var sourceTag = p.source === 'drill' ? '专项训练' : '单题练习';
 
   body.innerHTML = `
     <div style="margin-bottom:1rem;">
-      <div style="font-size:0.78rem;color:var(--muted);margin-bottom:0.3rem;">${dateStr} · ${p.type || '练习'}</div>
-      <div style="font-weight:600;font-size:1rem;margin-bottom:0.5rem;">${p.question || '无题目'}</div>
-      ${p.score ? '<div style="font-size:1.2rem;font-weight:700;' + scoreCls + 'margin-bottom:0.8rem;">' + p.score + '分</div>' : ''}
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.3rem;margin-bottom:0.5rem;">
+        <div style="display:flex;gap:0.4rem;align-items:center;">
+          <span style="font-size:0.72rem;background:var(--tag-bg);padding:0.15rem 0.5rem;border-radius:4px;color:var(--muted);">${sourceTag}</span>
+          ${typeTag ? '<span style="font-size:0.72rem;background:var(--tag-bg);padding:0.15rem 0.5rem;border-radius:4px;color:var(--muted);">' + typeTag + '</span>' : ''}
+        </div>
+        <div style="font-size:0.78rem;color:var(--muted);">${dateStr}</div>
+      </div>
+      <div style="font-weight:600;font-size:1rem;margin-bottom:0.5rem;line-height:1.5;">${p.question || '无题目'}</div>
+      ${score ? '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.8rem;"><span style="font-size:1.3rem;font-weight:700;' + scoreCls + '">' + score + '分</span><span style="font-size:0.78rem;color:var(--muted);">/ 100</span></div>' : ''}
     </div>
-    ${p.answer ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;">你的回答：</b><div style="background:var(--bg2);padding:0.5rem;border-radius:6px;margin-top:0.2rem;font-size:0.82rem;line-height:1.6;max-height:200px;overflow-y:auto;">' + p.answer.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div></div>' : ''}
-    ${p.improvedVersion ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;">💡 AI改进参考：</b><div style="background:rgba(79,70,229,0.05);padding:0.5rem;border-radius:6px;margin-top:0.2rem;font-size:0.82rem;line-height:1.6;max-height:200px;overflow-y:auto;">' + p.improvedVersion.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div></div>' : ''}
-    ${p.keyTakeaways ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;">🎯 关键改进点：</b><div style="font-size:0.82rem;color:var(--accent);margin-top:0.2rem;">' + (Array.isArray(p.keyTakeaways) ? p.keyTakeaways.join('；') : p.keyTakeaways) + '</div></div>' : ''}
-    ${p.scores ? '<div style="font-size:0.78rem;color:var(--muted);">STAR完整度:' + (p.scores.star_completeness || '-') + ' | 量化:' + (p.scores.quantification || '-') + ' | 匹配:' + (p.scores.position_match || '-') + ' | 结构:' + (p.scores.structure || '-') + ' | 亮点:' + (p.scores.highlight || '-') + '</div>' : ''}
-    ${p.source === 'drill' ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:var(--accent2);">📋 来自专项训练</div>' : ''}
+
+    ${radarHtml}
+
+    ${p.answer ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;display:flex;align-items:center;gap:0.3rem;">📝 你的回答</b><div style="background:var(--bg2);padding:0.6rem;border-radius:6px;margin-top:0.3rem;font-size:0.82rem;line-height:1.7;max-height:250px;overflow-y:auto;white-space:pre-wrap;">' + escHtml(p.answer) + '</div></div>' : ''}
+
+    ${p.improvedVersion ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;display:flex;align-items:center;gap:0.3rem;">💡 AI改进参考</b><div style="background:rgba(79,70,229,0.05);padding:0.6rem;border-radius:6px;margin-top:0.3rem;font-size:0.82rem;line-height:1.7;max-height:250px;overflow-y:auto;white-space:pre-wrap;">' + escHtml(p.improvedVersion) + '</div></div>' : ''}
+
+    ${takeaways ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;display:flex;align-items:center;gap:0.3rem;">🎯 关键改进点</b><div style="font-size:0.82rem;color:var(--accent);margin-top:0.3rem;line-height:1.6;">' + takeaways + '</div></div>' : ''}
+
+    ${p.lineByLine && p.lineByLine.length ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;display:flex;align-items:center;gap:0.3rem;">🔍 逐句分析</b><div style="margin-top:0.3rem;">' + p.lineByLine.map(function(l) {
+      return '<div style="padding:0.4rem 0.5rem;margin-bottom:0.3rem;background:' + (l.is_good ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)') + ';border-radius:4px;border-left:3px solid ' + (l.is_good ? 'var(--green)' : 'var(--red)') + ';">' +
+        '<div style="font-size:0.78rem;color:var(--muted);margin-bottom:0.2rem;">"' + escHtml(l.quote || '') + '"</div>' +
+        '<div style="font-size:0.78rem;">' + escHtml(l.comment || '') + '</div></div>';
+    }).join('') + '</div></div>' : ''}
+
+    ${p.source === 'drill' && p.attemptNumber ? '<div style="font-size:0.72rem;color:var(--muted);margin-top:0.5rem;">第 ' + p.attemptNumber + ' 次尝试</div>' : ''}
   `;
 
   modal.classList.remove('hidden');
+}
+
+// 打开报告列表
+async function openReportList() {
+  var modal = document.getElementById('report-list-modal');
+  var body = document.getElementById('report-list-body');
+  if (!modal || !body) return;
+  modal.classList.remove('hidden');
+  body.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--muted);">加载中...</p>';
+
+  try {
+    var data = await fetchRetry('/api/practice/reports').then(function(r) { return r.json(); });
+    var reports = data.reports || [];
+    if (!reports.length) {
+      body.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--muted);">暂无练习报告，完成练习后将自动生成</p>';
+      return;
+    }
+    body.innerHTML = reports.map(function(r, idx) {
+      var score = r.score || 0;
+      var scoreCls = score >= 80 ? 'color:var(--green);' : score >= 60 ? 'color:#F59E0B;' : 'color:var(--red);';
+      var dateStr = r.createdAt ? new Date(r.createdAt).toLocaleDateString('zh-CN') + ' ' + new Date(r.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+      var typeLabel = r.type === 'drill' ? '专项训练' : '单题练习';
+      return '<div class="dash-practice-item" data-report-idx="' + idx + '" style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0;border-bottom:1px solid var(--rule);cursor:pointer;" title="点击查看完整报告">' +
+        '<span style="font-size:0.72rem;background:var(--tag-bg);padding:0.1rem 0.4rem;border-radius:3px;color:var(--muted);white-space:nowrap;">' + typeLabel + '</span>' +
+        '<span style="font-size:0.78rem;color:var(--muted);white-space:nowrap;">' + dateStr + '</span>' +
+        '<span style="flex:1;font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.question || '').slice(0, 60) + '</span>' +
+        '<span style="font-weight:600;' + scoreCls + '">' + score + '分</span>' +
+        '</div>';
+    }).join('');
+
+    // 点击查看报告
+    body.querySelectorAll('.dash-practice-item').forEach(function(item) {
+      item.addEventListener('click', function() {
+        var idx = parseInt(item.dataset.reportIdx);
+        var r = reports[idx];
+        if (r) {
+          modal.classList.add('hidden');
+
+          // 延迟打开详情弹窗，避免同时显示两个弹窗
+          setTimeout(function() {
+            showPracticeDetail(r);
+          }, 200);
+        }
+      });
+    });
+  } catch (e) {
+    body.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--red);">加载失败: ' + e.message + '</p>';
+  }
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function renderRecentPractices(items) {
@@ -777,6 +1068,23 @@ if (practiceDetailModal) {
     if (e.target === practiceDetailModal) practiceDetailModal.classList.add('hidden');
   });
 }
+
+// 报告列表弹窗关闭 + 打开
+const reportListModal = document.getElementById('report-list-modal');
+if (reportListModal) {
+  document.getElementById('btn-close-report-list')?.addEventListener('click', () => {
+    reportListModal.classList.add('hidden');
+  });
+  reportListModal.addEventListener('click', (e) => {
+    if (e.target === reportListModal) reportListModal.classList.add('hidden');
+  });
+}
+
+// 查看全部报告
+document.getElementById('btn-view-all-reports')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  openReportList();
+});
 
 // 自动检查（静默，启动时）
 (async function autoCheckUpdate() {

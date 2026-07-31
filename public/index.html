@@ -84,6 +84,33 @@
       </div>
     </div>
 
+    <!-- 能力成长趋势图 -->
+    <div class="card" style="margin-bottom:1rem;display:none;" id="dash-trend-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.8rem;">
+        <h3 style="margin:0;">📈 能力成长趋势</h3>
+        <div style="display:flex;gap:0.3rem;align-items:center;">
+          <button class="btn-outline trend-toggle active" data-trend="overall" style="font-size:0.72rem;padding:0.15rem 0.5rem;">总分</button>
+          <button class="btn-outline trend-toggle" data-trend="dimensions" style="font-size:0.72rem;padding:0.15rem 0.5rem;">各维度</button>
+        </div>
+      </div>
+      <div id="dash-trend" style="height:280px;"></div>
+    </div>
+
+    <!-- 薄弱点分析 -->
+    <div class="card" style="margin-bottom:1rem;display:none;" id="dash-weakness-card">
+      <h3 style="margin-bottom:0.8rem;">⚠️ 薄弱点分析</h3>
+      <div id="dash-weakness" style="display:flex;gap:0.8rem;flex-wrap:wrap;"></div>
+    </div>
+
+    <!-- 最近练习趋势 -->
+    <div class="card" style="margin-bottom:1rem;display:none;" id="dash-recent-trend-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+        <h3 style="margin:0;">📋 最近练习分数趋势</h3>
+        <a href="#" id="btn-view-all-reports" style="font-size:0.78rem;color:var(--accent);text-decoration:none;">查看全部报告 →</a>
+      </div>
+      <div id="dash-recent-trend" style="height:200px;"></div>
+    </div>
+
     <!-- Practice calendar -->
     <div class="card" style="margin-bottom:1rem;">
       <h3 style="margin-bottom:0.8rem;">练习日历（近60天）</h3>
@@ -756,14 +783,25 @@
 
 </main>
 
-<!-- 练习详情弹窗 -->
+<!-- 练习详情弹窗 / 完整报告 -->
 <div class="modal-overlay hidden" id="practice-detail-modal">
-  <div class="modal-content" style="max-width:600px;max-height:80vh;overflow-y:auto;">
+  <div class="modal-content" style="max-width:680px;max-height:85vh;overflow-y:auto;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-      <h3 style="margin:0;">📝 练习详情</h3>
+      <h3 style="margin:0;">📝 练习报告</h3>
       <button id="btn-close-practice-detail" class="btn-outline" style="font-size:0.82rem;padding:0.2rem 0.6rem;">✕ 关闭</button>
     </div>
     <div id="practice-detail-body"></div>
+  </div>
+</div>
+
+<!-- 报告列表弹窗 -->
+<div class="modal-overlay hidden" id="report-list-modal">
+  <div class="modal-content" style="max-width:720px;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <h3 style="margin:0;">📋 全部练习报告</h3>
+      <button id="btn-close-report-list" class="btn-outline" style="font-size:0.82rem;padding:0.2rem 0.6rem;">✕ 关闭</button>
+    </div>
+    <div id="report-list-body"></div>
   </div>
 </div>
 
