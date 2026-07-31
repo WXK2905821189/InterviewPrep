@@ -65,6 +65,69 @@ const {
   groupInterviewEvaluate
 } = require('./chatflow/engine');
 
+// ============================================================
+// 多轮面试 - 岗位类型轮次预设
+// ============================================================
+const ROUND_PRESETS = {
+  '技术岗': {
+    label: '技术岗',
+    rounds: [
+      { round: 1, type: 'technical', label: '技术面', questionTypes: ['专业能力'], desc: '考察技术栈掌握程度、项目技术难点' },
+      { round: 2, type: 'project_stress', label: '项目深挖+压力面', questionTypes: ['项目深挖', '压力测试'], desc: '深挖项目细节、考察抗压能力' },
+      { round: 3, type: 'hr', label: 'HR面', questionTypes: ['行为面试', 'HR面'], desc: '考察综合素质、职业规划、团队协作' }
+    ]
+  },
+  '产品岗': {
+    label: '产品岗',
+    rounds: [
+      { round: 1, type: 'product', label: '产品思维面', questionTypes: ['专业能力', '行为面试'], desc: '考察产品思维、需求分析、数据驱动决策' },
+      { round: 2, type: 'comprehensive', label: '综合面', questionTypes: ['项目深挖', '压力测试', 'HR面'], desc: '深挖项目经验、考察综合素质' }
+    ]
+  },
+  '运营岗': {
+    label: '运营岗',
+    rounds: [
+      { round: 1, type: 'operations', label: '运营策略面', questionTypes: ['专业能力', '行为面试'], desc: '考察运营策略、数据分析、用户增长' },
+      { round: 2, type: 'comprehensive', label: '综合面', questionTypes: ['项目深挖', '压力测试', 'HR面'], desc: '考察综合能力、抗压能力、职业规划' }
+    ]
+  },
+  '设计岗': {
+    label: '设计岗',
+    rounds: [
+      { round: 1, type: 'design', label: '设计思维面', questionTypes: ['专业能力', '行为面试'], desc: '考察设计思维、用户研究、视觉表达' },
+      { round: 2, type: 'comprehensive', label: '综合面', questionTypes: ['项目深挖', '压力测试', 'HR面'], desc: '考察综合能力、团队协作、职业规划' }
+    ]
+  },
+  '市场/销售岗': {
+    label: '市场/销售岗',
+    rounds: [
+      { round: 1, type: 'business', label: '业务能力面', questionTypes: ['专业能力', '行为面试'], desc: '考察市场策略、销售技巧、商务谈判' },
+      { round: 2, type: 'comprehensive', label: '综合面', questionTypes: ['项目深挖', '压力测试', 'HR面'], desc: '考察综合能力、抗压能力、职业规划' }
+    ]
+  },
+  '通用/管理岗': {
+    label: '通用/管理岗',
+    rounds: [
+      { round: 1, type: 'management', label: '专业面', questionTypes: ['专业能力', '行为面试'], desc: '考察专业能力和管理经验' },
+      { round: 2, type: 'stress', label: '压力面', questionTypes: ['压力测试', '项目深挖'], desc: '考察抗压能力和应变能力' },
+      { round: 3, type: 'hr', label: 'HR面', questionTypes: ['HR面', '行为面试'], desc: '考察综合素质、职业规划' }
+    ]
+  }
+};
+
+// 根据JD中的岗位名推断岗位类型
+function detectPositionType(position) {
+  if (!position) return '通用/管理岗';
+  const p = position.toLowerCase();
+  if (/技术|开发|工程|算法|后端|前端|全栈|java|python|go|rust|架构|运维|测试|数据|ai|ml|deep learning|机器学习/.test(p)) return '技术岗';
+  if (/产品|pm|产品经理/.test(p)) return '产品岗';
+  if (/运营|增长|新媒体|内容|社群|用户运营/.test(p)) return '运营岗';
+  if (/设计|ui|ux|视觉|交互|产品设计/.test(p)) return '设计岗';
+  if (/市场|销售|商务|bd|渠道|营销|推广/.test(p)) return '市场/销售岗';
+  if (/管理|总监|经理|主管|lead|head|director/.test(p)) return '通用/管理岗';
+  return '通用/管理岗';
+}
+
 // ---- ai-provider-kit 集成（云端自动降级） ----
 let provider;
 try {
@@ -545,6 +608,662 @@ app.post('/api/interview/evaluate', async (req, res) => {
   } catch (e) {
     console.error('[API] 评估失败:', e);
     res.status(500).json({ error: '评估失败: ' + e.message });
+  }
+});
+
+// ============================================================
+// API: 压力面试（对抗练习）— 开始
+// ============================================================
+app.post('/api/interview/stress/start', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.analysis) {
+      return res.status(400).json({ error: '请先完成分析（调用 /api/analyze）' });
+    }
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    // 创建压力面试会话
+    session.stressInterview = {
+      stage: 'intro',
+      currentQuestion: null,
+      questionQueue: [...(session.analysis.questions || [])],
+      askedQuestions: [],
+      history: [],
+      rounds: 0,
+      maxRounds: 8,
+      isActive: true,
+      startTime: Date.now()
+    };
+
+    const company = session.analysis.jd?.company || '目标公司';
+    const position = session.analysis.jd?.position || '目标岗位';
+    const resumeSummary = JSON.stringify(session.analysis.resume || {});
+    const jdSummary = JSON.stringify(session.analysis.jd || {});
+
+    const systemPrompt = fillTemplate(prompts.STRESS_INTERVIEW_START_SYSTEM, {
+      company, position, resume_summary: resumeSummary, jd_summary: jdSummary
+    });
+
+    const msg = await llm(systemPrompt, '请开始压力面试', { jsonMode: false, temperature: 0.9 });
+    session.stressInterview.history.push({ role: 'interviewer', content: msg });
+    session.stressInterview.currentQuestion = '开场';
+
+    // 从题库取第一题
+    const firstQ = session.stressInterview.questionQueue[0];
+    if (firstQ) {
+      session.stressInterview.askedQuestions.push(firstQ.question);
+      session.stressInterview.currentQuestion = firstQ.question;
+    }
+
+    res.json({
+      type: 'start',
+      message: msg,
+      stressMode: true,
+      questionCount: session.stressInterview.questionQueue.length,
+      tips: '💡 压力面试中，AI面试官会打断、质疑、施压。保持冷静，这是训练的一部分。'
+    });
+  } catch (e) {
+    console.error('[API] 压力面试启动失败:', e);
+    res.status(500).json({ error: '压力面试启动失败: ' + e.message });
+  }
+});
+
+// ============================================================
+// API: 压力面试（对抗练习）— 回答
+// ============================================================
+app.post('/api/interview/stress/respond', async (req, res) => {
+  try {
+    const { sessionId, answer } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.stressInterview || !session.stressInterview.isActive) {
+      return res.status(400).json({ error: '请先开始压力面试' });
+    }
+
+    const si = session.stressInterview;
+    si.history.push({ role: 'candidate', content: answer });
+    si.rounds++;
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    // 构建历史摘要
+    const recentHistory = si.history.slice(-6).map(h =>
+      (h.role === 'interviewer' ? '面试官: ' : '候选人: ') + h.content.slice(0, 200)
+    ).join('\n');
+
+    const resumeSummary = JSON.stringify(session.analysis.resume || {});
+    const jdSummary = JSON.stringify(session.analysis.jd || {});
+
+    const respondPrompt = fillTemplate(prompts.STRESS_INTERVIEW_RESPOND_SYSTEM, {
+      history_summary: recentHistory,
+      current_question: si.currentQuestion || '当前问题',
+      candidate_answer: answer,
+      jd_summary: jdSummary
+    });
+
+    let decision;
+    try {
+      decision = await llm(respondPrompt, '', { temperature: 0.8 });
+    } catch {
+      decision = { action: 'next_question', message: '下一个问题。', question: '', evaluate_current: false };
+    }
+
+    const action = decision.action || 'next_question';
+    let responseMsg = decision.message || '';
+    let nextQuestion = decision.question || '';
+
+    // 根据 action 处理
+    if (action === 'next_question' || action === 'end') {
+      if (action === 'end' || si.rounds >= si.maxRounds) {
+        si.isActive = false;
+        si.stage = 'done';
+        si.history.push({ role: 'interviewer', content: '压力面试结束。' });
+        // 自动评估
+        let report = null;
+        try {
+          const evalPrompt = fillTemplate(prompts.STRESS_INTERVIEW_EVALUATE_SYSTEM, {
+            interview_history: si.history.map(h => h.role + ': ' + h.content).join('\n'),
+            jd_summary: jdSummary
+          });
+          report = await llm(evalPrompt, '', { temperature: 0.5 });
+        } catch {}
+
+        return res.json({
+          type: 'end',
+          message: '压力面试结束！请查看评估报告。',
+          report: report || null,
+          stressMode: true
+        });
+      }
+
+      // 取下一题
+      const available = si.questionQueue.filter(q => !si.askedQuestions.includes(q.question));
+      if (available.length > 0) {
+        nextQuestion = available[0].question;
+        si.askedQuestions.push(nextQuestion);
+        si.currentQuestion = nextQuestion;
+      } else {
+        si.isActive = false;
+        si.stage = 'done';
+        return res.json({ type: 'end', message: '所有题目已用完，压力面试结束。', stressMode: true });
+      }
+    }
+
+    if (action === 'interrupt' || action === 'challenge') {
+      si.history.push({ role: 'interviewer', content: responseMsg });
+    }
+
+    // 通知作答
+    if (action === 'next_question' || action === 'end') {
+      si.history.push({ role: 'interviewer', content: nextQuestion || responseMsg });
+    }
+
+    res.json({
+      type: action === 'interrupt' ? 'interrupt' : action === 'challenge' ? 'challenge' : action === 'silence' ? 'silence' : 'question',
+      action,
+      message: responseMsg,
+      question: nextQuestion || responseMsg,
+      stressMode: true,
+      round: si.rounds,
+      roundsLeft: si.maxRounds - si.rounds
+    });
+  } catch (e) {
+    console.error('[API] 压力面试回答失败:', e);
+    res.status(500).json({ error: '处理失败: ' + e.message });
+  }
+});
+
+// ============================================================
+// API: 压力面试（对抗练习）— 结束并评估
+// ============================================================
+app.post('/api/interview/stress/evaluate', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.stressInterview) {
+      return res.status(400).json({ error: '未找到压力面试记录' });
+    }
+
+    const si = session.stressInterview;
+    si.isActive = false;
+    si.stage = 'done';
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+    const jdSummary = JSON.stringify(session.analysis.jd || {});
+
+    const evalPrompt = fillTemplate(prompts.STRESS_INTERVIEW_EVALUATE_SYSTEM, {
+      interview_history: si.history.map(h => h.role + ': ' + h.content).join('\n'),
+      jd_summary: jdSummary
+    });
+
+    const report = await llm(evalPrompt, '', { temperature: 0.5 });
+
+    // 保存压力面试记录到话术库
+    try {
+      const phrasesPath = path.join(DATA_DIR, '.data', 'phrase-library.json');
+      let phrases = [];
+      try { phrases = JSON.parse(fs.readFileSync(phrasesPath, 'utf8')); } catch {}
+      if (!Array.isArray(phrases)) phrases = [];
+      phrases.push({
+        id: 'stress_' + Date.now().toString(36),
+        type: 'stress',
+        question: '压力面试练习',
+        answer: JSON.stringify(si.history.filter(h => h.role === 'candidate').map(h => h.content)),
+        score: report?.total_score || 0,
+        scores: report?.scores || {},
+        improvedVersion: '',
+        keyTakeaways: report?.advice || '',
+        createdAt: new Date().toISOString(),
+        tags: ['压力面试', '对抗练习'],
+        source: 'stress_interview'
+      });
+      fs.writeFileSync(phrasesPath, JSON.stringify(phrases, null, 2));
+    } catch {}
+
+    res.json({ report, stressMode: true });
+  } catch (e) {
+    console.error('[API] 压力面试评估失败:', e);
+    res.status(500).json({ error: '评估失败: ' + e.message });
+  }
+});
+
+// ============================================================
+// API: 面试陪练模式 — 开始自由对话
+// ============================================================
+app.post('/api/practice/free/start', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.analysis) {
+      return res.status(400).json({ error: '请先完成分析（调用 /api/analyze）' });
+    }
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    // 创建陪练会话
+    session.freePractice = {
+      isActive: true,
+      history: [],
+      rounds: 0,
+      topics: [],
+      startTime: Date.now()
+    };
+
+    const resumeSummary = JSON.stringify(session.analysis.resume || {});
+    const jdSummary = JSON.stringify(session.analysis.jd || {});
+
+    const systemPrompt = fillTemplate(prompts.FREE_PRACTICE_START_SYSTEM, {
+      resume_summary: resumeSummary,
+      jd_summary: jdSummary
+    });
+
+    const msg = await llm(systemPrompt, '开始陪练对话', { jsonMode: false, temperature: 0.8 });
+    session.freePractice.history.push({ role: 'coach', content: msg });
+
+    res.json({
+      type: 'start',
+      message: msg,
+      freeMode: true,
+      tips: '💡 自由对话模式，你可以随时反问、换话题、要求重复。就像和朋友聊天一样自然练习面试。'
+    });
+  } catch (e) {
+    console.error('[API] 陪练启动失败:', e);
+    res.status(500).json({ error: '陪练启动失败: ' + e.message });
+  }
+});
+
+// ============================================================
+// API: 面试陪练模式 — 自由对话回复
+// ============================================================
+app.post('/api/practice/free/respond', async (req, res) => {
+  try {
+    const { sessionId, message } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.freePractice || !session.freePractice.isActive) {
+      return res.status(400).json({ error: '请先开始陪练模式' });
+    }
+
+    const fp = session.freePractice;
+    fp.history.push({ role: 'candidate', content: message });
+    fp.rounds++;
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const recentHistory = fp.history.slice(-8).map(h =>
+      (h.role === 'coach' ? '陪练: ' : '候选人: ') + h.content.slice(0, 300)
+    ).join('\n');
+
+    const respondPrompt = fillTemplate(prompts.FREE_PRACTICE_RESPOND_SYSTEM, {
+      history_summary: recentHistory,
+      current_topic: fp.topics[fp.topics.length - 1] || '自由对话',
+      candidate_answer: message
+    });
+
+    let response;
+    try {
+      response = await llm(respondPrompt, '', { temperature: 0.7 });
+    } catch {
+      response = { feedback: '感谢你的回答', follow_up: '还有什么想聊聊的吗？', type: 'switch_topic', can_end: false };
+    }
+
+    const feedback = response.feedback || '';
+    const followUp = response.follow_up || '';
+    const responseType = response.type || 'deep_dive';
+    const canEnd = response.can_end || false;
+
+    fp.history.push({ role: 'coach', content: followUp ? feedback + '\n\n' + followUp : feedback });
+
+    res.json({
+      feedback,
+      followUp,
+      type: responseType,
+      canEnd,
+      summary: response.summary || '',
+      freeMode: true,
+      round: fp.rounds
+    });
+  } catch (e) {
+    console.error('[API] 陪练回复失败:', e);
+    res.status(500).json({ error: '处理失败: ' + e.message });
+  }
+});
+
+// ============================================================
+// API: 面试陪练模式 — 结束并评估
+// ============================================================
+app.post('/api/practice/free/evaluate', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.freePractice) {
+      return res.status(400).json({ error: '未找到陪练记录' });
+    }
+
+    const fp = session.freePractice;
+    fp.isActive = false;
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const evalPrompt = fillTemplate(prompts.FREE_PRACTICE_EVALUATE_SYSTEM, {
+      conversation_history: fp.history.map(h => h.role + ': ' + h.content).join('\n')
+    });
+
+    const report = await llm(evalPrompt, '', { temperature: 0.5 });
+
+    // 保存陪练记录
+    try {
+      const phrasesPath = path.join(DATA_DIR, '.data', 'phrase-library.json');
+      let phrases = [];
+      try { phrases = JSON.parse(fs.readFileSync(phrasesPath, 'utf8')); } catch {}
+      if (!Array.isArray(phrases)) phrases = [];
+      phrases.push({
+        id: 'free_' + Date.now().toString(36),
+        type: 'free_practice',
+        question: '面试陪练练习',
+        answer: JSON.stringify(fp.history.filter(h => h.role === 'candidate').map(h => h.content)),
+        score: report?.total_score || 0,
+        scores: report?.scores || {},
+        improvedVersion: '',
+        keyTakeaways: report?.practice_tips || '',
+        createdAt: new Date().toISOString(),
+        tags: ['陪练模式', '自由对话'],
+        source: 'free_practice'
+      });
+      fs.writeFileSync(phrasesPath, JSON.stringify(phrases, null, 2));
+    } catch {}
+
+    res.json({ report, freeMode: true });
+  } catch (e) {
+    console.error('[API] 陪练评估失败:', e);
+    res.status(500).json({ error: '评估失败: ' + e.message });
+  }
+});
+
+// ============================================================
+// API: 多轮面试 — 获取轮次信息
+// ============================================================
+app.get('/api/interview/multi/info', (req, res) => {
+  try {
+    const { sessionId } = req.query;
+    const session = sessions.get(sessionId);
+    if (!session?.analysis) {
+      return res.json({ enabled: false, error: '请先完成分析' });
+    }
+
+    const position = session.analysis.jd?.position || '';
+    const positionType = detectPositionType(position);
+    const preset = ROUND_PRESETS[positionType];
+    if (!preset) {
+      return res.json({ enabled: false, error: '未能识别岗位类型' });
+    }
+
+    // 检查是否有足够题目覆盖所有轮次
+    const questions = session.analysis.questions || [];
+    const totalRounds = preset.rounds.length;
+    const roundQuestionCounts = preset.rounds.map(r => {
+      return questions.filter(q => r.questionTypes.some(t => (q.type || '').includes(t))).length;
+    });
+    const hasEnoughQuestions = roundQuestionCounts.every(c => c >= 1) && questions.length >= totalRounds * 2;
+
+    // 判断是否已有正在进行的多轮面试
+    const interview = session.interview;
+    const activeMultiRound = interview && interview.multiRound && interview.multiRound.enabled;
+
+    res.json({
+      enabled: true,
+      positionType: preset.label,
+      totalRounds,
+      rounds: preset.rounds,
+      questionCounts: roundQuestionCounts,
+      hasEnoughQuestions,
+      activeMultiRound: activeMultiRound ? {
+        currentRound: interview.multiRound.currentRound,
+        currentRoundLabel: interview.multiRound.rounds[interview.multiRound.currentRound - 1]?.label || '',
+        completedRounds: interview.multiRound.rounds.filter(r => r.status === 'completed').length,
+        totalRounds: interview.multiRound.totalRounds,
+        roundStatuses: interview.multiRound.rounds.map(r => ({
+          round: r.round, label: r.label, status: r.status, score: r.score
+        }))
+      } : null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
+// API: 多轮面试 — 开始面试（指定轮次）
+// ============================================================
+app.post('/api/interview/multi/start', async (req, res) => {
+  try {
+    const { sessionId, roundNumber } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.analysis) {
+      return res.status(400).json({ error: '请先完成分析' });
+    }
+
+    const position = session.analysis.jd?.position || '';
+    const positionType = detectPositionType(position);
+    const preset = ROUND_PRESETS[positionType];
+    if (!preset) {
+      return res.status(400).json({ error: '未能识别岗位类型，无法启动多轮面试' });
+    }
+
+    const targetRound = roundNumber || 1;
+    const roundConfig = preset.rounds[targetRound - 1];
+    if (!roundConfig) {
+      return res.status(400).json({ error: '无效的轮次' });
+    }
+
+    // 创建或复用一个多轮面试会话
+    let interview = session.interview;
+    if (!interview || !interview.multiRound) {
+      // 全新多轮面试
+      interview = createInterviewSession(session.analysis);
+      interview.multiRound = {
+        enabled: true,
+        currentRound: targetRound,
+        totalRounds: preset.rounds.length,
+        positionType: preset.label,
+        rounds: preset.rounds.map(r => ({
+          round: r.round,
+          type: r.type,
+          label: r.label,
+          desc: r.desc,
+          status: r.round === targetRound ? 'in_progress' : 'pending',
+          score: null,
+          report: null
+        })),
+        roundReports: []
+      };
+      session.interview = interview;
+    } else {
+      // 已有会话，切换到新轮次
+      interview.multiRound.currentRound = targetRound;
+      interview.multiRound.rounds[targetRound - 1].status = 'in_progress';
+
+      // 重置面试状态
+      interview.stage = 'intro';
+      interview.stageIndex = 0;
+      interview.currentQuestion = null;
+      interview.followUpCount = 0;
+      interview.maxFollowUps = 2;
+
+      // 保留已问过的题目，但只保留当前轮次之前的
+      // 重新设置题目队列：只包含当前轮次类型的题目
+    }
+
+    // 过滤题目：只保留当前轮次对应的题型
+    const allQuestions = session.analysis.questions || [];
+    const roundTypes = roundConfig.questionTypes;
+    const filteredQuestions = allQuestions.filter(q =>
+      roundTypes.some(t => (q.type || '').includes(t))
+    );
+
+    // 如果过滤后题目太少，补充一些其他类型的题目
+    let finalQuestions = filteredQuestions.length >= 2 ? filteredQuestions : allQuestions.slice(0, Math.min(8, allQuestions.length));
+
+    interview.questionQueue = [...finalQuestions];
+    interview.askedQuestions = [];
+    interview.history = [];
+
+    const company = session.analysis.jd?.company || '目标公司';
+    const position_ = session.analysis.jd?.position || '目标岗位';
+    const msg = await interviewStart(interview, company, position_);
+
+    res.json({
+      type: 'start',
+      message: msg,
+      stage: interview.stage,
+      roundInfo: {
+        currentRound: targetRound,
+        totalRounds: preset.rounds.length,
+        roundLabel: roundConfig.label,
+        roundDesc: roundConfig.desc,
+        questionCount: finalQuestions.length
+      }
+    });
+  } catch (e) {
+    console.error('[API] 多轮面试启动失败:', e);
+    res.status(500).json({ error: '多轮面试启动失败: ' + e.message });
+  }
+});
+
+// ============================================================
+// API: 多轮面试 — 结束当前轮次并评估
+// ============================================================
+app.post('/api/interview/multi/round-evaluate', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.interview?.multiRound) {
+      return res.status(400).json({ error: '未找到多轮面试会话' });
+    }
+
+    const interview = session.interview;
+    const mr = interview.multiRound;
+    const currentRoundIdx = mr.currentRound - 1;
+    const roundConfig = mr.rounds[currentRoundIdx];
+
+    // 执行评估
+    session.interview.stage = 'done';
+    const report = await evaluateFullSession(session.interview, session.resumeText || '');
+
+    // 保存轮次报告
+    roundConfig.status = 'completed';
+    roundConfig.score = report.overall_score || 0;
+    roundConfig.report = {
+      overall_score: report.overall_score,
+      average_scores: report.average_scores,
+      total_questions: report.total_questions,
+      per_question: report.per_question,
+      evaluatedAt: new Date().toISOString()
+    };
+
+    mr.roundReports.push({
+      round: mr.currentRound,
+      label: roundConfig.label,
+      score: report.overall_score || 0,
+      scores: report.average_scores || {},
+      totalQuestions: report.total_questions || 0,
+      evaluatedAt: new Date().toISOString()
+    });
+
+    // 检查是否所有轮次都已完成
+    const allCompleted = mr.rounds.every(r => r.status === 'completed');
+    const isLastRound = mr.currentRound >= mr.totalRounds;
+
+    // 保存到会话
+    saveSessions();
+
+    // 同时保存到面试历史(localStorage由前端负责)
+    res.json({
+      stage: 'round_complete',
+      roundScore: report.overall_score || 0,
+      roundLabel: roundConfig.label,
+      currentRound: mr.currentRound,
+      totalRounds: mr.totalRounds,
+      isLastRound,
+      allCompleted,
+      report: {
+        overall_score: report.overall_score,
+        average_scores: report.average_scores,
+        total_questions: report.total_questions,
+        per_question: report.per_question
+      },
+      nextRound: isLastRound ? null : {
+        round: mr.currentRound + 1,
+        label: mr.rounds[mr.currentRound]?.label || ''
+      }
+    });
+  } catch (e) {
+    console.error('[API] 多轮评估失败:', e);
+    res.status(500).json({ error: '评估失败: ' + e.message });
+  }
+});
+
+// ============================================================
+// API: 多轮面试 — 获取综合报告（所有轮次）
+// ============================================================
+app.get('/api/interview/multi/report', (req, res) => {
+  try {
+    const { sessionId } = req.query;
+    const session = sessions.get(sessionId);
+    if (!session?.interview?.multiRound) {
+      return res.status(400).json({ error: '未找到多轮面试数据' });
+    }
+
+    const mr = session.interview.multiRound;
+    const completedRounds = mr.roundReports;
+
+    // 计算综合评分
+    let totalScore = 0;
+    const avgScores = { star_completeness: 0, quantification: 0, position_match: 0, structure: 0, highlight: 0 };
+    if (completedRounds.length > 0) {
+      completedRounds.forEach(r => {
+        totalScore += r.score || 0;
+        if (r.scores) {
+          Object.keys(avgScores).forEach(k => {
+            avgScores[k] += (r.scores[k] || 0);
+          });
+        }
+      });
+      const count = completedRounds.length;
+      totalScore = Math.round(totalScore / count);
+      Object.keys(avgScores).forEach(k => {
+        avgScores[k] = Math.round(avgScores[k] / count);
+      });
+    }
+
+    // 轮次对比数据
+    const roundComparisons = completedRounds.map(r => ({
+      label: r.label,
+      score: r.score,
+      scores: r.scores,
+      totalQuestions: r.totalQuestions,
+      evaluatedAt: r.evaluatedAt
+    }));
+
+    res.json({
+      enabled: true,
+      positionType: mr.positionType,
+      totalRounds: mr.totalRounds,
+      completedRounds: completedRounds.length,
+      overallScore: totalScore,
+      averageScores: avgScores,
+      roundReports: completedRounds,
+      roundComparisons,
+      rounds: mr.rounds
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -1780,6 +2499,122 @@ app.get('/api/dashboard/stats', (req, res) => {
   } catch (e) {
     console.error('Dashboard stats error:', e);
     res.status(500).json({ error: 'Failed to load dashboard stats' });
+  }
+});
+
+// ============================================================
+// API: 岗位竞争力雷达 — 基于JD+简历对比的多维度匹配度可视化
+// ============================================================
+app.get('/api/radar/competitiveness', (req, res) => {
+  try {
+    const sessionId = req.query.sessionId || activeSessionId;
+    const session = sessions.get(sessionId);
+    if (!session?.analysis) {
+      return res.json({ available: false, error: '请先上传JD和简历完成分析' });
+    }
+
+    const gap = session.analysis.gap || {};
+    const jd = session.analysis.jd || {};
+    const resume = session.analysis.resume || {};
+
+    // 维度定义（5个维度，与GAP_ANALYSIS_SYSTEM一致）
+    const dimensions = [
+      { key: 'hard_skills', label: '硬技能匹配', max: 30, weight: 30 },
+      { key: 'soft_skills', label: '软素质匹配', max: 20, weight: 20 },
+      { key: 'core_duties', label: '核心职责匹配', max: 20, weight: 20 },
+      { key: 'industry_experience', label: '行业经验匹配', max: 15, weight: 15 },
+      { key: 'education', label: '学历背景匹配', max: 15, weight: 15 }
+    ];
+
+    // 从 gap.dimension_scores 获取各维度得分（新分析会包含，旧分析需要降级）
+    const dimScores = gap.dimension_scores || {};
+    const hasDetailScores = Object.keys(dimScores).length > 0;
+
+    // 构建雷达数据
+    const radarData = dimensions.map(dim => {
+      let score = 0;
+      let detail = '';
+      let max = dim.max;
+
+      if (hasDetailScores && dimScores[dim.key]) {
+        score = dimScores[dim.key].score || 0;
+        detail = dimScores[dim.key].detail || '';
+        max = dimScores[dim.key].max || dim.max;
+      } else {
+        // 降级：从match_score按权重比例估算
+        const matchScore = gap.match_score || 0;
+        score = Math.round((matchScore / 100) * max);
+        detail = '基于综合匹配度估算';
+      }
+
+      // 计算百分比（用于雷达图统一尺度）
+      const pct = max > 0 ? Math.round((score / max) * 100) : 0;
+
+      // 生成改进建议
+      let suggestion = '';
+      if (pct >= 80) {
+        suggestion = '继续保持，这是你的优势项';
+      } else if (pct >= 60) {
+        suggestion = '有一定基础，建议针对性强化';
+      } else if (pct >= 40) {
+        suggestion = '存在明显差距，需要重点准备';
+      } else {
+        suggestion = '薄弱环节，建议优先补齐';
+      }
+
+      return {
+        key: dim.key,
+        label: dim.label,
+        score,
+        max,
+        pct,
+        detail,
+        suggestion,
+        weight: dim.weight
+      };
+    });
+
+    // 总体匹配度
+    const matchScore = gap.match_score || 0;
+    let matchLevel = '未分析';
+    let matchColor = 'var(--muted)';
+    if (matchScore >= 90) { matchLevel = '高度匹配'; matchColor = '#10B981'; }
+    else if (matchScore >= 70) { matchLevel = '良好匹配'; matchColor = '#22d3ee'; }
+    else if (matchScore >= 50) { matchLevel = '部分匹配'; matchColor = '#F59E0B'; }
+    else if (matchScore > 0) { matchLevel = '差距较大'; matchColor = '#EF4444'; }
+
+    // 构建JD要求和简历信息摘要
+    const jdSummary = {
+      position: jd.position || '',
+      company: jd.company || '',
+      hard_skills: jd.hard_skills || [],
+      soft_skills: jd.soft_skills || [],
+      core_duties: jd.core_duties || []
+    };
+
+    const resumeSummary = {
+      education: resume.education || {},
+      skills: resume.skills || [],
+      internships: (resume.internships || []).map(i => ({ company: i.company, role: i.role })),
+      projects: (resume.projects || []).map(p => ({ name: p.name, role: p.role }))
+    };
+
+    res.json({
+      available: true,
+      matchScore,
+      matchLevel,
+      matchColor,
+      dimensions: radarData,
+      jdSummary,
+      resumeSummary,
+      hasDetailScores,
+      advantagePoints: gap.advantage_points || [],
+      weakPoints: gap.weak_points || [],
+      interviewStrategy: gap.interview_strategy || ''
+    });
+  } catch (e) {
+    console.error('Radar competitiveness error:', e);
+    res.status(500).json({ error: '获取竞争力数据失败' });
   }
 });
 

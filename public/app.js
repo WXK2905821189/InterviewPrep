@@ -64,6 +64,8 @@ let state = {
   sessionId: null,
   analysis: null,
   interviewActive: false,
+  stressInterviewActive: false,
+  freePracticeActive: false,
   _practiceQuestion: null,
   _lastFeedback: null,
   jdText: '',
@@ -141,6 +143,9 @@ async function loadDashboard() {
 
     // 异步加载趋势数据
     loadTrendData();
+
+    // 加载岗位竞争力雷达
+    loadCompetitivenessRadar();
 
     // Defer heavy chart rendering
     setTimeout(() => renderRadarChart(data.radarScores || {}), 100);
@@ -392,6 +397,111 @@ function renderRadarChart(scores) {
       lineStyle: { color: '#4F46E5', width: 2 }, itemStyle: { color: '#4F46E5' } }] }]
   });
   window.addEventListener('resize', () => chart.resize());
+}
+
+// ============================================================
+// 岗位竞争力雷达 — 加载并渲染 JD vs 简历对比
+// ============================================================
+async function loadCompetitivenessRadar() {
+  try {
+    const data = await fetchRetry('/api/radar/competitiveness').then(r => r.json()).catch(() => null);
+    if (!data || !data.available) return;
+
+    const card = $('#dash-competitiveness-card');
+    if (!card) return;
+    card.style.display = '';
+
+    // 渲染匹配度标签
+    const badge = $('#competitiveness-match-badge');
+    if (badge) {
+      badge.textContent = data.matchLevel + ' ' + data.matchScore + '分';
+      badge.style.background = data.matchColor + '22';
+      badge.style.color = data.matchColor;
+      badge.style.border = '1px solid ' + data.matchColor;
+    }
+
+    // 渲染雷达图
+    const el = $('#dash-competitiveness-radar');
+    if (!el) return;
+    const dims = data.dimensions || [];
+    const radarLabels = dims.map(d => d.label);
+    const myScores = dims.map(d => d.pct);
+    const maxScores = dims.map(d => 100);
+
+    var chart = echarts.init(el);
+    chart.setOption({
+      tooltip: {
+        trigger: 'item',
+        formatter: function(params) {
+          var idx = params.dataIndex;
+          var dim = dims[idx];
+          if (!dim) return '';
+          return '<b>' + dim.label + '</b><br>' +
+            '得分: ' + dim.score + '/' + dim.max + ' (' + dim.pct + '%)<br>' +
+            '<span style="font-size:0.78rem;color:var(--muted);">' + (dim.detail || '') + '</span>';
+        }
+      },
+      radar: {
+        indicator: radarLabels.map(function(l) { return { name: l, max: 100 }; }),
+        center: ['50%','55%'],
+        radius: '65%',
+        shape: 'polygon',
+        splitNumber: 5,
+        name: { textStyle: { fontSize: 11, color: 'var(--text)' } },
+        splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
+        splitArea: { areaStyle: { color: ['rgba(79,70,229,0.02)','rgba(79,70,229,0.04)'] } },
+        axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+      },
+      series: [{
+        type: 'radar',
+        data: [{
+          value: myScores,
+          name: '你的匹配度',
+          areaStyle: { color: 'rgba(79,70,229,0.2)' },
+          lineStyle: { color: '#4F46E5', width: 2 },
+          itemStyle: { color: '#4F46E5' }
+        }],
+        symbol: 'circle',
+        symbolSize: 6
+      }]
+    });
+    window.addEventListener('resize', function() { chart.resize(); });
+
+    // 渲染详情面板
+    const details = $('#dash-competitiveness-details');
+    if (details) {
+      var detailHtml = dims.map(function(d) {
+        var barColor = '#4F46E5';
+        if (d.pct >= 80) barColor = '#10B981';
+        else if (d.pct >= 60) barColor = '#22d3ee';
+        else if (d.pct >= 40) barColor = '#F59E0B';
+        else barColor = '#EF4444';
+
+        return '<div style="margin-bottom:0.6rem;padding:0.4rem 0.6rem;background:var(--bg1);border-radius:6px;">' +
+          '<div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:0.3rem;">' +
+            '<span style="font-weight:500;">' + d.label + '</span>' +
+            '<span style="color:' + barColor + ';font-weight:600;">' + d.score + '/' + d.max + '</span>' +
+          '</div>' +
+          '<div class="study-progress-bar" style="height:6px;background:var(--rule);">' +
+            '<div class="study-progress-fill" style="width:' + d.pct + '%;height:100%;background:' + barColor + ';border-radius:3px;transition:width 0.6s ease;"></div>' +
+          '</div>' +
+          '<div style="font-size:0.72rem;color:var(--muted);margin-top:0.2rem;">' + d.suggestion + '</div>' +
+        '</div>';
+      }).join('');
+      details.innerHTML = detailHtml;
+    }
+
+    // 面试策略
+    if (data.interviewStrategy) {
+      var strategy = $('#dash-competitiveness-strategy');
+      if (strategy) {
+        strategy.style.display = '';
+        strategy.innerHTML = '<strong>💡 面试策略建议：</strong> ' + data.interviewStrategy;
+      }
+    }
+  } catch (e) {
+    // 静默失败
+  }
 }
 
 function renderPieChart(data) {
@@ -2088,6 +2198,293 @@ $('#btn-interview-start').addEventListener('click', async () => {
   finally { btn.disabled = false; btn.textContent = '开始模拟面试'; }
 });
 
+// ============================================================
+// 压力面试（对抗练习）— 事件绑定
+// ============================================================
+$('#btn-interview-stress-start').addEventListener('click', async () => {
+  if (!state.sessionId) {
+    toast('⚠️ 请先在「分析 & 押题」完成JD分析');
+    return;
+  }
+  const btn = $('#btn-interview-stress-start');
+  btn.disabled = true; btn.textContent = '启动中...';
+  try {
+    const res = await fetchRetry('/api/interview/stress/start', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: state.sessionId })
+    }).then(r => r.json());
+
+    if (res.error) { toast('启动失败: ' + res.error); return; }
+
+    state.stressInterviewActive = true;
+    $('#interview-empty').classList.add('hidden');
+    $('#interview-area').classList.remove('hidden');
+    $('#interview-report').classList.add('hidden');
+    $('#interview-chat').innerHTML = '';
+
+    // 显示压力面试模式标记
+    var modeBadge = document.createElement('div');
+    modeBadge.id = 'stress-mode-badge';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:#DC2626;color:#fff;font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.textContent = '🔥 压力面试模式 — AI面试官会打断、质疑、施压，保持冷静！';
+    $('#interview-chat').appendChild(modeBadge);
+
+    if (res.tips) {
+      var tipMsg = document.createElement('div');
+      tipMsg.className = 'chat-msg system';
+      tipMsg.textContent = res.tips;
+      $('#interview-chat').appendChild(tipMsg);
+    }
+
+    addChatMsg('interviewer', res.message, '压力面试');
+    setStatus('🔥 压力面试中');
+    showInterviewModelAnswerButton();
+  } catch (e) { toast('启动失败: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '🔥 压力面试'; }
+});
+
+// 压力面试提交回答（覆盖原有提交逻辑）
+async function submitStressInterviewAnswer() {
+  const answer = $('#interview-answer').value.trim();
+  if (!answer || answer.length < 3) return toast('请输入你的回答');
+  if (!state.stressInterviewActive) return;
+  addChatMsg('candidate', answer);
+  $('#interview-answer').value = '';
+  const btn = $('#btn-interview-submit');
+  btn.disabled = true;
+  try {
+    const res = await fetchRetry('/api/interview/stress/respond', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: state.sessionId, answer })
+    }).then(r => r.json());
+
+    if (res.error) { toast('处理失败: ' + res.error); return; }
+
+    if (res.type === 'end') {
+      state.stressInterviewActive = false;
+      addChatMsg('system', '压力面试结束！正在生成评估报告...');
+      // 加载评估报告
+      try {
+        const evalRes = await fetchRetry('/api/interview/stress/evaluate', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ sessionId: state.sessionId })
+        }).then(r => r.json());
+        if (evalRes.report) {
+          renderStressReport(evalRes.report);
+        }
+      } catch {}
+    } else if (res.type === 'interrupt') {
+      addChatMsg('system', '⛔ 面试官打断了你');
+      addChatMsg('interviewer', res.message, '压力追问');
+    } else if (res.type === 'challenge') {
+      addChatMsg('system', '❓ 面试官提出质疑');
+      addChatMsg('interviewer', res.message, '质疑');
+    } else if (res.type === 'silence') {
+      addChatMsg('system', '🕐 面试官沉默了几秒...');
+      addChatMsg('interviewer', res.message, '施压');
+    } else {
+      addChatMsg('interviewer', res.question || res.message, '压力面试');
+      showInterviewModelAnswerButton();
+    }
+  } catch (e) { toast('处理失败: ' + e.message); }
+  finally { btn.disabled = false; }
+}
+
+// 渲染压力面试报告
+function renderStressReport(report) {
+  if (!report) return;
+  $('#interview-report').classList.remove('hidden');
+  var scores = report.scores || {};
+  var html = '<div class="card"><h3>📊 压力面试评估报告</h3>';
+  html += '<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">';
+  var dims = [
+    { key: 'stress_resistance', label: '抗压能力', color: '#4F46E5' },
+    { key: 'adaptability', label: '应变能力', color: '#10B981' },
+    { key: 'answer_quality', label: '回答质量', color: '#F59E0B' },
+    { key: 'emotion_control', label: '情绪控制', color: '#8B5CF6' },
+    { key: 'overall', label: '整体表现', color: '#22d3ee' }
+  ];
+  dims.forEach(function(d) {
+    var v = scores[d.key] || 0;
+    html += '<div style="flex:1;min-width:120px;text-align:center;padding:0.8rem;background:var(--bg1);border-radius:8px;">' +
+      '<div style="font-size:1.5rem;font-weight:700;color:' + d.color + ';">' + v + '</div>' +
+      '<div style="font-size:0.72rem;color:var(--muted);">' + d.label + '</div></div>';
+  });
+  html += '</div>';
+  if (report.total_score) {
+    html += '<div style="text-align:center;margin-bottom:0.8rem;"><span style="font-size:1.2rem;font-weight:700;">总分: ' + report.total_score + '</span></div>';
+  }
+  if (report.strengths && report.strengths.length) {
+    html += '<div style="margin-bottom:0.5rem;"><strong>✅ 优势</strong><ul>' + report.strengths.map(function(s) { return '<li>' + s + '</li>'; }).join('') + '</ul></div>';
+  }
+  if (report.weaknesses && report.weaknesses.length) {
+    html += '<div style="margin-bottom:0.5rem;"><strong>⚠️ 待改进</strong><ul>' + report.weaknesses.map(function(w) { return '<li>' + w + '</li>'; }).join('') + '</ul></div>';
+  }
+  if (report.advice) {
+    html += '<div style="padding:0.6rem;background:var(--bg1);border-radius:6px;"><strong>💡 建议：</strong>' + report.advice + '</div>';
+  }
+  html += '</div><div style="margin-top:0.5rem;display:flex;gap:0.4rem;justify-content:flex-end;">' +
+    '<button onclick="resetInterviewUI()" class="btn-primary" style="font-size:0.78rem;">重新开始</button></div>';
+  $('#interview-report').innerHTML = html;
+}
+
+// ============================================================
+// 面试陪练模式 — 自由对话
+// ============================================================
+$('#btn-practice-free-start').addEventListener('click', async () => {
+  if (!state.sessionId) {
+    toast('⚠️ 请先在「分析 & 押题」完成JD分析');
+    return;
+  }
+  const btn = $('#btn-practice-free-start');
+  btn.disabled = true; btn.textContent = '启动中...';
+  try {
+    const res = await fetchRetry('/api/practice/free/start', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: state.sessionId })
+    }).then(r => r.json());
+
+    if (res.error) { toast('启动失败: ' + res.error); return; }
+
+    state.freePracticeActive = true;
+    $('#interview-empty').classList.add('hidden');
+    $('#interview-area').classList.remove('hidden');
+    $('#interview-report').classList.add('hidden');
+    $('#interview-chat').innerHTML = '';
+
+    // 显示陪练模式标记
+    var modeBadge = document.createElement('div');
+    modeBadge.id = 'free-mode-badge';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:#10B981;color:#fff;font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.textContent = '💬 面试陪练模式 — 自由对话，随时反问、换话题';
+    $('#interview-chat').appendChild(modeBadge);
+
+    if (res.tips) {
+      var tipMsg = document.createElement('div');
+      tipMsg.className = 'chat-msg system';
+      tipMsg.textContent = res.tips;
+      $('#interview-chat').appendChild(tipMsg);
+    }
+
+    addChatMsg('coach', res.message, '陪练');
+    setStatus('💬 陪练中');
+  } catch (e) { toast('启动失败: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '💬 面试陪练'; }
+});
+
+// 陪练模式提交回答
+async function submitFreePracticeAnswer() {
+  const answer = $('#interview-answer').value.trim();
+  if (!answer || answer.length < 3) return toast('请输入你的回答');
+  if (!state.freePracticeActive) return;
+  addChatMsg('candidate', answer);
+  $('#interview-answer').value = '';
+  const btn = $('#btn-interview-submit');
+  btn.disabled = true;
+  try {
+    const res = await fetchRetry('/api/practice/free/respond', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: state.sessionId, message: answer })
+    }).then(r => r.json());
+
+    if (res.error) { toast('处理失败: ' + res.error); return; }
+
+    // 显示反馈
+    if (res.feedback) {
+      var feedbackDiv = document.createElement('div');
+      feedbackDiv.className = 'chat-msg system';
+      feedbackDiv.textContent = '💡 ' + res.feedback;
+      $('#interview-chat').appendChild(feedbackDiv);
+    }
+
+    // 显示陪练跟进
+    if (res.followUp) {
+      addChatMsg('coach', res.followUp, '陪练');
+    }
+
+    if (res.canEnd) {
+      // 显示结束确认按钮
+      var endDiv = document.createElement('div');
+      endDiv.style.cssText = 'text-align:center;margin:0.5rem 0;';
+      endDiv.innerHTML = '<button onclick="endFreePractice()" class="btn-outline" style="font-size:0.78rem;color:#10B981;border-color:#10B981;">📊 结束陪练并查看评估</button>';
+      $('#interview-chat').appendChild(endDiv);
+    }
+  } catch (e) { toast('处理失败: ' + e.message); }
+  finally { btn.disabled = false; }
+}
+
+// 结束陪练模式
+async function endFreePractice() {
+  try {
+    const res = await fetchRetry('/api/practice/free/evaluate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: state.sessionId })
+    }).then(r => r.json());
+
+    state.freePracticeActive = false;
+    addChatMsg('system', '陪练结束！正在生成评估...');
+
+    if (res.report) {
+      renderFreePracticeReport(res.report);
+    }
+  } catch (e) { toast('评估失败: ' + e.message); }
+}
+
+// 渲染陪练报告
+function renderFreePracticeReport(report) {
+  if (!report) return;
+  $('#interview-report').classList.remove('hidden');
+  var scores = report.scores || {};
+  var html = '<div class="card"><h3>📊 面试陪练评估报告</h3>';
+  html += '<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">';
+  var dims = [
+    { key: 'clarity', label: '表达清晰度', color: '#4F46E5' },
+    { key: 'depth', label: '内容深度', color: '#10B981' },
+    { key: 'interaction', label: '互动质量', color: '#F59E0B' },
+    { key: 'learning', label: '学习能力', color: '#8B5CF6' },
+    { key: 'overall', label: '整体表现', color: '#22d3ee' }
+  ];
+  dims.forEach(function(d) {
+    var v = scores[d.key] || 0;
+    html += '<div style="flex:1;min-width:120px;text-align:center;padding:0.8rem;background:var(--bg1);border-radius:8px;">' +
+      '<div style="font-size:1.5rem;font-weight:700;color:' + d.color + ';">' + v + '</div>' +
+      '<div style="font-size:0.72rem;color:var(--muted);">' + d.label + '</div></div>';
+  });
+  html += '</div>';
+  if (report.total_score) {
+    html += '<div style="text-align:center;margin-bottom:0.8rem;"><span style="font-size:1.2rem;font-weight:700;">总分: ' + report.total_score + '</span></div>';
+  }
+  if (report.strengths && report.strengths.length) {
+    html += '<div style="margin-bottom:0.5rem;"><strong>✅ 优势</strong><ul>' + report.strengths.map(function(s) { return '<li>' + s + '</li>'; }).join('') + '</ul></div>';
+  }
+  if (report.suggestions && report.suggestions.length) {
+    html += '<div style="margin-bottom:0.5rem;"><strong>💡 改进建议</strong><ul>' + report.suggestions.map(function(s) { return '<li>' + s + '</li>'; }).join('') + '</ul></div>';
+  }
+  if (report.practice_tips) {
+    html += '<div style="padding:0.6rem;background:var(--bg1);border-radius:6px;"><strong>📝 后续练习建议：</strong>' + report.practice_tips + '</div>';
+  }
+  html += '</div><div style="margin-top:0.5rem;display:flex;gap:0.4rem;justify-content:flex-end;">' +
+    '<button onclick="resetInterviewUI()" class="btn-primary" style="font-size:0.78rem;">重新开始</button></div>';
+  $('#interview-report').innerHTML = html;
+}
+
+// 重置面试UI到初始状态
+function resetInterviewUI() {
+  state.interviewActive = false;
+  state.stressInterviewActive = false;
+  state.freePracticeActive = false;
+  $('#interview-area').classList.add('hidden');
+  $('#interview-report').classList.add('hidden');
+  $('#interview-empty').classList.remove('hidden');
+  $('#interview-chat').innerHTML = '';
+  $('#interview-answer').value = '';
+  setStatus('⚪ 就绪');
+  var badge = $('#stress-mode-badge');
+  if (badge) badge.remove();
+  var badge2 = $('#free-mode-badge');
+  if (badge2) badge2.remove();
+}
+
 function addChatMsg(role, content, stage) {
   const div = document.createElement('div');
   div.className = `chat-msg ${role}`;
@@ -2141,9 +2538,18 @@ async function submitInterviewAnswer() {
   finally { btn.disabled = false; }
 }
 
-$('#btn-interview-submit').addEventListener('click', submitInterviewAnswer);
+$('#btn-interview-submit').addEventListener('click', () => {
+  if (state.stressInterviewActive) submitStressInterviewAnswer();
+  else if (state.freePracticeActive) submitFreePracticeAnswer();
+  else submitInterviewAnswer();
+});
 $('#interview-answer').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) { e.preventDefault(); submitInterviewAnswer(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
+    e.preventDefault();
+    if (state.stressInterviewActive) submitStressInterviewAnswer();
+    else if (state.freePracticeActive) submitFreePracticeAnswer();
+    else submitInterviewAnswer();
+  }
   // Ctrl+Enter / Shift+Enter = 换行
 });
 
@@ -2161,6 +2567,26 @@ $('#btn-interview-skip').addEventListener('click', async () => {
 
 $('#btn-interview-end').addEventListener('click', async () => {
   if (!state.sessionId) return;
+
+  // 压力面试结束
+  if (state.stressInterviewActive) {
+    try {
+      const res = await fetchRetry('/api/interview/stress/evaluate', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ sessionId: state.sessionId })
+      }).then(r => r.json());
+      state.stressInterviewActive = false;
+      addChatMsg('system', '压力面试已结束，正在生成评估报告...');
+      if (res.report) renderStressReport(res.report);
+    } catch (e) { toast('评估失败: ' + e.message); }
+    return;
+  }
+
+  // 陪练模式结束
+  if (state.freePracticeActive) {
+    await endFreePractice();
+    return;
+  }
   
   // Check if there are answered questions
   const interview = state._interviewState;

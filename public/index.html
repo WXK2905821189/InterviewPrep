@@ -84,6 +84,26 @@
       </div>
     </div>
 
+    <!-- 岗位竞争力雷达（JD vs 简历对比） -->
+    <div class="card" style="margin-bottom:1rem;display:none;" id="dash-competitiveness-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.8rem;">
+        <div>
+          <h3 style="margin:0;">🎯 岗位竞争力雷达</h3>
+          <p style="font-size:0.78rem;color:var(--muted);margin:0.2rem 0 0 0;">JD要求 vs 你的简历 — 多维度匹配度分析</p>
+        </div>
+        <div id="competitiveness-match-badge" style="font-size:0.78rem;padding:0.2rem 0.7rem;border-radius:999px;font-weight:600;"></div>
+      </div>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+        <div style="flex:1;min-width:300px;">
+          <div id="dash-competitiveness-radar" style="height:300px;"></div>
+        </div>
+        <div style="flex:1;min-width:280px;" id="dash-competitiveness-details">
+          <div style="text-align:center;padding:2rem;color:var(--muted);font-size:0.82rem;">加载中...</div>
+        </div>
+      </div>
+      <div id="dash-competitiveness-strategy" style="margin-top:0.8rem;padding:0.6rem;background:var(--bg1);border-radius:8px;font-size:0.82rem;display:none;"></div>
+    </div>
+
     <!-- 能力成长趋势图 -->
     <div class="card" style="margin-bottom:1rem;display:none;" id="dash-trend-card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.8rem;">
@@ -400,12 +420,36 @@
   <section id="tab-interview" class="tab-content">
     <div class="card hero-card">
       <h1>全真模拟面试</h1>
-      <p>AI扮演面试官，按真实流程推进，包含智能追问</p>
+      <p>AI扮演面试官，按真实流程推进，包含智能追问。支持多轮面试模式</p>
     </div>
 
     <div id="interview-empty" class="empty-state">
-      <p>请先在「分析 & 押题」页完成分析，然后点击下方按钮开始模拟面试</p>
-      <button id="btn-interview-start" class="btn-primary">开始模拟面试</button>
+      <p>请先在「分析 & 押题」页完成分析，然后选择面试模式</p>
+      <div style="display:flex;gap:0.8rem;justify-content:center;flex-wrap:wrap;margin-top:0.8rem;">
+        <button id="btn-interview-start" class="btn-primary">单轮面试</button>
+        <button id="btn-interview-multi-start" class="btn-ai-action btn-ai-model">多轮面试 <span style="font-size:0.72rem;opacity:0.7;">(推荐)</span></button>
+        <button id="btn-interview-stress-start" class="btn-outline" style="border-color:#DC2626;color:#DC2626;font-size:0.85rem;">🔥 压力面试</button>
+        <button id="btn-practice-free-start" class="btn-outline" style="border-color:#10B981;color:#10B981;font-size:0.85rem;">💬 面试陪练</button>
+      </div>
+    </div>
+
+    <!-- 多轮面试进度条 -->
+    <div id="multi-round-bar" class="hidden" style="margin-bottom:1rem;">
+      <div class="card" style="padding:0.8rem 1rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.5rem;">
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <span id="multi-round-title" style="font-weight:600;font-size:0.9rem;">技术岗 · 多轮面试</span>
+            <span id="multi-round-current" style="font-size:0.78rem;background:var(--accent);color:#fff;padding:0.1rem 0.5rem;border-radius:999px;">第1轮</span>
+          </div>
+          <div style="font-size:0.78rem;color:var(--muted);" id="multi-round-progress-text">1 / 3</div>
+        </div>
+        <div id="multi-round-steps" style="display:flex;gap:0.4rem;align-items:center;"></div>
+      </div>
+    </div>
+
+    <!-- 轮次过渡界面（一轮结束后显示） -->
+    <div id="round-transition" class="hidden card" style="text-align:center;padding:1.5rem;margin-bottom:1rem;border-left:4px solid var(--accent2);">
+      <div id="round-transition-content"></div>
     </div>
 
     <div id="interview-area" class="hidden">
@@ -418,7 +462,7 @@
         <div class="interview-actions">
           <button id="btn-interview-submit" class="btn-primary">回答</button>
           <button id="btn-interview-skip" class="btn-outline">跳过此题</button>
-          <button id="btn-interview-end" class="btn-outline" style="color:#DC2626;border-color:#DC2626;">结束面试</button>
+          <button id="btn-interview-end" class="btn-outline" style="color:#DC2626;border-color:#DC2626;">结束本轮</button>
         </div>
       </div>
     </div>
@@ -430,7 +474,10 @@
       <button id="btn-export-interview-docx" class="btn-outline" style="font-size:0.72rem;padding:0.2rem 0.5rem;">📄 导出 DOCX</button>
     </div>
     <div id="interview-counter-questions" class="hidden card" style="margin-top:0.8rem;"></div>
-    
+
+    <!-- 多轮面试综合报告 -->
+    <div id="multi-round-report" class="hidden"></div>
+
     <!-- 面试历史回顾 -->
     <div class="card" style="margin-top:1.5rem;">
       <details>
