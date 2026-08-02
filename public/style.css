@@ -1635,3 +1635,108 @@ select:focus, .styled-select:focus {
 /* 群面计时器 */
 #group-timer { font-variant-numeric: tabular-nums; font-family: 'DM Sans', monospace; }
 
+/* ===== 通用题库答题区 ===== */
+.behavioral-answer-section {
+  margin-top: 1rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  background: var(--bg2);
+}
+.behavioral-answer-section h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.behavioral-answer-input {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.7;
+  padding: 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--ink);
+  margin-bottom: 0.5rem;
+  transition: border-color 0.2s;
+}
+.behavioral-answer-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.behavioral-answer-input::placeholder {
+  color: var(--muted);
+}
+.behavioral-answer-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.behavioral-eval-result {
+  margin-top: 0.8rem;
+  animation: fadeInUp 0.3s ease-out;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* AI 进度指示器 */
+.ai-progress-area {
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--tag-bg);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  animation: fadeInUp 0.2s ease-out;
+}
+.ai-progress-spinner {
+  width: 16px; height: 16px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.ai-progress-text {
+  flex: 1;
+  line-height: 1.4;
+}
+.ai-progress-steps {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.ai-progress-step {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg2);
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  transition: all 0.2s;
+}
+.ai-progress-step.active {
+  color: var(--accent);
+  font-weight: 600;
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+.ai-progress-step.done {
+  color: var(--green);
+  border-color: var(--green);
+  background: rgba(74,124,89,0.06);
+}
+

@@ -988,13 +988,36 @@ function renderCounterQuestions(mode, data) {
 function loadModelAnswerHandler(mode, question, section) {
   var btnId = mode === 'interview' ? 'btn-interview-model-answer' : 'btn-model-answer-' + mode;
   var btn = document.getElementById(btnId);
-  if (!btn) return;
+  // 如果在全局DOM找不到，尝试在section内查找
+  if (!btn && section) {
+    btn = section.querySelector('#' + btnId);
+  }
+  if (!btn) {
+    console.warn('[loadModelAnswerHandler] 按钮未找到:', btnId);
+    return;
+  }
 
   btn.addEventListener('click', async function() {
     btn.disabled = true;
-    btn.innerHTML = '<span class=\"ai-action-icon\">⏳</span>AI正在生成标准答案...';
+    btn.innerHTML = '<span class="ai-action-icon">⏳</span>AI正在生成标准答案...';
+
+    // 创建进度指示器（如果section有空间）
+    var progressContainer = null;
+    var progress = null;
+    if (mode !== 'interview') {
+      progressContainer = document.createElement('div');
+      progressContainer.id = 'model-answer-progress-' + mode;
+      progressContainer.style.display = 'none';
+      section.appendChild(progressContainer);
+      progress = showAiProgress('model-answer-progress-' + mode, [
+        '正在准备简历信息...',
+        '正在生成个性化标准答案...',
+        '正在整理答案格式...'
+      ]);
+    }
 
     try {
+      if (progress) progress.update(0);
       var jd = state.analysis ? (state.analysis.jd || {}) : {};
       var jdSummary = jd.position
         ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || jd.responsibilities || '')
@@ -1002,6 +1025,12 @@ function loadModelAnswerHandler(mode, question, section) {
       var resumeText = state.resumeText || '';
       var fullExperiences = state._fullExperiences || [];
 
+      // 步骤1: 准备简历信息
+      if (progress) progress.update(0);
+      await new Promise(function(r) { setTimeout(r, 200); });
+
+      // 步骤2: 调用API生成标准答案
+      if (progress) progress.update(1);
       var result = await fetchRetry('/api/generate-model-answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1014,16 +1043,21 @@ function loadModelAnswerHandler(mode, question, section) {
       }).then(function(r) { return r.json(); });
 
       if (result.model_answer) {
-        var html = '<div class=\"model-answer-card\">';
-        html += '<div class=\"model-answer-header\">✨ AI标准答案参考 <button class=\"btn-speak\" data-text=\"' + result.model_answer.replace(/"/g, '&quot;').replace(/\n/g, ' ') + '\" style=\"width:24px;height:24px;font-size:0.7rem;margin-left:0.4rem;vertical-align:middle;\">🔊</button></div>';
-        html += '<div class=\"model-answer-body\">' + result.model_answer.replace(/\n/g, '<br>') + '</div>';
+        // 步骤3: 整理格式
+        if (progress) progress.update(2);
+        await new Promise(function(r) { setTimeout(r, 200); });
+        if (progress) progress.done();
+
+        var html = '<div class="model-answer-card">';
+        html += '<div class="model-answer-header">✨ AI标准答案参考 <button class="btn-speak" data-text="' + result.model_answer.replace(/"/g, '&quot;').replace(/\n/g, ' ') + '" style="width:24px;height:24px;font-size:0.7rem;margin-left:0.4rem;vertical-align:middle;">🔊</button></div>';
+        html += '<div class="model-answer-body">' + result.model_answer.replace(/\n/g, '<br>') + '</div>';
         if (result.resume_anchors && result.resume_anchors.length > 0) {
-          html += '<div class=\"model-answer-anchors\"><b>📎 引用的简历经历：</b>' +
-            result.resume_anchors.map(function(a) { return '<span class=\"anchor-tag\">' + a + '</span>'; }).join('') +
+          html += '<div class="model-answer-anchors"><b>📎 引用的简历经历：</b>' +
+            result.resume_anchors.map(function(a) { return '<span class="anchor-tag">' + a + '</span>'; }).join('') +
             '</div>';
         }
         if (result.tips) {
-          html += '<div class=\"model-answer-tips\">💡 ' + result.tips + '</div>';
+          html += '<div class="model-answer-tips">💡 ' + result.tips + '</div>';
         }
         html += '</div>';
 
@@ -1040,15 +1074,21 @@ function loadModelAnswerHandler(mode, question, section) {
           section.innerHTML = html;
           section.scrollIntoView({ behavior: 'smooth' });
         }
+
+        // 恢复按钮状态
+        btn.disabled = false;
+        btn.innerHTML = '<span class="ai-action-icon">✨</span>AI标准答案';
       } else {
         toast('生成失败：未获取到答案');
+        if (progress) progress.hide();
         btn.disabled = false;
-        btn.innerHTML = '<span class=\"ai-action-icon\">✨</span>AI标准答案';
+        btn.innerHTML = '<span class="ai-action-icon">✨</span>AI标准答案';
       }
     } catch (e) {
       toast('标准答案生成失败: ' + e.message);
+      if (progress) progress.hide();
       btn.disabled = false;
-      btn.innerHTML = '<span class=\"ai-action-icon\">✨</span>AI标准答案';
+      btn.innerHTML = '<span class="ai-action-icon">✨</span>AI标准答案';
     }
   });
 }
@@ -2043,15 +2083,36 @@ $('#btn-practice-submit').addEventListener('click', async () => {
   btn.disabled = true; btn.textContent = '评估中...';
   setStatus('🔄 评估中...');
 
+  // 显示进度指示器
+  $('#practice-feedback').classList.remove('hidden');
+  $('#practice-feedback').innerHTML = '<div id="practice-eval-progress" style="display:none;"></div>';
+  var progress = showAiProgress('practice-eval-progress', [
+    '正在分析你的回答...',
+    '正在逐句评估...',
+    '正在生成改进建议...',
+    '评估完成'
+  ]);
+
   try {
     // 构建 JD 摘要 + 简历上下文
+    progress.update(0);
+    await new Promise(function(r) { setTimeout(r, 200); });
+
     const jd = state.analysis?.jd || {};
     const jdSummary = jd.position
       ? `${jd.company || ''} ${jd.position} | ${jd.requirements || jd.responsibilities || ''}`.slice(0, 400)
       : (jd.requirements || jd.responsibilities || '');
     const resumeText = state.resumeText || '';
+
+    progress.update(1);
     const result = await apiEvaluateSingle(question, answer, jdSummary, resumeText.slice(0, 3000));
+
+    progress.update(2);
+    await new Promise(function(r) { setTimeout(r, 200); });
+    progress.done();
+
     state._lastFeedback = result;
+    setTimeout(function() { progress.hide(); }, 500);
     renderSingleFeedback(result);
     // 根据用户选择决定是否保存练习记录
     const saveHistory = document.getElementById('chk-save-history')?.checked !== false;
@@ -2068,6 +2129,7 @@ $('#btn-practice-submit').addEventListener('click', async () => {
     showFollowUpButton('practice', question, answer, result);
   } catch (e) {
     toast('评估失败: ' + e.message);
+    if (progress) progress.hide();
   } finally {
     btn.disabled = false; btn.textContent = '重新提交';
   }
@@ -3565,6 +3627,51 @@ let _behavioralQuestions = null;
 let _behavioralAnswers = {}; // { qId: { answer, key_points, tips } }
 let _behavioralActiveId = null; // 当前选中的题目ID
 let _behavioralFilterCategory = '';
+let _behavioralUserAnswers = {}; // 用户输入的答题文本
+let _behavioralEvalResults = {}; // 评估结果缓存
+
+// 通用进度提示工具
+function showAiProgress(containerId, steps) {
+  var container = document.getElementById(containerId);
+  if (!container) return null;
+  container.innerHTML = '<div class="ai-progress-area">' +
+    '<div class="ai-progress-spinner"></div>' +
+    '<div class="ai-progress-text">' + steps[0] + '</div>' +
+    '</div>' +
+    '<div class="ai-progress-steps">' +
+    steps.map(function(s, i) {
+      return '<span class="ai-progress-step ' + (i === 0 ? 'active' : '') + '" data-idx="' + i + '">' + s + '</span>';
+    }).join('') +
+    '</div>';
+  container.style.display = 'block';
+  return {
+    update: function(idx) {
+      var stepsEl = container.querySelectorAll('.ai-progress-step');
+      stepsEl.forEach(function(el, i) {
+        el.classList.remove('active', 'done');
+        if (i < idx) el.classList.add('done');
+        else if (i === idx) el.classList.add('active');
+      });
+      var textEl = container.querySelector('.ai-progress-text');
+      if (textEl && idx < steps.length) textEl.textContent = steps[idx];
+    },
+    done: function() {
+      var stepsEl = container.querySelectorAll('.ai-progress-step');
+      stepsEl.forEach(function(el) {
+        el.classList.remove('active');
+        el.classList.add('done');
+      });
+      var textEl = container.querySelector('.ai-progress-text');
+      if (textEl) textEl.textContent = '✅ 完成';
+      var spinner = container.querySelector('.ai-progress-spinner');
+      if (spinner) spinner.style.display = 'none';
+    },
+    hide: function() {
+      container.style.display = 'none';
+      container.innerHTML = '';
+    }
+  };
+}
 
 async function loadBehavioralQuestions(filterCategory = '') {
   _behavioralFilterCategory = filterCategory;
@@ -3682,11 +3789,17 @@ function renderBehavioralDetail(qId) {
 
   const saved = _behavioralAnswers[qId];
   const detailEl = $('#behavioral-detail');
+  const evalResult = _behavioralEvalResults[qId];
 
   // 格式化 answer 文本
   let answerHtml = '';
   if (saved?.answer) {
     answerHtml = formatBehavioralAnswer(saved.answer);
+  }
+
+  var evalResultHtml = '';
+  if (evalResult) {
+    evalResultHtml = renderBehavioralEvalResult(evalResult, qId);
   }
 
   detailEl.innerHTML = `
@@ -3731,9 +3844,33 @@ function renderBehavioralDetail(qId) {
         ${saved ? `<button class="btn-outline btn-copy-behavioral" data-id="${q.id}" style="font-size:0.78rem;padding:0.4rem 0.8rem;">📋 复制</button>` : ''}
       </div>
     </div>
+
+    <!-- ===== 答题区 ===== -->
+    <div class="behavioral-answer-section">
+      <h3>✍️ 练习回答</h3>
+      <textarea class="behavioral-answer-input" id="behavioral-answer-input" rows="6" placeholder="写下你的回答，然后点击提交获取AI评估...">${_behavioralUserAnswers[qId] || ''}</textarea>
+      <div class="behavioral-answer-actions">
+        <button class="btn-primary" id="btn-behavioral-submit" style="font-size:0.82rem;padding:0.4rem 1rem;">✅ 提交回答</button>
+        <label class="switch-label" style="font-size:0.78rem;">
+          <input type="checkbox" id="chk-behavioral-save" checked> 纳入练习记录
+        </label>
+      </div>
+      <!-- 进度指示器 -->
+      <div id="behavioral-eval-progress" style="display:none;"></div>
+      <!-- 评估结果 -->
+      <div id="behavioral-eval-result" class="behavioral-eval-result">${evalResultHtml}</div>
+    </div>
   `;
 
-  // 绑定按钮事件
+  // 保存用户输入内容
+  var inputTa = $('#behavioral-answer-input');
+  if (inputTa) {
+    inputTa.addEventListener('input', function() {
+      _behavioralUserAnswers[qId] = this.value;
+    });
+  }
+
+  // 绑定生成答案按钮事件
   const genBtn = detailEl.querySelector('.btn-gen-behavioral');
   if (genBtn) {
     genBtn.addEventListener('click', async () => {
@@ -3771,6 +3908,172 @@ function renderBehavioralDetail(qId) {
         setTimeout(() => { copyBtn.textContent = '📋 复制'; }, 1500);
       } catch(e) {
         toast('复制失败');
+      }
+    });
+  }
+
+  // 绑定提交回答按钮事件
+  var submitBtn = $('#btn-behavioral-submit');
+  if (submitBtn) {
+    submitBtn.addEventListener('click', async function() {
+      var answer = _behavioralUserAnswers[qId] || '';
+      if (!answer || answer.length < 5) {
+        toast('请先写下你的回答（至少5个字）');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳ 评估中...';
+
+      // 显示进度
+      var progress = showAiProgress('behavioral-eval-progress', [
+        '正在分析你的回答...',
+        '正在逐句评估...',
+        '正在生成改进建议...',
+        '评估完成'
+      ]);
+
+      var jd = state.analysis?.jd || {};
+      var jdSummary = jd.position ? (jd.company || '') + ' ' + jd.position : '';
+      var resumeText = state.resumeText || '';
+
+      try {
+        // 步骤1: 准备数据
+        progress.update(0);
+        await new Promise(function(r) { setTimeout(r, 300); });
+
+        // 步骤2: 调用评估API
+        progress.update(1);
+        var result = await fetchRetry('/api/evaluate-single', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: q.question,
+            answer: answer,
+            jdSummary: jdSummary.slice(0, 400),
+            resumeText: resumeText.slice(0, 3000)
+          })
+        }).then(function(r) { return r.json(); });
+
+        if (result.error) throw new Error(result.error);
+
+        // 步骤3: 生成改进建议
+        progress.update(2);
+        await new Promise(function(r) { setTimeout(r, 200); });
+
+        // 保存评估结果
+        _behavioralEvalResults[qId] = result;
+        progress.done();
+
+        // 更新侧边栏显示已答状态
+        renderBehavioralSidebar($('#behavioral-search')?.value || '');
+
+        // 显示评估结果
+         var evalEl = $('#behavioral-eval-result');
+         evalEl.innerHTML = renderBehavioralEvalResult(result, qId);
+
+         // 绑定后续操作按钮
+         setTimeout(function() {
+           bindBehavioralFollowUp(qId, q.question, answer);
+         }, 50);
+
+         // 保存练习记录
+        var saveHistory = $('#chk-behavioral-save')?.checked !== false;
+        if (saveHistory) {
+          try {
+            await autoSavePracticeRecord(q.question, answer, result);
+          } catch(e) { /* 静默失败 */ }
+        }
+
+        // 隐藏进度
+        setTimeout(function() { progress.hide(); }, 1500);
+        setStatus('✅ 评估完成');
+        showTabDot('behavioral');
+      } catch(e) {
+        toast('评估失败: ' + e.message);
+        progress.hide();
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '✅ 重新提交';
+      }
+    });
+  }
+}
+
+// 渲染通用题库评估结果
+function renderBehavioralEvalResult(data, qId) {
+  var scores = data.scores || {};
+  var lines = data.line_by_line || [];
+  var html = '<div class="card feedback-card" style="margin-top:0;">';
+  html += '<h3 style="font-size:1rem;">评估结果 — 综合 ' + (data.overall_score || '--') + '分</h3>';
+  html += '<div class="feedback-scores">';
+  ['star_completeness','quantification','position_match','structure','highlight'].forEach(function(k) {
+    var labels = {star_completeness:'STAR完整性',quantification:'量化程度',position_match:'岗位匹配',structure:'表达结构',highlight:'亮点突出'};
+    html += '<div class="feedback-score"><div class="num">' + (scores[k] || '--') + '</div><div class="label">' + labels[k] + '</div></div>';
+  });
+  html += '</div>';
+  html += '<div class="feedback-lines">';
+  lines.forEach(function(l) {
+    html += '<div class="feedback-line ' + (l.is_good ? 'good' : 'bad') + '">' +
+      (l.is_good ? '✅' : '⚠️') + ' "' + (l.quote || '') + '" — ' + (l.comment || '') + '</div>';
+  });
+  html += '</div>';
+  if (data.improved_version) {
+    html += '<div class="feedback-improved"><strong>改进版参考：</strong><br>' + data.improved_version + '</div>';
+  }
+  if (data.key_takeaways) {
+    html += '<div style="font-size:0.82rem;color:var(--muted);margin-top:0.5rem;"><strong>关键改进点：</strong>' + (data.key_takeaways.join ? data.key_takeaways.join('；') : data.key_takeaways) + '</div>';
+  }
+  html += '</div>';
+
+  // 后续操作按钮（追问、标准答案、反问）
+  html += '<div class="follow-up-section" id="behavioral-followup-' + qId + '">';
+  html += '<div class="ai-action-row">';
+  html += '<button class="btn-ai-action btn-ai-model" id="btn-model-answer-behavioral" title="AI基于你的简历生成标准答案参考"><span class="ai-action-icon">✨</span>AI标准答案</button>';
+  html += '<button class="btn-ai-action btn-ai-counter" id="btn-behavioral-counter" title="AI生成你可以反问面试官的问题"><span class="ai-action-icon">🔄</span>生成反问</button>';
+  html += '</div></div>';
+
+  return html;
+}
+
+// 在通用题库评估结果渲染后绑定后续按钮事件
+function bindBehavioralFollowUp(qId, question, answer) {
+  // 标准答案按钮
+  var section = document.getElementById('behavioral-followup-' + qId);
+  if (!section) return;
+  loadModelAnswerHandler('behavioral', question, section);
+  // 反问按钮
+  var counterBtn = document.getElementById('btn-behavioral-counter');
+  if (counterBtn) {
+    counterBtn.addEventListener('click', async function() {
+      counterBtn.disabled = true;
+      counterBtn.innerHTML = '<span class="ai-action-icon">⏳</span>生成中...';
+      try {
+        var jd = state.analysis ? (state.analysis.jd || {}) : {};
+        var jdSummary = jd.position ? (jd.company || '') + ' ' + jd.position : '';
+        var result = await fetchRetry('/api/generate-counter-questions', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: question,
+            answer: answer,
+            jdSummary: jdSummary,
+            resumeText: (state.resumeText || '').slice(0, 2000),
+            fullExperiences: state._fullExperiences || []
+          })
+        }).then(function(r) { return r.json(); });
+        if (result.counter_questions) {
+          var html = '<div class="model-answer-card" style="margin-top:0.5rem;">' +
+            '<div class="model-answer-header">🔄 你可以反问面试官的问题</div>' +
+            '<div class="model-answer-body">' + result.counter_questions.replace(/\n/g, '<br>') + '</div></div>';
+          section.insertAdjacentHTML('afterend', html);
+        } else {
+          toast('生成失败');
+        }
+      } catch(e) {
+        toast('反问生成失败: ' + e.message);
+      } finally {
+        counterBtn.disabled = false;
+        counterBtn.innerHTML = '<span class="ai-action-icon">🔄</span>生成反问';
       }
     });
   }
@@ -4788,14 +5091,38 @@ function downloadFile(filename, content, mimeType) {
     var btn = document.getElementById('btn-drill-submit');
     btn.disabled = true; btn.textContent = '评估中...';
     setStatus('评估中...');
+
+    // 显示进度指示器
+    var fb = document.getElementById('drill-feedback');
+    if (fb) {
+      fb.classList.remove('hidden');
+      fb.innerHTML = '<div id="drill-eval-progress" style="display:none;"></div>';
+    }
+    var progress = showAiProgress('drill-eval-progress', [
+      '正在分析你的回答...',
+      '正在逐句评估...',
+      '正在生成改进建议...',
+      '评估完成'
+    ]);
+
     try {
       clearDrillTimer();
+      progress.update(0);
+      await new Promise(function(r) { setTimeout(r, 200); });
+
       var jd = state.analysis ? (state.analysis.jd || {}) : {};
       var jdSummary = jd.position
         ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || jd.responsibilities || '')
         : (jd.requirements || jd.responsibilities || '');
       var resumeText = (state.resumeText || '').slice(0, 3000);
+
+      progress.update(1);
       var result = await apiEvaluateSingle(question, answer, jdSummary, resumeText);
+
+      progress.update(2);
+      await new Promise(function(r) { setTimeout(r, 200); });
+      progress.done();
+
       state._drillFeedback = result;
       // 标记为已完成
       try {
@@ -4804,6 +5131,8 @@ function downloadFile(filename, content, mimeType) {
         cs[question] = true;
         localStorage.setItem(key, JSON.stringify(cs));
       } catch(e) {}
+
+      setTimeout(function() { if (progress) progress.hide(); }, 500);
       renderDrillFeedback(result);
       var allQs = getAllDrillQuestions();
       var found = null;
@@ -4821,6 +5150,7 @@ function downloadFile(filename, content, mimeType) {
       showFollowUpButton('drill', question, answer, result);
     } catch (e) {
       toast('评估失败: ' + e.message);
+      if (progress) progress.hide();
     } finally {
       btn.disabled = false; btn.textContent = '重新提交';
     }
