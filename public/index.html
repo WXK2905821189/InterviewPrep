@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;0,800;1,500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1784536600">
+<link rel="stylesheet" href="style.css?v=1785746000">
 </head>
 <body>
 
@@ -43,6 +43,7 @@
     <button class="nav-tab" data-tab="behavioral">💡 通用题库</button>
     <button class="nav-tab" data-tab="company">公司调研</button>
     <button class="nav-tab" data-tab="wrongbook">📝 错题集</button>
+    <button class="nav-tab" data-tab="studyplan">📋 备考方案</button>
     <button class="nav-tab" data-tab="group">👥 群面模拟<span class="tab-dot" data-dot-tab="group"></span></button>
   </div>
 </nav>
@@ -753,6 +754,71 @@
   </section>
 
   <!-- ====== 群面模拟 ====== -->
+  <!-- ====== Tab: 备考方案 ====== -->
+  <section id="tab-studyplan" class="tab-content">
+    <div class="card hero-card">
+      <h1>📋 面试备考方案</h1>
+      <p class="subtitle">JD 逐条拆解 → 你的现有能力匹配度 → 需要补充什么 → 怎么补，AI 一键生成个性化备考方案</p>
+    </div>
+
+    <div id="studyplan-empty" class="empty-state" style="text-align:center;padding:2rem;">
+      <p style="color:var(--muted);margin-bottom:0.8rem;">请先在「分析 & 押题」中完成JD分析，然后点击下方按钮生成备考方案</p>
+      <button id="btn-studyplan-generate" class="btn-primary" disabled>生成备考方案</button>
+      <p id="studyplan-hint" style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem;">⚠️ 需要先完成JD分析</p>
+    </div>
+
+    <div id="studyplan-area" class="hidden">
+      <div class="card" style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <h3 id="studyplan-title" style="margin:0;">备考方案</h3>
+            <p id="studyplan-meta" style="font-size:0.78rem;color:var(--muted);margin:0.2rem 0 0 0;"></p>
+          </div>
+          <button id="btn-studyplan-regenerate" class="btn-outline" style="font-size:0.78rem;">🔄 重新生成</button>
+        </div>
+      </div>
+
+      <!-- 整体策略 -->
+      <div id="studyplan-strategy" class="card" style="margin-bottom:1rem;border-left:4px solid var(--accent);"></div>
+
+      <!-- 第一步：JD 逐条拆解 -->
+      <div class="card" style="margin-bottom:1rem;">
+        <h3 style="margin-bottom:0.8rem;">📋 JD 逐条拆解</h3>
+        <div id="studyplan-jd-breakdown"></div>
+      </div>
+
+      <!-- 第二步：能力匹配度 -->
+      <div class="card" style="margin-bottom:1rem;">
+        <h3 style="margin-bottom:0.8rem;">🎯 你的现有能力匹配度</h3>
+        <div id="studyplan-match"></div>
+      </div>
+
+      <!-- 第三步：需要补充什么 -->
+      <div class="card" style="margin-bottom:1rem;">
+        <h3 style="margin-bottom:0.8rem;">📌 需要补充什么</h3>
+        <div id="studyplan-gaps"></div>
+      </div>
+
+      <!-- 第四步：行动方案 -->
+      <div class="card" style="margin-bottom:1rem;">
+        <h3 style="margin-bottom:0.8rem;">🚀 具体行动方案</h3>
+        <div id="studyplan-actions"></div>
+      </div>
+
+      <!-- 周计划 -->
+      <div class="card" style="margin-bottom:1rem;">
+        <h3 style="margin-bottom:0.8rem;">📅 备考周计划</h3>
+        <div id="studyplan-schedule"></div>
+      </div>
+
+      <!-- 核心建议 -->
+      <div class="card" style="margin-bottom:1rem;background:var(--accent-glow);">
+        <h3 style="margin-bottom:0.8rem;">💡 核心备考建议</h3>
+        <div id="studyplan-advice"></div>
+      </div>
+    </div>
+  </section>
+
   <section id="tab-group" class="tab-content">
     <div class="card hero-card">
       <h1>👥 群面模拟</h1>
@@ -946,6 +1012,6 @@
 </div>
 
 <script src="echarts.min.js" defer></script>
-<script src="app.js?v=1784536600" defer></script>
+<script src="app.js?v=1785746000" defer></script>
 </body>
 </html>

@@ -1566,6 +1566,38 @@ ${fullExperiences?.length ? '候选人完整经历补充（简历之外的详细
   }
 });
 
+// ============================================================
+// API: 面试备考方案生成
+// ============================================================
+app.post('/api/study-plan/generate', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) return res.status(400).json({ error: '请提供会话ID' });
+
+    const session = sessions.get(sessionId);
+    if (!session || !session.analysis) return res.status(400).json({ error: '未找到分析结果，请先在分析&押题中完成JD分析' });
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const jdParsed = JSON.stringify(session.analysis.jd || {}, null, 2);
+    const resumeParsed = JSON.stringify(session.analysis.resume || {}, null, 2);
+    const gapAnalysis = JSON.stringify(session.analysis.gap || {}, null, 2);
+
+    const planPrompt = fillTemplate(prompts.STUDY_PLAN_SYSTEM, {
+      jd_parsed: jdParsed.slice(0, 3000),
+      resume_parsed: resumeParsed.slice(0, 3000),
+      gap_analysis: gapAnalysis.slice(0, 2000)
+    });
+
+    const result = await llm(planPrompt, '', { temperature: 0.7 });
+    res.json(result);
+  } catch (e) {
+    console.error('[API] 备考方案生成失败:', e);
+    res.status(500).json({ error: '生成失败: ' + e.message });
+  }
+});
+
 // API 8: AI Provider 管理 — 供应商/连接/测试/模型
 // ============================================================
 

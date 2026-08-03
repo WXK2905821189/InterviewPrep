@@ -1394,6 +1394,17 @@ function switchTab(tabName) {
       if (hint) hint.textContent = '请先在"分析&押题"中完成JD分析';
     }
   }
+  if (tabName === 'studyplan') {
+    var btn = document.getElementById('btn-studyplan-generate');
+    var hint = document.getElementById('studyplan-hint');
+    if (state.analysis && state.sessionId) {
+      if (btn) btn.disabled = false;
+      if (hint) hint.textContent = '✅ 已检测到JD分析结果，点击生成备考方案';
+    } else {
+      if (btn) btn.disabled = true;
+      if (hint) hint.textContent = '⚠️ 需要先完成JD分析';
+    }
+  }
 }
 
 $$('.nav-tab').forEach(tab => {
@@ -2056,8 +2067,17 @@ function selectPracticeQuestion(question) {
     $('#practice-q-text').textContent = found.question || question;
   }
   
+  // 清除上一题的内容：清空回答框、清除评估反馈、移除所有动态插入的标准答案卡片
   $('#practice-answer').value = '';
   $('#practice-feedback').classList.add('hidden');
+  $('#practice-feedback').innerHTML = '';
+  // 移除所有在 #practice-feedback 外部动态插入的模型答案卡片
+  document.querySelectorAll('#practice-area .model-answer-card').forEach(function(el) { el.remove(); });
+  // 移除追问/标准答案/反问按钮区域
+  document.querySelectorAll('.follow-up-section').forEach(function(el) { el.remove(); });
+  // 清除进度指示器
+  document.querySelectorAll('[id^="model-answer-progress-"]').forEach(function(el) { el.remove(); });
+  
   $('#btn-save-phrase').classList.add('hidden');
   state._practiceQuestion = question;
   state._lastFeedback = null;
@@ -7036,6 +7056,173 @@ function renderMianjingAnalysis(data, container) {
       }).catch(function() {});
     };
   }
+
+  // ============================================================
+// Tab: 面试备考方案
+// ============================================================
+
+// 生成备考方案
+async function generateStudyPlan() {
+  if (!state.sessionId) {
+    toast('⚠️ 请先在「分析 & 押题」完成JD分析');
+    return;
+  }
+  var btn = document.getElementById('btn-studyplan-generate');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中...'; }
+
+  try {
+    toast('正在生成个性化备考方案...');
+    var result = await fetchRetry('/api/study-plan/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: state.sessionId })
+    }).then(function(r) { return r.json(); });
+
+    if (result.error) {
+      toast('生成失败: ' + result.error);
+      if (btn) { btn.disabled = false; btn.textContent = '生成备考方案'; }
+      return;
+    }
+
+    state._studyPlan = result;
+    renderStudyPlan(result);
+    toast('✅ 备考方案已生成');
+
+    // 显示方案区域，隐藏空状态
+    document.getElementById('studyplan-empty')?.classList.add('hidden');
+    document.getElementById('studyplan-area')?.classList.remove('hidden');
+  } catch (e) {
+    toast('生成失败: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '生成备考方案'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '生成备考方案'; }
+  }
+}
+
+// 渲染备考方案
+function renderStudyPlan(plan) {
+  if (!plan) return;
+
+  // 标题和元数据
+  var titleEl = document.getElementById('studyplan-title');
+  var metaEl = document.getElementById('studyplan-meta');
+  if (titleEl) titleEl.textContent = '📋 ' + (plan.position || '') + ' · 备考方案';
+  if (metaEl) metaEl.textContent = '🏢 ' + (plan.company || '') + ' | 一键生成，为你量身定制';
+
+  // 整体策略
+  var strategyEl = document.getElementById('studyplan-strategy');
+  if (strategyEl && plan.overall_strategy) {
+    strategyEl.innerHTML = '<h3 style="margin:0 0 0.5rem 0;">🎯 整体备考策略</h3><p style="font-size:0.88rem;line-height:1.8;color:var(--ink);">' + plan.overall_strategy.replace(/\n/g, '<br>') + '</p>';
+  }
+
+  // JD 逐条拆解
+  var jdEl = document.getElementById('studyplan-jd-breakdown');
+  if (jdEl && plan.jd_breakdown && plan.jd_breakdown.length) {
+    jdEl.innerHTML = plan.jd_breakdown.map(function(item) {
+      var typeMap = { hard_skill: '🔧 硬技能', soft_skill: '💬 软素质', experience: '📁 经验', education: '🎓 学历' };
+      var typeLabel = typeMap[item.type] || item.type;
+      var impColor = item.importance === '核心' ? 'var(--red)' : (item.importance === '重要' ? 'var(--accent)' : 'var(--muted)');
+      return '<div style="display:flex;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--rule);font-size:0.85rem;">' +
+        '<span style="flex-shrink:0;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:' + impColor + '20;color:' + impColor + ';font-weight:600;">' + item.importance + '</span>' +
+        '<span style="flex-shrink:0;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--tag-bg);color:var(--muted);">' + typeLabel + '</span>' +
+        '<div style="flex:1;"><div style="font-weight:600;">' + item.requirement + '</div>' +
+        (item.detail ? '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem;">' + item.detail + '</div>' : '') + '</div></div>';
+    }).join('');
+  }
+
+  // 能力匹配度
+  var matchEl = document.getElementById('studyplan-match');
+  if (matchEl && plan.capability_match && plan.capability_match.length) {
+    matchEl.innerHTML = plan.capability_match.map(function(item) {
+      var icon = item.match === '完全匹配' ? '✅' : (item.match === '部分匹配' ? '⚠️' : '❌');
+      var color = item.match === '完全匹配' ? 'var(--green)' : (item.match === '部分匹配' ? 'var(--accent)' : 'var(--red)');
+      return '<div style="padding:0.5rem 0;border-bottom:1px solid var(--rule);">' +
+        '<div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.2rem;">' +
+        '<span style="font-size:0.9rem;">' + icon + '</span>' +
+        '<span style="font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:' + color + '20;color:' + color + ';font-weight:600;">' + item.match + '</span>' +
+        '<span style="font-weight:600;font-size:0.85rem;">' + item.requirement + '</span></div>' +
+        (item.match_detail ? '<div style="font-size:0.8rem;color:var(--muted);margin-left:1.5rem;">' + item.match_detail + '</div>' : '') +
+        (item.evidence ? '<div style="font-size:0.78rem;color:var(--accent);margin-left:1.5rem;margin-top:0.15rem;">📎 ' + item.evidence + '</div>' : '') + '</div>';
+    }).join('');
+  }
+
+  // 需要补充什么
+  var gapsEl = document.getElementById('studyplan-gaps');
+  if (gapsEl && plan.gaps_to_fill && plan.gaps_to_fill.length) {
+    var catColor = { '知识短板': 'var(--red)', '经历缺口': 'var(--accent)', '表达准备': '#7C3AED', '面试技巧': '#2563EB' };
+    gapsEl.innerHTML = plan.gaps_to_fill.map(function(item) {
+      var catLabel = item.category || '其他';
+      var color = catColor[catLabel] || 'var(--muted)';
+      return '<div style="padding:0.6rem;border:1px solid var(--rule);border-radius:8px;margin-bottom:0.5rem;border-left:3px solid ' + color + ';">' +
+        '<div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem;">' +
+        '<span style="font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:' + color + '20;color:' + color + ';font-weight:600;">' + catLabel + '</span>' +
+        '<span style="font-weight:600;font-size:0.85rem;">' + item.area + '</span></div>' +
+        '<div style="font-size:0.8rem;color:var(--muted);">现状：' + (item.current_status || '') + '</div>' +
+        '<div style="font-size:0.8rem;color:var(--green);">目标：' + (item.target || '') + '</div></div>';
+    }).join('');
+  }
+
+  // 行动方案
+  var actionsEl = document.getElementById('studyplan-actions');
+  if (actionsEl && plan.action_plan && plan.action_plan.length) {
+    var priColor = { '高': 'var(--red)', '中': 'var(--accent)', '低': 'var(--muted)' };
+    actionsEl.innerHTML = plan.action_plan.map(function(item) {
+      var color = priColor[item.priority] || 'var(--muted)';
+      return '<div style="padding:0.6rem;border:1px solid var(--rule);border-radius:8px;margin-bottom:0.5rem;">' +
+        '<div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem;">' +
+        '<span style="font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:' + color + '20;color:' + color + ';font-weight:600;">🔴 ' + item.priority + '优先级</span>' +
+        '<span style="font-weight:600;font-size:0.85rem;">' + item.action + '</span></div>' +
+        (item.resource ? '<div style="font-size:0.8rem;color:var(--accent);margin-bottom:0.15rem;">📚 ' + item.resource + '</div>' : '') +
+        (item.estimated_time ? '<div style="font-size:0.78rem;color:var(--muted);">⏱ ' + item.estimated_time + '</div>' : '') +
+        (item.tips ? '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem;">💡 ' + item.tips + '</div>' : '') + '</div>';
+    }).join('');
+  }
+
+  // 周计划
+  var scheduleEl = document.getElementById('studyplan-schedule');
+  if (scheduleEl && plan.weekly_schedule && plan.weekly_schedule.length) {
+    scheduleEl.innerHTML = plan.weekly_schedule.map(function(week) {
+      return '<div style="padding:0.6rem;border:1px solid var(--rule);border-radius:8px;margin-bottom:0.5rem;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">' +
+        '<span style="font-weight:700;font-size:0.9rem;color:var(--accent);">' + week.week + '</span>' +
+        '<span style="font-size:0.78rem;color:var(--muted);">🎯 ' + (week.goal || '') + '</span></div>' +
+        '<div style="font-size:0.82rem;font-weight:500;margin-bottom:0.3rem;">📌 ' + (week.focus || '') + '</div>' +
+        '<ul style="margin:0;padding-left:1.2rem;font-size:0.8rem;color:var(--muted);">' +
+        (week.tasks || []).map(function(t) { return '<li>' + t + '</li>'; }).join('') + '</ul></div>';
+    }).join('');
+  } else {
+    if (scheduleEl) scheduleEl.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--muted);">备考周计划生成中，请稍后查看...</div>';
+  }
+
+  // 核心建议
+  var adviceEl = document.getElementById('studyplan-advice');
+  if (adviceEl && plan.key_advice) {
+    var adviceList = typeof plan.key_advice === 'string' ? plan.key_advice.split('\n').filter(Boolean) : (plan.key_advice || []);
+    adviceEl.innerHTML = '<ul style="margin:0;padding-left:1.2rem;font-size:0.88rem;line-height:2;">' +
+      adviceList.map(function(a) { return '<li>' + (a.startsWith('-') || a.startsWith('•') ? a.substring(1).trim() : a) + '</li>'; }).join('') + '</ul>';
+  }
+}
+
+// 绑定事件
+(function() {
+  var btnGenerate = document.getElementById('btn-studyplan-generate');
+  if (btnGenerate) {
+    btnGenerate.addEventListener('click', function() {
+      generateStudyPlan();
+    });
+  }
+
+  var btnRegenerate = document.getElementById('btn-studyplan-regenerate');
+  if (btnRegenerate) {
+    btnRegenerate.addEventListener('click', function() {
+      // 隐藏已有结果，重新生成
+      document.getElementById('studyplan-area')?.classList.add('hidden');
+      document.getElementById('studyplan-empty')?.classList.remove('hidden');
+      document.getElementById('studyplan-empty')?.querySelector('p')?.classList.add('hidden');
+      generateStudyPlan();
+    });
+  }
+})();
 
   // 初始加载
   setTimeout(loadExperiences, 1000);
