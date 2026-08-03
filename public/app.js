@@ -66,6 +66,9 @@ let state = {
   interviewActive: false,
   stressInterviewActive: false,
   freePracticeActive: false,
+  multiRoundActive: false,
+  _multiRoundCurrent: 1,
+  _multiRoundTotal: 3,
   _practiceQuestion: null,
   _lastFeedback: null,
   jdText: '',
@@ -984,113 +987,126 @@ function renderCounterQuestions(mode, data) {
   container.scrollIntoView({ behavior: 'smooth' });
 }
 
-// 通用的标准答案生成逻辑
-function loadModelAnswerHandler(mode, question, section) {
-  var btnId = mode === 'interview' ? 'btn-interview-model-answer' : 'btn-model-answer-' + mode;
-  var btn = document.getElementById(btnId);
-  // 如果在全局DOM找不到，尝试在section内查找
-  if (!btn && section) {
-    btn = section.querySelector('#' + btnId);
+// 通用的标准答案生成逻辑（核心函数）
+async function executeModelAnswerGeneration(btn, mode, question, section) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="ai-action-icon">⏳</span>AI正在生成标准答案...';
+
+  // 创建进度指示器（如果section有空间）
+  var progressContainer = null;
+  var progress = null;
+  if (mode !== 'interview' && section) {
+    progressContainer = document.createElement('div');
+    progressContainer.id = 'model-answer-progress-' + mode;
+    progressContainer.style.display = 'none';
+    section.appendChild(progressContainer);
+    progress = showAiProgress('model-answer-progress-' + mode, [
+      '正在准备简历信息...',
+      '正在生成个性化标准答案...',
+      '正在整理答案格式...'
+    ]);
   }
-  if (!btn) {
-    console.warn('[loadModelAnswerHandler] 按钮未找到:', btnId);
-    return;
-  }
 
-  btn.addEventListener('click', async function() {
-    btn.disabled = true;
-    btn.innerHTML = '<span class="ai-action-icon">⏳</span>AI正在生成标准答案...';
+  try {
+    if (progress) progress.update(0);
+    var jd = state.analysis ? (state.analysis.jd || {}) : {};
+    var jdSummary = jd.position
+      ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || jd.responsibilities || '')
+      : (jd.requirements || jd.responsibilities || '');
+    var resumeText = state.resumeText || '';
+    var fullExperiences = state._fullExperiences || [];
 
-    // 创建进度指示器（如果section有空间）
-    var progressContainer = null;
-    var progress = null;
-    if (mode !== 'interview') {
-      progressContainer = document.createElement('div');
-      progressContainer.id = 'model-answer-progress-' + mode;
-      progressContainer.style.display = 'none';
-      section.appendChild(progressContainer);
-      progress = showAiProgress('model-answer-progress-' + mode, [
-        '正在准备简历信息...',
-        '正在生成个性化标准答案...',
-        '正在整理答案格式...'
-      ]);
-    }
+    // 步骤1: 准备简历信息
+    if (progress) progress.update(0);
+    await new Promise(function(r) { setTimeout(r, 200); });
 
-    try {
-      if (progress) progress.update(0);
-      var jd = state.analysis ? (state.analysis.jd || {}) : {};
-      var jdSummary = jd.position
-        ? (jd.company || '') + ' ' + jd.position + ' | ' + (jd.requirements || jd.responsibilities || '')
-        : (jd.requirements || jd.responsibilities || '');
-      var resumeText = state.resumeText || '';
-      var fullExperiences = state._fullExperiences || [];
+    // 步骤2: 调用API生成标准答案
+    if (progress) progress.update(1);
+    var result = await fetchRetry('/api/generate-model-answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: question,
+        jdSummary: jdSummary.slice(0, 400),
+        resumeText: resumeText.slice(0, 3000),
+        fullExperiences: fullExperiences
+      })
+    }).then(function(r) { return r.json(); });
 
-      // 步骤1: 准备简历信息
-      if (progress) progress.update(0);
+    if (result.model_answer) {
+      // 步骤3: 整理格式
+      if (progress) progress.update(2);
       await new Promise(function(r) { setTimeout(r, 200); });
+      if (progress) progress.done();
 
-      // 步骤2: 调用API生成标准答案
-      if (progress) progress.update(1);
-      var result = await fetchRetry('/api/generate-model-answer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: question,
-          jdSummary: jdSummary.slice(0, 400),
-          resumeText: resumeText.slice(0, 3000),
-          fullExperiences: fullExperiences
-        })
-      }).then(function(r) { return r.json(); });
-
-      if (result.model_answer) {
-        // 步骤3: 整理格式
-        if (progress) progress.update(2);
-        await new Promise(function(r) { setTimeout(r, 200); });
-        if (progress) progress.done();
-
-        var html = '<div class="model-answer-card">';
-        html += '<div class="model-answer-header">✨ AI标准答案参考 <button class="btn-speak" data-text="' + result.model_answer.replace(/"/g, '&quot;').replace(/\n/g, ' ') + '" style="width:24px;height:24px;font-size:0.7rem;margin-left:0.4rem;vertical-align:middle;">🔊</button></div>';
-        html += '<div class="model-answer-body">' + result.model_answer.replace(/\n/g, '<br>') + '</div>';
-        if (result.resume_anchors && result.resume_anchors.length > 0) {
-          html += '<div class="model-answer-anchors"><b>📎 引用的简历经历：</b>' +
-            result.resume_anchors.map(function(a) { return '<span class="anchor-tag">' + a + '</span>'; }).join('') +
-            '</div>';
-        }
-        if (result.tips) {
-          html += '<div class="model-answer-tips">💡 ' + result.tips + '</div>';
-        }
-        html += '</div>';
-
-        if (mode === 'interview') {
-          var chat = document.getElementById('interview-chat');
-          if (chat) {
-            var div = document.createElement('div');
-            div.className = 'chat-msg system';
-            div.innerHTML = html;
-            chat.appendChild(div);
-            chat.scrollTop = chat.scrollHeight;
-          }
-        } else {
-          section.innerHTML = html;
-          section.scrollIntoView({ behavior: 'smooth' });
-        }
-
-        // 恢复按钮状态
-        btn.disabled = false;
-        btn.innerHTML = '<span class="ai-action-icon">✨</span>AI标准答案';
-      } else {
-        toast('生成失败：未获取到答案');
-        if (progress) progress.hide();
-        btn.disabled = false;
-        btn.innerHTML = '<span class="ai-action-icon">✨</span>AI标准答案';
+      var html = '<div class="model-answer-card">';
+      html += '<div class="model-answer-header">✨ AI标准答案参考 <button class="btn-speak" data-text="' + result.model_answer.replace(/"/g, '&quot;').replace(/\n/g, ' ') + '" style="width:24px;height:24px;font-size:0.7rem;margin-left:0.4rem;vertical-align:middle;">🔊</button></div>';
+      html += '<div class="model-answer-body">' + result.model_answer.replace(/\n/g, '<br>') + '</div>';
+      if (result.resume_anchors && result.resume_anchors.length > 0) {
+        html += '<div class="model-answer-anchors"><b>📎 引用的简历经历：</b>' +
+          result.resume_anchors.map(function(a) { return '<span class="anchor-tag">' + a + '</span>'; }).join('') +
+          '</div>';
       }
-    } catch (e) {
-      toast('标准答案生成失败: ' + e.message);
+      if (result.tips) {
+        html += '<div class="model-answer-tips">💡 ' + result.tips + '</div>';
+      }
+      html += '</div>';
+
+      if (mode === 'interview') {
+        var chat = document.getElementById('interview-chat');
+        if (chat) {
+          var div = document.createElement('div');
+          div.className = 'chat-msg system';
+          div.innerHTML = html;
+          chat.appendChild(div);
+          chat.scrollTop = chat.scrollHeight;
+        }
+      } else if (section) {
+        section.innerHTML = html;
+        section.scrollIntoView({ behavior: 'smooth' });
+      }
+
+      // 恢复按钮状态
+      btn.disabled = false;
+      btn.innerHTML = '<span class="ai-action-icon">✨</span>AI标准答案';
+    } else {
+      toast('生成失败：未获取到答案');
       if (progress) progress.hide();
       btn.disabled = false;
       btn.innerHTML = '<span class="ai-action-icon">✨</span>AI标准答案';
     }
-  });
+  } catch (e) {
+    toast('标准答案生成失败: ' + e.message);
+    if (progress) progress.hide();
+    btn.disabled = false;
+    btn.innerHTML = '<span class="ai-action-icon">✨</span>AI标准答案';
+  }
+}
+
+// 通用的标准答案生成逻辑 - 绑定按钮点击事件
+function loadModelAnswerHandler(mode, question, section, btnElement) {
+  var btn = btnElement;
+  if (!btn) {
+    var btnId = mode === 'interview' ? 'btn-interview-model-answer' : 'btn-model-answer-' + mode;
+    btn = document.getElementById(btnId);
+    if (!btn && section) {
+      btn = section.querySelector('#' + btnId);
+    }
+    if (!btn) {
+      console.warn('[loadModelAnswerHandler] 按钮未找到:', btnId);
+      return;
+    }
+  }
+
+  // 如果传入了btnElement，说明已经在点击处理中，直接执行
+  // 否则绑定点击事件
+  if (btnElement) {
+    executeModelAnswerGeneration(btn, mode, question, section);
+  } else {
+    btn.addEventListener('click', async function() {
+      executeModelAnswerGeneration(btn, mode, question, section);
+    });
+  }
 }
 
 // Tab 小红点系统
@@ -2261,6 +2277,63 @@ $('#btn-interview-start').addEventListener('click', async () => {
 });
 
 // ============================================================
+// 多轮面试 — 事件绑定
+// ============================================================
+$('#btn-interview-multi-start').addEventListener('click', async () => {
+  if (!state.sessionId) {
+    toast('⚠️ 请先在「分析 & 押题」完成JD分析');
+    return;
+  }
+  const btn = $('#btn-interview-multi-start');
+  btn.disabled = true; btn.textContent = '加载中...';
+  try {
+    // 获取多轮面试信息
+    const infoRes = await fetchRetry('/api/interview/multi/info?sessionId=' + encodeURIComponent(state.sessionId)).then(r => r.json());
+    if (infoRes.error) { toast('无法启动多轮面试: ' + infoRes.error); return; }
+    if (!infoRes.enabled) { toast('当前岗位不支持多轮面试模式'); return; }
+    
+    if (!infoRes.hasEnoughQuestions && !infoRes.activeMultiRound) {
+      toast('分析题目不足，至少需要' + (infoRes.totalRounds * 2) + '道题才能开启多轮面试');
+      return;
+    }
+
+    // 启动多轮面试（从第1轮开始）
+    const startRes = await fetchRetry('/api/interview/multi/start', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: state.sessionId, roundNumber: 1 })
+    }).then(r => r.json());
+
+    if (startRes.error) { toast('启动失败: ' + startRes.error); return; }
+
+    state.multiRoundActive = true;
+    state.interviewActive = true;
+    
+    // 隐藏空状态，显示面试区域
+    $('#interview-empty').classList.add('hidden');
+    $('#interview-area').classList.remove('hidden');
+    $('#interview-report').classList.add('hidden');
+    $('#interview-chat').innerHTML = '';
+    
+    // 显示多轮面试进度条
+    var multiBar = $('#multi-round-bar');
+    multiBar.classList.remove('hidden');
+    updateMultiRoundBar(infoRes.rounds || [], 1, infoRes.totalRounds);
+    
+    // 显示模式标记
+    var modeBadge = document.createElement('div');
+    modeBadge.id = 'multi-round-mode-badge';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--accent);color:#fff;font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.textContent = '🎯 多轮面试模式 — 第1轮: ' + (startRes.roundInfo?.roundLabel || '') + '（共' + infoRes.totalRounds + '轮）';
+    $('#interview-chat').appendChild(modeBadge);
+    
+    addChatMsg('interviewer', startRes.message, startRes.stage);
+    setStatus('🎤 多轮面试中');
+    setTimeout(function() { showInterviewModelAnswerButton(); }, 300);
+  } catch (e) { toast('启动失败: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '多轮面试 (推荐)'; }
+});
+
+// ============================================================
 // 压力面试（对抗练习）— 事件绑定
 // ============================================================
 $('#btn-interview-stress-start').addEventListener('click', async () => {
@@ -2535,6 +2608,7 @@ function resetInterviewUI() {
   state.interviewActive = false;
   state.stressInterviewActive = false;
   state.freePracticeActive = false;
+  state.multiRoundActive = false;
   $('#interview-area').classList.add('hidden');
   $('#interview-report').classList.add('hidden');
   $('#interview-empty').classList.remove('hidden');
@@ -2545,6 +2619,9 @@ function resetInterviewUI() {
   if (badge) badge.remove();
   var badge2 = $('#free-mode-badge');
   if (badge2) badge2.remove();
+  var multiBadge = $('#multi-round-mode-badge');
+  if (multiBadge) multiBadge.remove();
+  $('#multi-round-bar').classList.add('hidden');
 }
 
 function addChatMsg(role, content, stage) {
@@ -2649,6 +2726,53 @@ $('#btn-interview-end').addEventListener('click', async () => {
     await endFreePractice();
     return;
   }
+
+  // 多轮面试结束当前轮
+  if (state.multiRoundActive) {
+    try {
+      const chat = $('#interview-chat');
+      const inputArea = document.querySelector('.interview-input');
+      if (inputArea) inputArea.style.display = 'none';
+      
+      chat.innerHTML += '<div class="card" style="text-align:center;padding:2rem;border:2px dashed var(--accent2);"><div class="spinner" style="margin:0 auto 1rem;"></div><p style="font-size:1rem;font-weight:600;">第' + (state._multiRoundCurrent || 1) + '轮结束 · AI 正在评估...</p></div>';
+      chat.scrollTop = chat.scrollHeight;
+      
+      const resp = await fetchRetry('/api/interview/multi/round-evaluate', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ sessionId: state.sessionId })
+      }).then(r => r.json());
+      
+      if (resp.error) { toast('评估失败: ' + resp.error); return; }
+      
+      // 显示轮次评估
+      setTimeout(() => {
+        chat.innerHTML = '';
+        chat.insertAdjacentHTML('beforeend', '<div class="card" style="text-align:center;padding:1rem;background:linear-gradient(135deg, rgba(79,70,229,0.08), rgba(6,182,212,0.08));border:1px solid var(--accent);"><p style="font-size:1.05rem;font-weight:600;">第' + resp.currentRound + '轮 · ' + (resp.roundLabel || '') + ' 完成</p><p style="font-size:0.85rem;color:var(--muted);">得分: ' + resp.roundScore + '</p></div>');
+        renderInterviewReport(resp.report);
+        if (inputArea) inputArea.style.display = '';
+      }, 800);
+      
+      // 更新进度条
+      updateMultiRoundBar(null, resp.currentRound, resp.totalRounds);
+      
+      // 如果不是最后一轮，显示继续下一轮按钮
+      if (!resp.isLastRound && resp.nextRound) {
+        setTimeout(() => {
+          $('#interview-report').insertAdjacentHTML('beforeend', '<div class="card" style="text-align:center;margin-top:0.5rem;padding:0.8rem;"><p style="font-size:0.9rem;margin-bottom:0.5rem;">下一轮: ' + resp.nextRound.label + '</p><button id="btn-multi-next-round" class="btn-primary" style="font-size:0.85rem;">🚀 进入第' + resp.nextRound.round + '轮</button></div>');
+          $('#btn-multi-next-round').addEventListener('click', async function() {
+            startNextMultiRound(resp.nextRound.round);
+          });
+        }, 1000);
+      } else if (resp.allCompleted) {
+        // 所有轮次完成，显示综合报告
+        setTimeout(() => {
+          loadMultiRoundFinalReport();
+        }, 1000);
+      }
+      
+    } catch (e) { toast('评估失败: ' + e.message); }
+    return;
+  }
   
   // Check if there are answered questions
   const interview = state._interviewState;
@@ -2706,6 +2830,114 @@ $('#btn-interview-end').addEventListener('click', async () => {
   }
 });
 
+// 更新多轮面试进度条
+function updateMultiRoundBar(rounds, currentRound, totalRounds) {
+  var bar = $('#multi-round-bar');
+  if (!bar) return;
+  bar.classList.remove('hidden');
+  var titleEl = $('#multi-round-title');
+  var currentEl = $('#multi-round-current');
+  var progressText = $('#multi-round-progress-text');
+  var stepsEl = $('#multi-round-steps');
+  
+  if (titleEl) titleEl.textContent = (state._positionLabel || '多轮面试') + ' · 多轮面试';
+  if (currentEl) currentEl.textContent = '第' + currentRound + '轮';
+  if (progressText) progressText.textContent = currentRound + ' / ' + totalRounds;
+  
+  state._multiRoundCurrent = currentRound;
+  state._multiRoundTotal = totalRounds;
+  
+  if (stepsEl && rounds && rounds.length) {
+    stepsEl.innerHTML = rounds.map(function(r, i) {
+      var status = i + 1 < currentRound ? 'completed' : (i + 1 === currentRound ? 'active' : 'pending');
+      var cls = status === 'completed' ? 'color:var(--green);' : (status === 'active' ? 'color:var(--accent);font-weight:600;' : 'color:var(--muted);opacity:0.5;');
+      var icon = status === 'completed' ? '✅' : (status === 'active' ? '🔵' : '⚪');
+      return '<span style="display:flex;align-items:center;gap:0.2rem;font-size:0.72rem;' + cls + '">' + icon + ' ' + r.label + '</span>';
+    }).join(' → ');
+  }
+}
+
+// 启动下一轮多轮面试
+async function startNextMultiRound(roundNumber) {
+  try {
+    $('#interview-report').classList.add('hidden');
+    $('#interview-report').innerHTML = '';
+    $('#interview-area').classList.remove('hidden');
+    $('#interview-chat').innerHTML = '';
+    
+    var inputArea = document.querySelector('.interview-input');
+    if (inputArea) inputArea.style.display = '';
+    
+    // 显示模式标记
+    var modeBadge = document.createElement('div');
+    modeBadge.id = 'multi-round-mode-badge';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--accent);color:#fff;font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.textContent = '🎯 多轮面试模式 — 第' + roundNumber + '轮进行中';
+    $('#interview-chat').appendChild(modeBadge);
+    
+    setStatus('🎤 多轮面试中');
+    
+    const res = await fetchRetry('/api/interview/multi/start', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: state.sessionId, roundNumber: roundNumber })
+    }).then(r => r.json());
+    
+    if (res.error) { toast('启动失败: ' + res.error); return; }
+    
+    state.multiRoundActive = true;
+    state.interviewActive = true;
+    
+    addChatMsg('interviewer', res.message, res.stage);
+    updateMultiRoundBar(null, roundNumber, state._multiRoundTotal || 3);
+    setTimeout(function() { showInterviewModelAnswerButton(); }, 300);
+  } catch (e) { toast('启动下一轮失败: ' + e.message); }
+}
+
+// 加载多轮面试综合报告
+async function loadMultiRoundFinalReport() {
+  try {
+    const res = await fetchRetry('/api/interview/multi/report?sessionId=' + encodeURIComponent(state.sessionId)).then(r => r.json());
+    if (!res.enabled || !res.roundReports || !res.roundReports.length) return;
+    
+    $('#interview-report').classList.remove('hidden');
+    var html = '<div class="card"><h2>🏆 多轮面试综合报告</h2>';
+    html += '<div style="text-align:center;margin:1rem 0;"><div style="font-size:2.5rem;font-weight:800;color:var(--accent);">' + (res.overallScore || '--') + '</div><div style="font-size:0.85rem;color:var(--muted);">综合评分 · 共' + res.completedRounds + '/' + res.totalRounds + '轮</div></div>';
+    
+    // 各维度平均分
+    var dims = [
+      { key: 'star_completeness', label: 'STAR完整性' },
+      { key: 'quantification', label: '量化程度' },
+      { key: 'position_match', label: '岗位匹配' },
+      { key: 'structure', label: '表达结构' },
+      { key: 'highlight', label: '亮点突出' }
+    ];
+    html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;">';
+    dims.forEach(function(d) {
+      var v = (res.averageScores && res.averageScores[d.key]) || '--';
+      html += '<div style="flex:1;min-width:80px;text-align:center;padding:0.5rem;background:var(--bg1);border-radius:6px;"><div style="font-size:1.2rem;font-weight:600;">' + v + '</div><div style="font-size:0.7rem;color:var(--muted);">' + d.label + '</div></div>';
+    });
+    html += '</div>';
+    
+    // 轮次对比
+    if (res.roundReports.length > 0) {
+      html += '<h3 style="margin-bottom:0.5rem;">轮次对比</h3>';
+      html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">';
+      res.roundReports.forEach(function(r) {
+        html += '<div style="flex:1;min-width:120px;padding:0.5rem;background:var(--bg1);border-radius:6px;border-left:3px solid var(--accent);"><div style="font-size:0.78rem;font-weight:600;">' + (r.label || '第' + r.round + '轮') + '</div><div style="font-size:1.1rem;font-weight:700;color:var(--accent);">' + (r.score || '--') + '</div><div style="font-size:0.7rem;color:var(--muted);">' + (r.totalQuestions || 0) + '题</div></div>';
+      });
+      html += '</div>';
+    }
+    
+    html += '<div style="margin-top:1rem;display:flex;gap:0.5rem;justify-content:flex-end;"><button onclick="resetInterviewUI()" class="btn-primary" style="font-size:0.78rem;">返回首页</button></div>';
+    html += '</div>';
+    $('#interview-report').innerHTML = html;
+    
+    state.multiRoundActive = false;
+    state.interviewActive = false;
+    setStatus('✅ 多轮面试完成');
+  } catch (e) { toast('加载综合报告失败: ' + e.message); }
+}
+
 function resetInterviewUI(keepReport = false) {
   const chat = $('#interview-chat');
   chat.innerHTML = '';
@@ -2720,6 +2952,10 @@ function resetInterviewUI(keepReport = false) {
   $('#interview-empty').classList.remove('hidden');
   $('#btn-interview-start').disabled = false;
   $('#btn-interview-start').textContent = '开始模拟面试';
+  state.multiRoundActive = false;
+  var multiBadge = $('#multi-round-mode-badge');
+  if (multiBadge) multiBadge.remove();
+  $('#multi-round-bar').classList.add('hidden');
 }
 
 async function loadInterviewReport() {
@@ -3577,15 +3813,16 @@ async function switchToSession(sessionId) {
   setStatus('✅ ' + (data.label || ''));
 }
 
-$('#nav-session-select').addEventListener('change', async () => {
+// 安全绑定：使用可选链防止元素未就绪时报错
+$('#nav-session-select')?.addEventListener('change', async () => {
   if (_refreshingSessions) return;
-  const id = $('#nav-session-select').value;
+  const id = $('#nav-session-select')?.value;
   if (id && id !== state.sessionId) await switchToSession(id);
 });
 
 // 删除当前会话
-$('#btn-delete-session').addEventListener('click', async () => {
-  const id = $('#nav-session-select').value;
+$('#btn-delete-session')?.addEventListener('click', async () => {
+  const id = $('#nav-session-select')?.value;
   if (!id) return toast('没有可删除的会话');
   if (!confirm('确定删除此岗位的所有面试数据？不可恢复。')) return;
   try {
@@ -3593,31 +3830,91 @@ $('#btn-delete-session').addEventListener('click', async () => {
     state.sessionId = null;
     state.analysis = null;
     await refreshSessionList();
-    $('#analysis-result').classList.add('hidden');
-    $('#practice-area').classList.add('hidden');
-    $('#practice-empty').classList.remove('hidden');
+    $('#analysis-result')?.classList.add('hidden');
+    $('#practice-area')?.classList.add('hidden');
+    $('#practice-empty')?.classList.remove('hidden');
     $('#nav-session-label').textContent = '当前岗位';
     toast('已删除');
   } catch(e) { toast('删除失败: ' + e.message); }
 });
 
-// 编辑岗位名称（仅改标签）
-$('#btn-edit-session-label').addEventListener('click', async () => {
-  const id = $('#nav-session-select').value;
-  if (!id) return toast('请先选择一个岗位');
-  const currentLabel = $('#nav-session-label').textContent;
-  const newLabel = prompt('请输入新的岗位名称：', currentLabel === '当前岗位' ? '' : currentLabel);
-  if (!newLabel || !newLabel.trim()) return;
-  try {
-    await fetchRetry(`/api/sessions/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: newLabel.trim() })
-    });
-    $('#nav-session-label').textContent = newLabel.trim();
-    await refreshSessionList();
-    toast('✅ 岗位名称已更新');
-  } catch(e) { toast('更新失败: ' + e.message); }
+// 弹出自定义输入模态框（替代prompt，兼容Electron和浏览器）
+function showPromptModal(title, defaultValue, onConfirm, onCancel) {
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--bg);border-radius:12px;padding:1.5rem;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);';
+  modal.innerHTML =
+    '<h3 style="margin:0 0 1rem 0;font-size:1rem;">' + escapeHtml(title) + '</h3>' +
+    '<input id="prompt-modal-input" type="text" value="' + escapeHtml(defaultValue || '') + '" placeholder="请输入..." style="width:100%;padding:0.5rem 0.7rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);font-size:0.9rem;box-sizing:border-box;margin-bottom:1rem;">' +
+    '<div style="display:flex;gap:0.5rem;justify-content:flex-end;">' +
+    '<button id="prompt-modal-cancel" class="btn-outline" style="font-size:0.85rem;">取消</button>' +
+    '<button id="prompt-modal-confirm" class="btn-primary" style="font-size:0.85rem;">确认</button>' +
+    '</div>';
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  var input = document.getElementById('prompt-modal-input');
+  input.focus();
+  input.select();
+
+  function cleanup() {
+    overlay.remove();
+  }
+
+  document.getElementById('prompt-modal-confirm').addEventListener('click', function() {
+    var val = input.value;
+    cleanup();
+    if (onConfirm) onConfirm(val);
+  });
+  document.getElementById('prompt-modal-cancel').addEventListener('click', function() {
+    cleanup();
+    if (onCancel) onCancel();
+  });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      var val = input.value;
+      cleanup();
+      if (onConfirm) onConfirm(val);
+    } else if (e.key === 'Escape') {
+      cleanup();
+      if (onCancel) onCancel();
+    }
+  });
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) { cleanup(); if (onCancel) onCancel(); }
+  });
+}
+
+// 编辑岗位名称（仅改标签）- 仅用事件委托，避免重复绑定
+var _editLabelBusy = false;
+document.addEventListener('click', async (e) => {
+  if (!e.target.closest('#btn-edit-session-label')) return;
+  if (_editLabelBusy) return;
+  _editLabelBusy = true;
+  const id = $('#nav-session-select')?.value;
+  if (!id) { toast('请先选择一个岗位'); _editLabelBusy = false; return; }
+  const currentLabel = $('#nav-session-label')?.textContent || '当前岗位';
+  showPromptModal('请输入新的岗位名称', currentLabel === '当前岗位' ? '' : currentLabel,
+    async function(newLabel) {
+      if (!newLabel || !newLabel.trim()) { _editLabelBusy = false; return; }
+      try {
+        await fetchRetry(`/api/sessions/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: newLabel.trim() })
+        });
+        if ($('#nav-session-label')) $('#nav-session-label').textContent = newLabel.trim();
+        await refreshSessionList();
+        toast('✅ 岗位名称已更新');
+      } catch(e) { toast('更新失败: ' + e.message); }
+      _editLabelBusy = false;
+    },
+    function() {
+      _editLabelBusy = false;
+    }
+  );
 });
 
 // ============================================================
@@ -3836,13 +4133,6 @@ function renderBehavioralDetail(qId) {
         </div>
       </div>` : ''}
 
-      <!-- 按钮 -->
-      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-        <button class="btn-primary btn-gen-behavioral" data-id="${q.id}" style="font-size:0.82rem;padding:0.4rem 1rem;">
-          ${saved ? '🔄 重新生成' : '✨ AI 生成标准答案'}
-        </button>
-        ${saved ? `<button class="btn-outline btn-copy-behavioral" data-id="${q.id}" style="font-size:0.78rem;padding:0.4rem 0.8rem;">📋 复制</button>` : ''}
-      </div>
     </div>
 
     <!-- ===== 答题区 ===== -->
@@ -3851,10 +4141,13 @@ function renderBehavioralDetail(qId) {
       <textarea class="behavioral-answer-input" id="behavioral-answer-input" rows="6" placeholder="写下你的回答，然后点击提交获取AI评估...">${_behavioralUserAnswers[qId] || ''}</textarea>
       <div class="behavioral-answer-actions">
         <button class="btn-primary" id="btn-behavioral-submit" style="font-size:0.82rem;padding:0.4rem 1rem;">✅ 提交回答</button>
+        <button class="btn-ai-action btn-ai-model" id="btn-model-answer-behavioral" title="AI基于你的简历生成标准答案参考"><span class="ai-action-icon">✨</span>AI标准答案</button>
         <label class="switch-label" style="font-size:0.78rem;">
           <input type="checkbox" id="chk-behavioral-save" checked> 纳入练习记录
         </label>
       </div>
+      <!-- 标准答案显示区域 -->
+      <div id="behavioral-model-answer-area"></div>
       <!-- 进度指示器 -->
       <div id="behavioral-eval-progress" style="display:none;"></div>
       <!-- 评估结果 -->
@@ -3868,6 +4161,12 @@ function renderBehavioralDetail(qId) {
     inputTa.addEventListener('input', function() {
       _behavioralUserAnswers[qId] = this.value;
     });
+  }
+
+  // 绑定AI标准答案按钮（点击题目后立即可见，无需先提交评估）
+  var modelAnswerArea = document.getElementById('behavioral-model-answer-area');
+  if (modelAnswerArea) {
+    loadModelAnswerHandler('behavioral', q.question, modelAnswerArea);
   }
 
   // 绑定生成答案按钮事件
@@ -4026,10 +4325,9 @@ function renderBehavioralEvalResult(data, qId) {
   }
   html += '</div>';
 
-  // 后续操作按钮（追问、标准答案、反问）
+  // 后续操作按钮（反问按钮，标准答案按钮已在答题区上方常驻显示）
   html += '<div class="follow-up-section" id="behavioral-followup-' + qId + '">';
   html += '<div class="ai-action-row">';
-  html += '<button class="btn-ai-action btn-ai-model" id="btn-model-answer-behavioral" title="AI基于你的简历生成标准答案参考"><span class="ai-action-icon">✨</span>AI标准答案</button>';
   html += '<button class="btn-ai-action btn-ai-counter" id="btn-behavioral-counter" title="AI生成你可以反问面试官的问题"><span class="ai-action-icon">🔄</span>生成反问</button>';
   html += '</div></div>';
 
@@ -4038,11 +4336,9 @@ function renderBehavioralEvalResult(data, qId) {
 
 // 在通用题库评估结果渲染后绑定后续按钮事件
 function bindBehavioralFollowUp(qId, question, answer) {
-  // 标准答案按钮
   var section = document.getElementById('behavioral-followup-' + qId);
   if (!section) return;
-  loadModelAnswerHandler('behavioral', question, section);
-  // 反问按钮
+  // 反问按钮（标准答案按钮已在答题区上方常驻显示）
   var counterBtn = document.getElementById('btn-behavioral-counter');
   if (counterBtn) {
     counterBtn.addEventListener('click', async function() {
@@ -5756,6 +6052,7 @@ function downloadFile(filename, content, mimeType) {
       document.getElementById('study-daily-goal').value = plan.dailyGoal || 5;
     } catch(e) { /* ignore */ }
   }
+  window.loadStudyPlan = loadStudyPlan; // 导出到全局
 
   document.getElementById('btn-study-plan-save').addEventListener('click', async function() {
     var targetDate = document.getElementById('study-target-date').value;
@@ -6069,7 +6366,7 @@ initSpeechRecognition();
 // ============================================================
 // Phase 3: TTS (SpeechSynthesis)
 // ============================================================
-function speakText(text) {
+function speakText(text, btn) {
   if (!window.speechSynthesis) { alert('\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BED\u97F3\u6717\u8BFB'); return; }
   window.speechSynthesis.cancel();
   var utter = new SpeechSynthesisUtterance(text);
@@ -6080,19 +6377,52 @@ function speakText(text) {
   var voices = window.speechSynthesis.getVoices();
   var zhVoice = voices.find(function(v) { return v.lang.startsWith('zh'); });
   if (zhVoice) utter.voice = zhVoice;
+
+  utter.onstart = function() {
+    if (btn) {
+      btn.textContent = '🔴';
+      btn.dataset.speaking = '1';
+      btn.title = '点击停止朗读';
+    }
+  };
+  utter.onend = function() {
+    if (btn) {
+      btn.textContent = '🔊';
+      btn.dataset.speaking = '0';
+      btn.title = '朗读';
+    }
+  };
+  utter.onerror = function() {
+    if (btn) {
+      btn.textContent = '🔊';
+      btn.dataset.speaking = '0';
+      btn.title = '朗读';
+    }
+  };
   window.speechSynthesis.speak(utter);
 }
 
 function stopSpeaking() {
   window.speechSynthesis.cancel();
+  // 重置所有朗读按钮状态
+  document.querySelectorAll('.btn-speak').forEach(function(b) {
+    b.textContent = '🔊';
+    b.dataset.speaking = '0';
+    b.title = '朗读';
+  });
 }
 
 // Global binding: all .btn-speak click reads data-text content
 document.addEventListener('click', function(e) {
   var btn = e.target.closest('.btn-speak');
   if (!btn) return;
+  // 如果正在朗读，点击则停止
+  if (btn.dataset.speaking === '1') {
+    stopSpeaking();
+    return;
+  }
   var text = btn.dataset.text;
-  if (text) speakText(text);
+  if (text) speakText(text, btn);
 });
 
 // ============================================================
@@ -6487,7 +6817,7 @@ function renderMianjingAnalysis(data, container) {
       if (feedbackEl && feedbackEl.parentNode) {
         feedbackEl.parentNode.insertBefore(section, feedbackEl);
       }
-      loadModelAnswerHandler('practice-pre', question, section);
+      loadModelAnswerHandler('practice-pre', question, section, practiceBtn);
     });
   }
 
@@ -6502,7 +6832,7 @@ function renderMianjingAnalysis(data, container) {
       if (feedbackEl && feedbackEl.parentNode) {
         feedbackEl.parentNode.insertBefore(section, feedbackEl);
       }
-      loadModelAnswerHandler('drill-pre', question, section);
+      loadModelAnswerHandler('drill-pre', question, section, drillBtn);
     });
   }
 })();

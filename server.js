@@ -3790,9 +3790,12 @@ const IS_ELECTRON = process.env.ELECTRON_MODE === '1';
 let _gatewayReady = false;
 function isGatewayReady() { return _gatewayReady; }
 
+// HTTP 服务器引用，用于关闭时清理
+let _server = null;
+
 function startServer() {
   return new Promise((resolve, reject) => {
-    const listener = app.listen(PORT, async () => {
+    _server = app.listen(PORT, async () => {
       logInfo(`服务器已启动 — http://localhost:${PORT}`);
       logInfo(`AI Provider Kit: ${PROVIDER_KIT_PATH}`);
       console.log(`\n🎯 InterviewPrep MVP 已启动`);
@@ -3800,7 +3803,7 @@ function startServer() {
       console.log(`   AI Provider Kit: ${PROVIDER_KIT_PATH}`);
 
       // 立即 resolve，不阻塞窗口显示
-      resolve(listener);
+      resolve(_server);
 
       // 网关异步启动（不阻塞 server 就绪）
       if (process.env.NO_GATEWAY === '1') {
@@ -3837,8 +3840,24 @@ function startServer() {
         } catch { /* 打开浏览器失败不阻塞 */ }
       }
     });
-    listener.on('error', reject);
+    _server.on('error', reject);
   });
+}
+
+// 停止 HTTP 服务器，清理所有连接
+function stopServer() {
+  if (_server) {
+    try {
+      // 关闭所有活跃连接
+      _server.closeAllConnections?.();
+      _server.close(() => {
+        logInfo('HTTP 服务器已关闭');
+      });
+      _server = null;
+    } catch (e) {
+      logWarn('关闭服务器时出错: ' + e.message);
+    }
+  }
 }
 
 // 直接运行时启动
@@ -3847,7 +3866,7 @@ if (!IS_ELECTRON || require.main === module) {
 }
 
 // Electron 主进程引用用
-module.exports = { app, startServer, PORT, isGatewayReady };
+module.exports = { app, startServer, stopServer, PORT, isGatewayReady };
 
 // 优雅退出
 process.on('SIGINT', () => { logInfo('收到 SIGINT，正在关闭...'); process.exit(0); });

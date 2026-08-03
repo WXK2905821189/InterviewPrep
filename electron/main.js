@@ -7,6 +7,7 @@ const fs = require('fs');
 
 let mainWindow = null;
 let loadingWindow = null;
+let _serverModule = null;
 
 // ── 读取版本号 ──
 function getAppVersion() {
@@ -141,9 +142,9 @@ app.whenReady().then(async () => {
     try { fs.mkdirSync(path.join(userDataPath, '.local'), { recursive: true }); } catch {}
 
     // 直接 require server.js —— Electron 主进程本身就是 Node，无需 spawn 子进程
-    const serverModule = require('../server.js');
-    await serverModule.startServer();
-    createMainWindow(serverModule.PORT || 3456);
+    _serverModule = require('../server.js');
+    await _serverModule.startServer();
+    createMainWindow(_serverModule.PORT || 3456);
   } catch (err) {
     if (loadingWindow) loadingWindow.close();
     dialog.showErrorBox('启动失败',
@@ -227,12 +228,23 @@ ipcMain.on('restart-app', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// 确保退出时彻底清理所有进程
+app.on('will-quit', () => {
+  // 关闭 HTTP 服务器，释放端口
+  if (_serverModule && typeof _serverModule.stopServer === 'function') {
+    _serverModule.stopServer();
+  }
+  // 强制退出进程，确保不会有残留（Windows 上尤为重要）
+  app.exit(0);
 });
 
 app.on('activate', () => {
   if (mainWindow === null) {
-    const serverModule = require('../server.js');
-    createMainWindow(serverModule.PORT || 3456);
+    createMainWindow((_serverModule && _serverModule.PORT) || 3456);
   }
 });
