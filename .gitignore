@@ -6,6 +6,7 @@ logs/
 docs/
 out/
 dist/
+node_modules/
 ai-provider-kit/node_modules/
 ai-provider-kit/.local/
 .DS_Store
