@@ -4,6 +4,9 @@
   "description": "InterviewPrep MVP - AI面试押题与模拟面试官",
   "author": "wxk29",
   "main": "electron/main.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",

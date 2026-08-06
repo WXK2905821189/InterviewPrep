@@ -158,6 +158,13 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/knowledge', express.static(path.join(__dirname, 'knowledge')));
 
+// ============================================================
+// Render 健康检查端点
+// ============================================================
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
+
 // 文件上传
 const upload = multer({
   dest: path.join(DATA_DIR, '.data', 'uploads'),
@@ -2367,6 +2374,136 @@ app.post('/api/study-plan', (req, res) => {
     if (!plan.createdAt) plan.createdAt = new Date().toISOString();
     saveStudyPlan(plan);
     res.json({ ok: true, plan });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
+// 面试复盘模块
+// ============================================================
+const REVIEWS_PATH = path.join(DATA_DIR, '.data', 'interview-reviews.json');
+
+function loadReviews() {
+  try {
+    if (fs.existsSync(REVIEWS_PATH)) {
+      return JSON.parse(fs.readFileSync(REVIEWS_PATH, 'utf-8'));
+    }
+  } catch (e) { console.error('Load reviews error:', e); }
+  return [];
+}
+
+function saveReviews(data) {
+  try {
+    const dir = path.dirname(REVIEWS_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(REVIEWS_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (e) { console.error('Save reviews error:', e); }
+}
+
+// 上传面试记录文件
+app.post('/api/interview-review/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: '请上传文件' });
+    const { parseResumeFile } = require('./chatflow/resume-parser');
+    try {
+      const result = await parseResumeFile(req.file.path, req.file.originalname);
+      res.json({ text: result.text || result.rawText || '', fileName: req.file.originalname });
+    } finally {
+      try { fs.unlinkSync(req.file.path); } catch {}
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 生成面试复盘
+app.post('/api/interview-review/generate', async (req, res) => {
+  try {
+    const { interviewText } = req.body;
+    if (!interviewText || !interviewText.trim()) {
+      return res.status(400).json({ error: '请提供面试记录文本' });
+    }
+
+    const { llm, fillTemplate } = require('./chatflow/llm-client');
+    const prompts = require('./chatflow/prompts');
+
+    const reviewPrompt = fillTemplate(prompts.INTERVIEW_REVIEW_SYSTEM, {
+      interview_text: interviewText.slice(0, 8000)
+    });
+
+    const result = await llm(reviewPrompt, '', { temperature: 0.7 });
+    res.json(result);
+  } catch (e) {
+    console.error('[API] 面试复盘生成失败:', e);
+    res.status(500).json({ error: '生成失败: ' + e.message });
+  }
+});
+
+// 保存复盘记录
+app.post('/api/interview-review/save', async (req, res) => {
+  try {
+    const { review, sourceText, fileName } = req.body;
+    if (!review) return res.status(400).json({ error: '请提供复盘数据' });
+
+    const reviews = loadReviews();
+    const record = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      createdAt: new Date().toISOString(),
+      review,
+      sourceText: (sourceText || '').slice(0, 500),
+      fileName: fileName || ''
+    };
+    reviews.unshift(record);
+    saveReviews(reviews);
+    res.json({ ok: true, id: record.id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 获取历史复盘列表
+app.get('/api/interview-review/history', (req, res) => {
+  try {
+    const reviews = loadReviews();
+    const list = reviews.map(r => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      fileName: r.fileName,
+      sourceText: r.sourceText,
+      company: r.review?.interview_info?.company || '',
+      position: r.review?.interview_info?.position || '',
+      round: r.review?.interview_info?.round || '',
+      overallScore: r.review?.overall_score || 0
+    }));
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 获取单个复盘详情
+app.get('/api/interview-review/detail/:id', (req, res) => {
+  try {
+    const reviews = loadReviews();
+    const found = reviews.find(r => r.id === req.params.id);
+    if (!found) return res.status(404).json({ error: '未找到复盘记录' });
+    res.json(found);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 删除复盘记录
+app.delete('/api/interview-review/:id', (req, res) => {
+  try {
+    const reviews = loadReviews();
+    const filtered = reviews.filter(r => r.id !== req.params.id);
+    if (filtered.length === reviews.length) {
+      return res.status(404).json({ error: '未找到复盘记录' });
+    }
+    saveReviews(filtered);
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
