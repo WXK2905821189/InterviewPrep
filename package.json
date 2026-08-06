@@ -3,14 +3,14 @@
   "version": "1.9.0",
   "description": "InterviewPrep MVP - AI面试押题与模拟面试官",
   "author": "wxk29",
-  "main": "electron/main.js",
+  "main": "server.js",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "electron": "electron .",
+    "electron": "electron electron/main.js",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
