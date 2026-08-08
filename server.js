@@ -155,6 +155,20 @@ const {
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+
+// ─── 商业化模块 ───────────────────────────────────────────────
+const { authMiddleware, registerAuthRoutes } = require('./server/auth');
+const { creditCheck, registerCreditRoutes } = require('./server/credits');
+const { registerPlanRoutes } = require('./server/plans');
+
+// 认证中间件：解析 JWT，注入 req.user
+app.use(authMiddleware);
+
+// 注册商业化路由
+registerAuthRoutes(app);
+registerCreditRoutes(app);
+registerPlanRoutes(app);
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/knowledge', express.static(path.join(__dirname, 'knowledge')));
 
@@ -332,7 +346,7 @@ app.post('/api/parse-jd-url', async (req, res) => {
 // ============================================================
 // API 1: 一键分析（SSE 流式 + 进度 + 预估剩余时间）
 // ============================================================
-app.post('/api/analyze', async (req, res) => {
+app.post('/api/analyze', creditCheck('analyze', 'analysis'), async (req, res) => {
   const { jdText, resumeText, useMianjing, quickMode, manualUrls, resumeFileName, resumeSourceType } = req.body;
   if (!jdText || !resumeText) {
     return res.status(400).json({ error: '请同时提供JD文本和简历文本' });
@@ -525,7 +539,7 @@ ${text.slice(0, 6000)}`;
 // ============================================================
 // API 2: 开始模拟面试
 // ============================================================
-app.post('/api/interview/start', async (req, res) => {
+app.post('/api/interview/start', creditCheck('interview-start', 'evaluation'), async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = sessions.get(sessionId);
@@ -596,7 +610,7 @@ app.post('/api/interview/skip', async (req, res) => {
 // ============================================================
 // API 5: 结束面试并获取评估报告
 // ============================================================
-app.post('/api/interview/evaluate', async (req, res) => {
+app.post('/api/interview/evaluate', creditCheck('interview-evaluate', null), async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = sessions.get(sessionId);
@@ -1277,7 +1291,7 @@ app.get('/api/interview/multi/report', (req, res) => {
 // ============================================================
 // API 6: 简历优化
 // ============================================================
-app.post('/api/optimize-resume', async (req, res) => {
+app.post('/api/optimize-resume', creditCheck('optimize-resume', 'analysis'), async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = sessions.get(sessionId);
@@ -1507,7 +1521,7 @@ app.post('/api/optimize-resume-stream', async (req, res) => {
 // ============================================================
 // API 7: 单题评估（不依赖面试会话）
 // ============================================================
-app.post('/api/evaluate-single', async (req, res) => {
+app.post('/api/evaluate-single', creditCheck('evaluate-single', 'evaluation'), async (req, res) => {
   try {
     const { question, answer, jdSummary, resumeText } = req.body;
     if (!question || !answer) {
@@ -1527,7 +1541,7 @@ app.post('/api/evaluate-single', async (req, res) => {
 // ============================================================
 // API 7b: AI追问
 // ============================================================
-app.post('/api/follow-up', async (req, res) => {
+app.post('/api/follow-up', creditCheck('follow-up', null), async (req, res) => {
   try {
     const { question, answer, jdSummary, resumeText } = req.body;
     if (!question || !answer) {
@@ -1550,7 +1564,7 @@ app.post('/api/follow-up', async (req, res) => {
 // ============================================================
 // API 7c: AI 生成基于简历的标准答案
 // ============================================================
-app.post('/api/generate-model-answer', async (req, res) => {
+app.post('/api/generate-model-answer', creditCheck('generate-model-answer', null), async (req, res) => {
   try {
     const { question, jdSummary, resumeText, fullExperiences } = req.body;
     if (!question) return res.status(400).json({ error: '请提供题目' });
@@ -1576,7 +1590,7 @@ ${fullExperiences?.length ? '候选人完整经历补充（简历之外的详细
 // ============================================================
 // API: 面试备考方案生成
 // ============================================================
-app.post('/api/study-plan/generate', async (req, res) => {
+app.post('/api/study-plan/generate', creditCheck('study-plan', null), async (req, res) => {
   try {
     const { sessionId } = req.body;
     if (!sessionId) return res.status(400).json({ error: '请提供会话ID' });
@@ -1611,7 +1625,7 @@ app.post('/api/study-plan/generate', async (req, res) => {
 // ============================================================
 // API 7d: AI 生成基于简历的自我介绍
 // ============================================================
-app.post('/api/generate-self-intro', async (req, res) => {
+app.post('/api/generate-self-intro', creditCheck('generate-self-intro', null), async (req, res) => {
   try {
     const { jdSummary, resumeText, customPrompt, style, duration } = req.body;
     if (!resumeText) return res.status(400).json({ error: '请先提供简历内容' });
@@ -1897,7 +1911,7 @@ function saveDrillRecords(records) {
 }
 
 // 保存专项训练记录
-app.post('/api/drill/records', (req, res) => {
+app.post('/api/drill/records', creditCheck('drill-evaluate', 'evaluation'), (req, res) => {
   try {
     const { question, questionType, answer, scores, overallScore, improvedVersion, keyTakeaways, lineByLine } = req.body;
     if (!question || !answer) return res.status(400).json({ error: '需要 question 和 answer' });
@@ -2418,7 +2432,7 @@ app.post('/api/interview-review/upload', upload.single('file'), async (req, res)
 });
 
 // 生成面试复盘
-app.post('/api/interview-review/generate', async (req, res) => {
+app.post('/api/interview-review/generate', creditCheck('interview-review', null), async (req, res) => {
   try {
     const { interviewText } = req.body;
     if (!interviewText || !interviewText.trim()) {
@@ -3139,7 +3153,7 @@ app.get('/api/mianjing-bank', (req, res) => {
 // ============================================================
 // Company Research API — 公司调研（SSE流式）
 // ============================================================
-app.post('/api/company-research', async (req, res) => {
+app.post('/api/company-research', creditCheck('company-research', null), async (req, res) => {
   const { company, position } = req.body;
   if (!company) return res.status(400).json({ error: '请提供公司名' });
 
@@ -3485,7 +3499,7 @@ app.post('/api/generate-questions-batch', async (req, res) => {
 
 // 面经采集 — 独立触发
 // ============================================================
-app.post('/api/mianjing-collect', async (req, res) => {
+app.post('/api/mianjing-collect', creditCheck('mianjing-collect', 'analysis'), async (req, res) => {
   const { sessionId, jdText, resumeText, company: reqCompany, position: reqPosition, manualUrls } = req.body;
   const session = sessions.get(sessionId);
   
@@ -3589,7 +3603,7 @@ app.post('/api/mianjing-collect', async (req, res) => {
 // ============================================================
 // API: 群面模拟 - 开始
 // ============================================================
-app.post('/api/group-interview/start', async (req, res) => {
+app.post('/api/group-interview/start', creditCheck('group-interview', 'evaluation'), async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = sessions.get(sessionId);
