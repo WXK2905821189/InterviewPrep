@@ -25,6 +25,17 @@
       <button id="btn-edit-session-label" class="nav-settings-btn" title="编辑岗位名称" style="font-size:0.8rem;background:none;border:1px solid var(--rule);border-radius:4px;padding:0.1rem 0.4rem;cursor:pointer;color:var(--muted);">✏️</button>
     </div>
     <div class="nav-status" id="nav-status">⚪ 就绪</div>
+    <!-- 用户认证区域 -->
+    <div class="nav-auth" id="nav-auth">
+      <button class="btn-login" id="btn-open-auth" title="登录/注册">🔐 登录</button>
+      <div class="nav-user-info hidden" id="nav-user-info">
+        <span class="nav-credits" id="nav-credits" title="剩余点数">🪙 <b id="nav-credits-num">0</b></span>
+        <a href="#" id="btn-credit-logs" class="nav-credit-logs" title="点数记录">📋</a>
+        <span class="nav-user-email" id="nav-user-email"></span>
+        <button class="nav-settings-btn" id="btn-buy-credits" title="购买点数" style="font-size:0.72rem;">💎</button>
+        <button class="nav-settings-btn" id="btn-logout" title="退出登录" style="font-size:0.72rem;">🚪</button>
+      </div>
+    </div>
     <div class="nav-actions">
       <button class="dark-toggle" id="btn-dark-toggle" title="切换暗色模式">🌙</button>
       <button class="nav-settings-btn" id="btn-open-settings" title="设置AI供应商">⚙️</button>
@@ -242,6 +253,12 @@
       <h1>上传JD+简历，AI一键押题</h1>
       <p class="subtitle">自动解析岗位要求，对比你的简历，生成针对性面试题 — AI 驱动的高频押题</p>
     </div>
+    <div class="quota-banner free" data-quota-type="analysis" style="margin-bottom:1rem;">
+      <span class="quota-dot"></span>
+      <span class="quota-msg">加载中...</span>
+      <span style="margin-left:auto;font-size:0.75rem;">剩余 <b class="quota-count">-</b></span>
+      <a href="#" id="quota-buy-link-analysis" style="color:var(--accent);font-weight:600;text-decoration:none;font-size:0.75rem;display:none;">购买点数 →</a>
+    </div>
 
     <div class="input-grid">
       <div class="input-card">
@@ -320,6 +337,12 @@
     <div class="card hero-card">
       <h1>单题练习</h1>
       <p>从押题清单中选题，深度打磨每一道题的回答</p>
+    </div>
+    <div class="quota-banner free" data-quota-type="evaluation" style="margin-bottom:1rem;">
+      <span class="quota-dot"></span>
+      <span class="quota-msg">加载中...</span>
+      <span style="margin-left:auto;font-size:0.75rem;">剩余 <b class="quota-count">-</b></span>
+      <a href="#" id="quota-buy-link-evaluation" style="color:var(--accent);font-weight:600;text-decoration:none;font-size:0.75rem;display:none;">购买点数 →</a>
     </div>
 
     <div id="practice-empty" class="empty-state">
@@ -1009,6 +1032,86 @@
 <div id="toast" class="toast"></div>
 
 <!-- ====== 设置面板 ====== -->
+<div class="modal-overlay hidden" id="auth-modal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h2>🔐 <span id="auth-modal-title">登录</span></h2>
+      <button class="modal-close" id="btn-close-auth">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="auth-tabs" style="display:flex;gap:0;margin-bottom:1.5rem;border-bottom:2px solid var(--rule);">
+        <button class="auth-tab active" data-auth-tab="login">登录</button>
+        <button class="auth-tab" data-auth-tab="register">注册</button>
+      </div>
+      <form id="auth-login-form">
+        <div class="form-row">
+          <label>邮箱</label>
+          <input type="email" id="auth-email" placeholder="your@email.com" required autocomplete="email">
+        </div>
+        <div class="form-row">
+          <label>密码</label>
+          <input type="password" id="auth-password" placeholder="至少6位" required autocomplete="current-password">
+        </div>
+        <div id="auth-error" style="color:var(--red);font-size:0.82rem;margin-bottom:0.5rem;display:none;"></div>
+        <button type="submit" class="btn-primary" style="width:100%;">登录</button>
+      </form>
+      <form id="auth-register-form" class="hidden">
+        <div class="form-row">
+          <label>邮箱</label>
+          <input type="email" id="auth-reg-email" placeholder="your@email.com" required autocomplete="email">
+        </div>
+        <div class="form-row">
+          <label>密码</label>
+          <input type="password" id="auth-reg-password" placeholder="至少6位" required autocomplete="new-password">
+        </div>
+        <div id="auth-reg-error" style="color:var(--red);font-size:0.82rem;margin-bottom:0.5rem;display:none;"></div>
+        <button type="submit" class="btn-primary" style="width:100%;">注册</button>
+      </form>
+      <div style="text-align:center;margin-top:1rem;font-size:0.78rem;color:var(--muted);">
+        注册即享每日 <b>3次</b> 免费评估 + <b>1次</b> 免费分析
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 套餐购买模态框 -->
+<div class="modal-overlay hidden" id="plans-modal">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-header">
+      <h2>💎 购买点数</h2>
+      <button class="modal-close" id="btn-close-plans">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="plans-user-balance" style="text-align:center;margin-bottom:1.2rem;padding:0.8rem;background:var(--accent-glow);border-radius:8px;font-size:0.9rem;">
+        当前点数：<b style="font-size:1.3rem;color:var(--accent);" id="plans-balance-num">0</b> 🪙
+      </div>
+      <div id="plans-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.8rem;">
+        <!-- JS 动态填充 -->
+      </div>
+      <div style="text-align:center;margin-top:1rem;font-size:0.78rem;color:var(--muted);">
+        支付由 <b>LemonSqueezy</b> 安全处理 · 支持国际信用卡
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="credit-logs-modal">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <h2>📋 点数记录</h2>
+      <button class="modal-close" id="btn-close-credit-logs">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="credit-logs-balance" style="text-align:center;margin-bottom:1rem;padding:0.6rem;background:var(--accent-glow);border-radius:8px;font-size:0.9rem;">
+        当前点数：<b style="font-size:1.2rem;color:var(--accent);">--</b> 🪙
+      </div>
+      <div id="credit-logs-list" style="max-height:50vh;overflow-y:auto;">
+        <div style="text-align:center;padding:2rem;color:var(--muted);">加载中...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="settings-modal">
   <div class="modal">
     <div class="modal-header">
@@ -1100,6 +1203,7 @@
 </div>
 
 <script src="echarts.min.js" defer></script>
+<script src="auth.js?v=1786200371" defer></script>
 <script src="app.js?v=1785766500" defer></script>
 </body>
 </html>
