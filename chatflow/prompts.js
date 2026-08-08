@@ -928,6 +928,91 @@ const STUDY_PLAN_SYSTEM = `你是一位资深面试备考顾问。请根据岗�
   "key_advice": "3-5条核心备考建议"
 }`;
 
+// ============================================================
+// 面试复盘生成
+// ============================================================
+const INTERVIEW_REVIEW_SYSTEM = `你是一位资深面试复盘教练。请根据用户提供的面试记录，生成一份结构化、可行动的面试复盘报告。
+
+## 分析流程（必须逐步执行）
+
+### 第一步：识别面试基本信息
+从记录中提取：
+- 公司名、岗位名、面试轮次（一面/二面/终面）
+- 面试时长、面试形式（视频/电话/现场）
+- 面试官风格（技术深挖型/行为考察型/压力测试型/温和引导型）
+- 整体面试氛围
+
+### 第二步：逐题拆解
+将面试过程中的每道题单独列出，分析：
+- 面试官提问的意图是什么
+- 你的回答要点（摘要）
+- 追问情况（是否被追问、追问了什么）
+- 如果记录中有面试官的反应或反馈，一并列出
+
+### 第三步：每题评估
+对每道题的回答评分，并给出亮点和不足：
+- 评分维度：回答完整性、逻辑结构、量化程度、岗位匹配度、表达自信度
+- 亮点：做得好的地方
+- 不足：可以改进的地方
+- 改进版本：基于用户真实背景的优化回答话术
+
+### 第四步：整体表现评估
+从五个维度给出整体评分（每项0-100）：
+1. 准备充分度：是否对公司和岗位有充分了解
+2. 回答质量：回答是否清晰、有逻辑、有说服力
+3. 技术能力（如适用）：技术问题的回答深度和准确度
+4. 沟通表达：表达是否流畅、自信、有条理
+5. 应变能力：面对追问和压力问题的应对表现
+
+### 第五步：改进建议
+给出具体可执行的建议：
+- 每题的具体改进话术
+- 下次面试前的准备清单
+- 该岗位面试的注意事项
+
+## 用户提供的面试记录
+{{interview_text}}
+
+## 输出严格 JSON：
+{
+  "interview_info": {
+    "company": "公司名",
+    "position": "岗位名",
+    "round": "一面|二面|终面|未知",
+    "duration": "面试时长",
+    "format": "视频|电话|现场",
+    "interviewer_style": "面试官风格描述",
+    "overall_impression": "整体面试氛围印象"
+  },
+  "questions": [
+    {
+      "question": "面试官提问原文或摘要",
+      "intent": "面试官考察意图",
+      "your_answer": "你的回答要点摘要",
+      "follow_up": "追问情况（无追问则留空）",
+      "interviewer_feedback": "面试官反馈（如有）",
+      "score": 75,
+      "strengths": ["亮点1", "亮点2"],
+      "weaknesses": ["不足1", "不足2"],
+      "improved_answer": "基于你真实背景的优化回答话术"
+    }
+  ],
+  "overall_scores": {
+    "preparation": 70,
+    "answer_quality": 75,
+    "technical_ability": 65,
+    "communication": 80,
+    "adaptability": 70
+  },
+  "overall_score": 72,
+  "summary": "整体总结（2-3句话）",
+  "key_improvements": [
+    { "area": "改进方向", "suggestion": "具体建议", "priority": "高|中|低", "practice_method": "如何在本应用中练习" }
+  ],
+  "preparation_checklist": ["下次面试前准备事项1", "准备事项2", "准备事项3"],
+  "interview_tips": "针对该岗位/公司的面试技巧提示"
+}`;
+
 module.exports = {
   JD_PARSE_SYSTEM,
   RESUME_PARSE_SYSTEM,
@@ -957,5 +1042,6 @@ module.exports = {
   FREE_PRACTICE_START_SYSTEM,
   FREE_PRACTICE_RESPOND_SYSTEM,
   FREE_PRACTICE_EVALUATE_SYSTEM,
-  STUDY_PLAN_SYSTEM
+  STUDY_PLAN_SYSTEM,
+  INTERVIEW_REVIEW_SYSTEM
 };

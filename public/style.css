@@ -904,6 +904,153 @@ html.dark .navbar {
 .modal-close:hover { color: var(--red); }
 .modal-body { padding: 1.5rem; }
 
+/* ===== Auth ===== */
+.nav-auth {
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.btn-login {
+  background: var(--accent); color: #fff;
+  border: none; border-radius: 6px;
+  padding: 0.25rem 0.7rem; font-size: 0.78rem;
+  cursor: pointer; font-weight: 600;
+  transition: opacity var(--transition);
+}
+.btn-login:hover { opacity: 0.85; }
+.nav-user-info {
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.nav-credits {
+  font-size: 0.8rem; color: var(--accent);
+  background: var(--accent-glow);
+  padding: 0.15rem 0.5rem; border-radius: 999px;
+  cursor: pointer;
+}
+.nav-credits b { font-weight: 700; }
+.nav-credit-logs {
+  font-size: 0.8rem; text-decoration: none;
+  padding: 0.15rem 0.3rem; border-radius: 4px;
+  transition: background var(--transition);
+}
+.nav-credit-logs:hover { background: var(--tag-bg); }
+.nav-user-email {
+  font-size: 0.75rem; color: var(--muted);
+  max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.auth-tab {
+  flex: 1; padding: 0.6rem 1rem; border: none;
+  background: none; font-size: 0.9rem; font-weight: 600;
+  color: var(--muted); cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color var(--transition), border-color var(--transition);
+}
+.auth-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.auth-tab:hover { color: var(--ink); }
+
+/* ===== Plans ===== */
+.plans-card {
+  background: var(--bg2); border: 1px solid var(--rule);
+  border-radius: var(--radius); padding: 1.2rem;
+  text-align: center; transition: box-shadow var(--transition);
+  cursor: pointer; position: relative;
+}
+.plans-card:hover { box-shadow: var(--shadow); }
+.plans-card.popular {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow);
+}
+.plans-card .popular-badge {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: #fff;
+  font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.8rem;
+  border-radius: 999px;
+}
+.plans-card .plan-name {
+  font-size: 1rem; font-weight: 700; margin-bottom: 0.3rem;
+  font-family: var(--font-heading);
+}
+.plans-card .plan-price {
+  font-size: 1.8rem; font-weight: 800; color: var(--accent);
+  margin-bottom: 0.2rem;
+}
+.plans-card .plan-price sub {
+  font-size: 0.7rem; font-weight: 400; color: var(--muted);
+}
+.plans-card .plan-credits {
+  font-size: 0.85rem; color: var(--muted); margin-bottom: 0.4rem;
+}
+.plans-card .plan-desc {
+  font-size: 0.78rem; color: var(--muted); margin-bottom: 0.8rem;
+  line-height: 1.4;
+}
+.plans-card .plan-cta {
+  display: inline-block; padding: 0.4rem 1.2rem;
+  background: var(--accent); color: #fff;
+  border: none; border-radius: 6px;
+  font-size: 0.82rem; font-weight: 600; cursor: pointer;
+  transition: opacity var(--transition);
+}
+.plans-card .plan-cta:hover { opacity: 0.85; }
+
+/* ===== Free Quota Banner ===== */
+.quota-banner {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.6rem 1rem; border-radius: 8px;
+  font-size: 0.8rem; margin-bottom: 0.8rem;
+  flex-wrap: wrap;
+}
+.quota-banner.free { background: var(--accent-glow); color: var(--accent); }
+.quota-banner.low { background: rgba(184, 134, 11, 0.12); color: var(--yellow); }
+.quota-banner.exhausted { background: rgba(192, 57, 43, 0.08); color: var(--red); }
+.quota-banner .quota-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.quota-banner.free .quota-dot { background: var(--accent); }
+.quota-banner.low .quota-dot { background: var(--yellow); }
+.quota-banner.exhausted .quota-dot { background: var(--red); }
+
+/* ===== Credit Logs ===== */
+.credit-log-item {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--rule);
+  font-size: 0.82rem;
+}
+.credit-log-item:last-child { border-bottom: none; }
+.credit-log-item .log-amount {
+  font-weight: 700; font-size: 0.9rem; min-width: 60px;
+  text-align: right;
+}
+.credit-log-item .log-amount.earn { color: var(--green); }
+.credit-log-item .log-amount.consume { color: var(--red); }
+.credit-log-item .log-feature { flex: 1; }
+.credit-log-item .log-time {
+  font-size: 0.72rem; color: var(--muted);
+}
+.credit-log-item .log-balance {
+  font-size: 0.72rem; color: var(--muted);
+}
+
+/* ===== Subscription Banner ===== */
+.sub-banner {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.6rem 1rem; border-radius: 8px;
+  font-size: 0.8rem; margin-bottom: 0.8rem;
+  flex-wrap: wrap;
+}
+.sub-banner.active { background: rgba(74, 124, 89, 0.1); color: var(--green); }
+.sub-banner.expiring { background: rgba(184, 134, 11, 0.12); color: var(--yellow); }
+.sub-banner.expired { background: rgba(192, 57, 43, 0.08); color: var(--red); }
+.sub-banner .sub-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.sub-banner.active .sub-dot { background: var(--green); }
+.sub-banner.expiring .sub-dot { background: var(--yellow); }
+.sub-banner.expired .sub-dot { background: var(--red); }
+
 /* ===== Settings ===== */
 .settings-section { margin-bottom: 1.5rem; }
 .settings-section h3 {

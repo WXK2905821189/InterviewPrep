@@ -18,10 +18,10 @@ function debounce(fn, ms = 300) {
   return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
 }
 
-// 暗色模式
+// 暗色模式（默认日光模式，仅用户手动切换后才启用暗色）
 (function() {
   const saved = localStorage.getItem('darkMode');
-  if (saved === '1' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+  if (saved === '1') {
     document.documentElement.classList.add('dark');
   }
   const btn = document.getElementById('btn-dark-toggle');
@@ -41,10 +41,28 @@ function debounce(fn, ms = 300) {
 
 // 全局 fetch 重试包装器（LLM API 错误时自动处理）
 async function fetchRetry(url, options = {}, retries = 2) {
+  // 自动注入认证 token
+  var opts = Object.assign({}, options);
+  if (window.Auth && window.Auth.getToken()) {
+    opts.headers = Object.assign({}, opts.headers || {});
+    opts.headers['Authorization'] = 'Bearer ' + window.Auth.getToken();
+  }
   for (let i = 0; i <= retries; i++) {
     try {
-      const resp = await fetch(url, options);
+      const resp = await fetch(url, opts);
       if (!resp.ok) {
+        // 处理 402 点数不足
+        if (resp.status === 402) {
+          const err = await resp.json().catch(() => ({ error: '点数不足' }));
+          if (err.code === 'INSUFFICIENT_CREDITS') {
+            toast('点数不足，请购买点数后继续使用');
+            // 触发打开购买弹窗
+            if (window.Auth && typeof window.Auth.openPlansModal === 'function') {
+              setTimeout(function() { window.Auth.openPlansModal(); }, 500);
+            }
+          }
+          throw new Error(err.error || '点数不足');
+        }
         const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
         throw new Error(err.error || `请求失败 (${resp.status})`);
       }
@@ -1404,6 +1422,9 @@ function switchTab(tabName) {
       if (btn) btn.disabled = true;
       if (hint) hint.textContent = '⚠️ 需要先完成JD分析';
     }
+  }
+  if (tabName === 'review') {
+    loadReviewHistory();
   }
 }
 
@@ -7224,6 +7245,341 @@ function renderStudyPlan(plan) {
   }
 })();
 
-  // 初始加载
+  // ============================================================
+// 面试复盘模块
+// ============================================================
+(function() {
+  var _currentReview = null;
+  var _currentSourceText = '';
+
+  // 上传文件
+  document.getElementById('btn-review-upload')?.addEventListener('click', function() {
+    document.getElementById('review-file-input')?.click();
+  });
+
+  document.getElementById('review-file-input')?.addEventListener('change', function(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    document.getElementById('review-file-name').textContent = '📄 ' + file.name;
+    document.getElementById('review-hint').textContent = '⏳ 正在解析文件...';
+
+    var formData = new FormData();
+    formData.append('file', file);
+
+    fetch('/api/interview-review/upload', { method: 'POST', body: formData })
+      .then(function(r) { return r.json(); })
+      .then(function(result) {
+        if (result.error) {
+          toast('文件解析失败: ' + result.error);
+          document.getElementById('review-hint').textContent = '❌ 文件解析失败: ' + result.error;
+          return;
+        }
+        document.getElementById('review-text-input').value = result.text || '';
+        _currentSourceText = result.text || '';
+        document.getElementById('review-hint').textContent = '✅ 已解析 ' + (result.fileName || '文件') + '，共 ' + (result.text || '').length + ' 字，可编辑后生成复盘';
+        checkReviewGenerateReady();
+      })
+      .catch(function(err) {
+        toast('上传失败: ' + err.message);
+        document.getElementById('review-hint').textContent = '❌ 上传失败: ' + err.message;
+      });
+  });
+
+  // 文本输入变化
+  document.getElementById('review-text-input')?.addEventListener('input', function() {
+    _currentSourceText = this.value;
+    checkReviewGenerateReady();
+  });
+
+  // 检查是否可生成
+  function checkReviewGenerateReady() {
+    var text = document.getElementById('review-text-input').value.trim();
+    var btn = document.getElementById('btn-review-generate');
+    if (btn) btn.disabled = !text;
+    var hint = document.getElementById('review-hint');
+    if (hint) {
+      if (text) hint.textContent = '✅ 已输入 ' + text.length + ' 字，点击「生成复盘」开始分析';
+      else hint.textContent = '请上传文件或粘贴面试记录文本';
+    }
+  }
+
+  // 生成复盘
+  document.getElementById('btn-review-generate')?.addEventListener('click', function() {
+    generateReview();
+  });
+
+  document.getElementById('btn-review-regenerate')?.addEventListener('click', function() {
+    generateReview();
+  });
+
+  async function generateReview() {
+    var text = document.getElementById('review-text-input').value.trim();
+    if (!text) {
+      toast('请先粘贴面试记录或上传文件');
+      return;
+    }
+
+    var btn = document.getElementById('btn-review-generate');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中...'; }
+
+    toast('🔄 正在分析面试记录...');
+    try {
+      var result = await fetch('/api/interview-review/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interviewText: text })
+      }).then(function(r) { return r.json(); });
+
+      if (result.error) {
+        toast('生成失败: ' + result.error);
+        if (btn) { btn.disabled = false; btn.textContent = '🔄 生成复盘'; }
+        return;
+      }
+
+      _currentReview = result;
+      _currentSourceText = text;
+      renderReview(result);
+      toast('✅ 复盘报告已生成');
+    } catch (e) {
+      toast('生成失败: ' + e.message);
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 生成复盘'; }
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 生成复盘'; }
+    }
+  }
+
+  // 渲染复盘报告
+  function renderReview(review) {
+    if (!review) return;
+    document.getElementById('review-result')?.classList.remove('hidden');
+
+    var info = review.interview_info || {};
+    var titleEl = document.getElementById('review-info-title');
+    if (titleEl) {
+      titleEl.textContent = '📝 ' + (info.company || '') + ' · ' + (info.position || '') + ' · ' + (info.round || '') + ' 复盘';
+    }
+    var metaEl = document.getElementById('review-info-meta');
+    if (metaEl) {
+      var parts = [];
+      if (info.duration) parts.push('⏱ ' + info.duration);
+      if (info.format) parts.push('📹 ' + info.format);
+      if (info.interviewer_style) parts.push('👤 ' + info.interviewer_style);
+      metaEl.textContent = parts.join(' | ');
+    }
+
+    // 整体评分
+    var scoreEl = document.getElementById('review-overall-score');
+    if (scoreEl) scoreEl.textContent = review.overall_score || '--';
+
+    var dimsEl = document.getElementById('review-score-dims');
+    if (dimsEl && review.overall_scores) {
+      var dimLabels = {
+        preparation: '准备充分度',
+        answer_quality: '回答质量',
+        technical_ability: '技术能力',
+        communication: '沟通表达',
+        adaptability: '应变能力'
+      };
+      dimsEl.innerHTML = Object.keys(dimLabels).map(function(key) {
+        var score = review.overall_scores[key];
+        if (score === undefined || score === null) return '';
+        var color = score >= 80 ? 'var(--green)' : (score >= 60 ? 'var(--accent)' : 'var(--red)');
+        return '<div style="display:flex;align-items:center;gap:0.5rem;">' +
+          '<span style="width:5rem;font-size:0.78rem;color:var(--muted);flex-shrink:0;">' + dimLabels[key] + '</span>' +
+          '<div style="flex:1;height:6px;background:var(--bg1);border-radius:3px;overflow:hidden;">' +
+          '<div style="height:100%;width:' + score + '%;background:' + color + ';border-radius:3px;transition:width 0.5s;"></div></div>' +
+          '<span style="width:2rem;text-align:right;font-size:0.78rem;font-weight:600;color:' + color + ';">' + score + '</span></div>';
+      }).join('');
+    }
+
+    // 总结
+    var summaryEl = document.getElementById('review-summary');
+    if (summaryEl && review.summary) {
+      summaryEl.innerHTML = '💬 ' + review.summary;
+    }
+
+    // 逐题复盘
+    var qEl = document.getElementById('review-questions');
+    if (qEl && review.questions && review.questions.length) {
+      qEl.innerHTML = review.questions.map(function(q, i) {
+        var scoreColor = q.score >= 80 ? 'var(--green)' : (q.score >= 60 ? 'var(--accent)' : 'var(--red)');
+        var followUpHtml = q.follow_up ? '<div style="font-size:0.8rem;color:var(--accent);margin-top:0.2rem;">🔍 追问：' + q.follow_up + '</div>' : '';
+        var feedbackHtml = q.interviewer_feedback ? '<div style="font-size:0.8rem;color:var(--muted);margin-top:0.2rem;">📌 面试官反馈：' + q.interviewer_feedback + '</div>' : '';
+        var strengthsHtml = q.strengths && q.strengths.length ? q.strengths.map(function(s) { return '<span style="display:inline-block;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--green)15;color:var(--green);margin:0.15rem;">✅ ' + s + '</span>'; }).join('') : '';
+        var weaknessesHtml = q.weaknesses && q.weaknesses.length ? q.weaknesses.map(function(w) { return '<span style="display:inline-block;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--red)15;color:var(--red);margin:0.15rem;">⚠️ ' + w + '</span>'; }).join('') : '';
+        var improvedHtml = q.improved_answer ? '<div style="margin-top:0.4rem;padding:0.5rem;background:var(--bg1);border-radius:6px;border-left:3px solid var(--accent);">' +
+          '<div style="font-size:0.78rem;font-weight:600;color:var(--accent);margin-bottom:0.2rem;">💡 改进版回答</div>' +
+          '<div style="font-size:0.8rem;color:var(--ink);line-height:1.6;">' + q.improved_answer.replace(/\n/g, '<br>') + '</div></div>' : '';
+
+        return '<div style="padding:0.8rem;border:1px solid var(--rule);border-radius:8px;margin-bottom:0.6rem;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.3rem;">' +
+          '<div style="font-weight:600;font-size:0.85rem;flex:1;">Q' + (i + 1) + ': ' + q.question + '</div>' +
+          '<span style="flex-shrink:0;font-size:0.85rem;font-weight:700;padding:0.1rem 0.5rem;border-radius:999px;background:' + scoreColor + '20;color:' + scoreColor + ';margin-left:0.5rem;">' + (q.score || '--') + '</span></div>' +
+          (q.intent ? '<div style="font-size:0.78rem;color:var(--muted);margin-bottom:0.3rem;">🎯 考察意图：' + q.intent + '</div>' : '') +
+          (q.your_answer ? '<div style="font-size:0.8rem;color:var(--ink);margin-bottom:0.3rem;padding:0.3rem 0.5rem;background:var(--bg1);border-radius:4px;">你的回答：' + q.your_answer + '</div>' : '') +
+          followUpHtml + feedbackHtml +
+          '<div style="margin-top:0.3rem;display:flex;gap:0.3rem;flex-wrap:wrap;">' + strengthsHtml + weaknessesHtml + '</div>' +
+          improvedHtml + '</div>';
+      }).join('');
+    }
+
+    // 核心改进建议
+    var imprEl = document.getElementById('review-improvements');
+    if (imprEl && review.key_improvements && review.key_improvements.length) {
+      var priColor = { '高': 'var(--red)', '中': 'var(--accent)', '低': 'var(--muted)' };
+      imprEl.innerHTML = review.key_improvements.map(function(item) {
+        var color = priColor[item.priority] || 'var(--muted)';
+        return '<div style="padding:0.6rem;border:1px solid var(--rule);border-radius:8px;margin-bottom:0.5rem;">' +
+          '<div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem;">' +
+          '<span style="font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:' + color + '20;color:' + color + ';font-weight:600;">🔴 ' + item.priority + '优先级</span>' +
+          '<span style="font-weight:600;font-size:0.85rem;">' + (item.area || '') + '</span></div>' +
+          '<div style="font-size:0.8rem;color:var(--muted);">' + (item.suggestion || '') + '</div>' +
+          (item.practice_method ? '<div style="font-size:0.78rem;color:var(--accent);margin-top:0.2rem;">📖 ' + item.practice_method + '</div>' : '') + '</div>';
+      }).join('');
+    }
+
+    // 准备清单
+    var checklistEl = document.getElementById('review-checklist');
+    if (checklistEl && review.preparation_checklist && review.preparation_checklist.length) {
+      checklistEl.innerHTML = review.preparation_checklist.map(function(item) {
+        return '<div style="padding:0.3rem 0;font-size:0.85rem;">☐ ' + item + '</div>';
+      }).join('');
+    }
+
+    // 面试技巧
+    var tipsEl = document.getElementById('review-tips');
+    if (tipsEl && review.interview_tips) {
+      tipsEl.innerHTML = review.interview_tips.replace(/\n/g, '<br>');
+    }
+  }
+
+  // 保存复盘
+  document.getElementById('btn-review-save')?.addEventListener('click', function() {
+    if (!_currentReview) {
+      toast('⚠️ 没有可保存的复盘报告');
+      return;
+    }
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = '⏳ 保存中...';
+
+    fetch('/api/interview-review/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        review: _currentReview,
+        sourceText: _currentSourceText,
+        fileName: document.getElementById('review-file-name').textContent.replace('📄 ', '')
+      })
+    }).then(function(r) { return r.json(); })
+      .then(function(result) {
+        if (result.ok) {
+          toast('✅ 复盘已保存');
+          loadReviewHistory();
+        } else {
+          toast('保存失败: ' + (result.error || ''));
+        }
+      }).catch(function(err) {
+        toast('保存失败: ' + err.message);
+      }).finally(function() {
+        btn.disabled = false;
+        btn.textContent = '💾 保存复盘';
+      });
+  });
+
+  // 清空
+  document.getElementById('btn-review-clear')?.addEventListener('click', function() {
+    document.getElementById('review-text-input').value = '';
+    document.getElementById('review-file-name').textContent = '未选择文件';
+    document.getElementById('review-file-input').value = '';
+    _currentSourceText = '';
+    _currentReview = null;
+    document.getElementById('review-result')?.classList.add('hidden');
+    document.getElementById('review-hint').textContent = '请上传文件或粘贴面试记录文本';
+    checkReviewGenerateReady();
+  });
+
+  // 加载历史复盘
+  async function loadReviewHistory() {
+    var container = document.getElementById('review-history');
+    if (!container) return;
+    try {
+      var list = await fetch('/api/interview-review/history').then(function(r) { return r.json(); });
+      if (!list || !list.length) {
+        container.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--muted);font-size:0.82rem;">暂无复盘记录，导入面试记录后生成</div>';
+        return;
+      }
+      container.innerHTML = list.map(function(item) {
+        var scoreColor = item.overallScore >= 80 ? 'var(--green)' : (item.overallScore >= 60 ? 'var(--accent)' : 'var(--red)');
+        var dateStr = item.createdAt ? item.createdAt.slice(0, 10) : '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem;border:1px solid var(--rule);border-radius:8px;margin-bottom:0.4rem;cursor:pointer;" class="review-history-item" data-id="' + item.id + '">' +
+          '<div style="flex:1;">' +
+          '<div style="font-weight:600;font-size:0.85rem;">' + (item.company || '未知公司') + ' · ' + (item.position || '未知岗位') + ' · ' + (item.round || '') + '</div>' +
+          '<div style="font-size:0.75rem;color:var(--muted);margin-top:0.15rem;">' + dateStr + (item.fileName ? ' | ' + item.fileName : '') + '</div></div>' +
+          '<div style="display:flex;align-items:center;gap:0.5rem;">' +
+          '<span style="font-size:0.85rem;font-weight:700;color:' + scoreColor + ';">' + (item.overallScore || '--') + '分</span>' +
+          '<button class="btn-review-delete" data-id="' + item.id + '" style="font-size:0.72rem;padding:0.1rem 0.4rem;border:1px solid var(--rule);border-radius:4px;background:none;cursor:pointer;color:var(--muted);" title="删除">🗑</button></div></div>';
+      }).join('');
+
+      // 点击历史项查看详情
+      container.querySelectorAll('.review-history-item').forEach(function(el) {
+        el.addEventListener('click', function(e) {
+          if (e.target.closest('.btn-review-delete')) return;
+          var id = this.dataset.id;
+          loadReviewDetail(id);
+        });
+      });
+
+      // 删除按钮
+      container.querySelectorAll('.btn-review-delete').forEach(function(el) {
+        el.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var id = this.dataset.id;
+          if (!confirm('确定删除这条复盘记录吗？')) return;
+          fetch('/api/interview-review/' + id, { method: 'DELETE' })
+            .then(function(r) { return r.json(); })
+            .then(function(result) {
+              if (result.ok) {
+                toast('✅ 已删除');
+                loadReviewHistory();
+              } else {
+                toast('删除失败: ' + (result.error || ''));
+              }
+            });
+        });
+      });
+    } catch (e) {
+      container.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--muted);font-size:0.82rem;">加载历史记录失败</div>';
+    }
+  }
+
+  // 加载复盘详情
+  async function loadReviewDetail(id) {
+    try {
+      var data = await fetch('/api/interview-review/detail/' + id).then(function(r) { return r.json(); });
+      if (data.error) {
+        toast('加载失败: ' + data.error);
+        return;
+      }
+      _currentReview = data.review;
+      _currentSourceText = data.sourceText || '';
+      document.getElementById('review-text-input').value = data.sourceText || '';
+      renderReview(data.review);
+      document.getElementById('review-result')?.classList.remove('hidden');
+      document.getElementById('review-hint').textContent = '📂 已加载历史复盘记录';
+      // 滚动到结果区
+      setTimeout(function() {
+        document.getElementById('review-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 200);
+    } catch (e) {
+      toast('加载失败: ' + e.message);
+    }
+  }
+
+  // 暴露给全局（供 switchTab 调用）
+  window.loadReviewHistory = loadReviewHistory;
+})();
+
+// 初始加载
   setTimeout(loadExperiences, 1000);
 })();
