@@ -1426,6 +1426,16 @@ function switchTab(tabName) {
   if (tabName === 'review') {
     loadReviewHistory();
   }
+  if (tabName === 'code-interview') {
+    if (typeof window.CodeInterview !== 'undefined' && window.CodeInterview.init) {
+      window.CodeInterview.init();
+    }
+  }
+  if (tabName === 'admin') {
+    if (typeof window.Admin !== 'undefined' && window.Admin.init) {
+      window.Admin.init();
+    }
+  }
 }
 
 $$('.nav-tab').forEach(tab => {

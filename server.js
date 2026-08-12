@@ -160,6 +160,8 @@ app.use(express.json({ limit: '2mb' }));
 const { authMiddleware, registerAuthRoutes } = require('./server/auth');
 const { creditCheck, registerCreditRoutes } = require('./server/credits');
 const { registerPlanRoutes } = require('./server/plans');
+const { registerAdminRoutes } = require('./server/admin');
+const { registerCodeInterviewRoutes } = require('./server/code-interview');
 
 // 认证中间件：解析 JWT，注入 req.user
 app.use(authMiddleware);
@@ -168,6 +170,8 @@ app.use(authMiddleware);
 registerAuthRoutes(app);
 registerCreditRoutes(app);
 registerPlanRoutes(app);
+registerAdminRoutes(app);
+registerCodeInterviewRoutes(app);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/knowledge', express.static(path.join(__dirname, 'knowledge')));

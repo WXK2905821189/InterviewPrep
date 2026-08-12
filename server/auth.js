@@ -38,6 +38,10 @@ function saveUsers(users) {
 
 // ─── Auth Middleware ─────────────────────────────────────────
 
+/**
+ * 验证 JWT，将用户信息注入 req.user
+ * 如果请求中无 token，则 req.user = null（兼容未登录的免费模式）
+ */
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -54,6 +58,9 @@ function authMiddleware(req, res, next) {
   next();
 }
 
+/**
+ * 强制要求登录的中间件
+ */
 function requireAuth(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: '请先登录' });
@@ -65,6 +72,7 @@ function requireAuth(req, res, next) {
 
 function registerAuthRoutes(app) {
 
+  // POST /api/auth/register
   app.post('/api/auth/register', async (req, res) => {
     try {
       const { email, password } = req.body;
@@ -89,19 +97,21 @@ function registerAuthRoutes(app) {
       };
       saveUsers(users);
 
+      // 初始化用户 sessions 文件
       const userSessionsFile = path.join(DATA_DIR, '.data', `sessions_${userId}.json`);
       if (!fs.existsSync(userSessionsFile)) {
         fs.writeFileSync(userSessionsFile, '{}', 'utf8');
       }
 
-      const token = jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      res.json({ token, userId, email });
+      const token = jwt.sign({ userId, email, isAdmin: !!user.isAdmin }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      res.json({ token, userId, email, isAdmin: !!user.isAdmin });
     } catch (e) {
       console.error('Register error:', e);
       res.status(500).json({ error: '注册失败' });
     }
   });
 
+  // POST /api/auth/login
   app.post('/api/auth/login', async (req, res) => {
     try {
       const { email, password } = req.body;
@@ -118,14 +128,15 @@ function registerAuthRoutes(app) {
       if (!valid) {
         return res.status(401).json({ error: '邮箱或密码错误' });
       }
-      const token = jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      res.json({ token, userId, email });
+      const token = jwt.sign({ userId, email, isAdmin: !!user.isAdmin }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      res.json({ token, userId, email, isAdmin: !!user.isAdmin });
     } catch (e) {
       console.error('Login error:', e);
       res.status(500).json({ error: '登录失败' });
     }
   });
 
+  // GET /api/auth/me
   app.get('/api/auth/me', requireAuth, (req, res) => {
     const users = loadUsers();
     const user = users[req.user.userId];
@@ -133,12 +144,15 @@ function registerAuthRoutes(app) {
     res.json({
       userId: req.user.userId,
       email: user.email,
-      createdAt: user.createdAt
+      createdAt: user.createdAt,
+      isAdmin: !!user.isAdmin
     });
   });
 
+  // GET /api/auth/free-quota
   app.get('/api/auth/free-quota', async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
+    // 未登录用户：返回默认免费配额
     if (!req.user) {
       return res.json({
         loggedIn: false,

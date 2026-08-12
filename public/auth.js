@@ -23,6 +23,7 @@
   function hideEl(id) { var el = $(id); if (el) el.classList.add('hidden'); }
 
   function toast(msg, ms) {
+    // Use global toast if available
     if (typeof window.toast === 'function') {
       window.toast(msg, ms);
       return;
@@ -34,6 +35,7 @@
     setTimeout(function() { t.remove(); }, ms || 2500);
   }
 
+  // ─── API Calls ──────────────────────────────────────────────
   function apiHeaders() {
     var h = { 'Content-Type': 'application/json' };
     if (_token) h['Authorization'] = 'Bearer ' + _token;
@@ -49,10 +51,11 @@
     return data;
   }
 
+  // ─── Auth Operations ────────────────────────────────────────
   async function login(email, password) {
     var data = await apiCall('POST', '/auth/login', { email: email, password: password });
     _token = data.token;
-    _user = { userId: data.userId, email: data.email };
+    _user = { userId: data.userId, email: data.email, isAdmin: data.isAdmin || false };
     localStorage.setItem('auth_token', _token);
     _loggedIn = true;
     updateNavUI();
@@ -64,7 +67,7 @@
   async function register(email, password) {
     var data = await apiCall('POST', '/auth/register', { email: email, password: password });
     _token = data.token;
-    _user = { userId: data.userId, email: data.email };
+    _user = { userId: data.userId, email: data.email, isAdmin: data.isAdmin || false };
     localStorage.setItem('auth_token', _token);
     _loggedIn = true;
     updateNavUI();
@@ -116,6 +119,7 @@
     }
   }
 
+  // ─── UI Updates ─────────────────────────────────────────────
   function updateNavUI() {
     var btnLogin = $('#btn-open-auth');
     var userInfo = $('#nav-user-info');
@@ -127,10 +131,16 @@
       if (userInfo) userInfo.classList.remove('hidden');
       if (userEmail) userEmail.textContent = _user.email;
       if (creditsEl) creditsEl.classList.remove('hidden');
+      // 显示/隐藏管理后台 Tab
+      var adminTab = $('#tab-admin');
+      if (adminTab) adminTab.style.display = _user.isAdmin ? '' : 'none';
     } else {
       if (btnLogin) btnLogin.classList.remove('hidden');
       if (userInfo) userInfo.classList.add('hidden');
       if (creditsEl) creditsEl.classList.add('hidden');
+      // 隐藏管理后台 Tab
+      var adminTab = $('#tab-admin');
+      if (adminTab) adminTab.style.display = 'none';
     }
   }
 
@@ -142,13 +152,14 @@
   }
 
   function updateQuotaBanners() {
+    // Update all quota banners on the page
     var banners = $$('.quota-banner');
     banners.forEach(function(b) { updateQuotaBanner(b); });
   }
 
   function updateQuotaBanner(banner) {
     if (!_freeQuota) return;
-    var freeType = banner.getAttribute('data-quota-type');
+    var freeType = banner.getAttribute('data-quota-type'); // 'evaluation' or 'analysis'
     var free = _freeQuota.free || {};
     var used = freeType === 'analysis' ? (free.usedAnalyses || 0) : (free.usedEvaluations || 0);
     var total = freeType === 'analysis' ? (free.dailyAnalyses || 1) : (free.dailyEvaluations || 3);
@@ -178,6 +189,7 @@
     }
   }
 
+  // ─── Auth Modal ─────────────────────────────────────────────
   function openAuthModal(tab) {
     tab = tab || 'login';
     var modal = $('#auth-modal');
@@ -203,6 +215,7 @@
       if (regForm) regForm.classList.remove('hidden');
     }
 
+    // Clear errors
     var errEl = $('#auth-error');
     if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
     var regErrEl = $('#auth-reg-error');
@@ -214,6 +227,7 @@
     if (modal) modal.classList.add('hidden');
   }
 
+  // ─── Plans Modal ────────────────────────────────────────────
   async function openPlansModal() {
     if (!_loggedIn) {
       toast('请先登录');
@@ -225,9 +239,11 @@
     if (!modal) return;
     modal.classList.remove('hidden');
 
+    // Update balance
     var balNum = $('#plans-balance-num');
     if (balNum) balNum.textContent = _credits.balance || 0;
 
+    // Load plans
     var plans = await loadPlans();
     var grid = $('#plans-grid');
     if (!grid) return;
@@ -265,14 +281,17 @@
       toast('正在创建支付链接...');
       var data = await apiCall('POST', '/payment/create-checkout', { planId: planId });
       if (data.checkoutUrl) {
+        // 开发模式：模拟支付
         if (data.checkoutUrl.startsWith('/api/payment/mock-checkout')) {
           window.open(data.checkoutUrl, '_blank');
+          // 延迟刷新点数
           setTimeout(function() {
             loadCredits();
             closePlansModal();
             toast('点数充值成功！');
           }, 3000);
         } else {
+          // 生产模式：跳转到 LemonSqueezy
           window.open(data.checkoutUrl, '_blank');
           toast('请在支付页面完成支付，支付成功后点数将自动到账');
         }
@@ -282,6 +301,7 @@
     }
   }
 
+  // ─── Credit Logs Modal ──────────────────────────────────────
   var _creditLogs = [];
 
   async function openCreditLogsModal() {
@@ -293,11 +313,13 @@
     if (!modal) return;
     modal.classList.remove('hidden');
 
+    // Update balance
     var balEl = $('#credit-logs-balance');
     if (balEl) {
       balEl.innerHTML = '当前点数：<b style="font-size:1.2rem;color:var(--accent);">' + (_credits.balance || 0) + '</b> 🪙';
     }
 
+    // Load logs
     var listEl = $('#credit-logs-list');
     if (!listEl) return;
     listEl.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted);">加载中...</div>';
@@ -362,6 +384,7 @@
     if (modal) modal.classList.add('hidden');
   }
 
+  // ─── Subscription Check ─────────────────────────────────────
   var _subscription = null;
 
   async function checkSubscription() {
@@ -376,6 +399,7 @@
   }
 
   function updateSubscriptionUI() {
+    // Remove existing subscription banners
     var existing = $$('.sub-banner');
     existing.forEach(function(b) { b.remove(); });
 
@@ -399,6 +423,7 @@
       banner.innerHTML = '<span class="sub-dot"></span><span class="sub-msg">' + planName + '有效中（剩余 ' + daysLeft + ' 天），不限次数使用全部功能</span>';
     }
 
+    // Insert after the first hero-card in the dashboard
     var dashboard = $('#tab-dashboard');
     if (dashboard && banner) {
       var heroCard = dashboard.querySelector('.hero-card');
@@ -407,6 +432,7 @@
       }
     }
 
+    // Add click handler for renew link
     var renewLink = banner.querySelector('.sub-renew');
     if (renewLink) {
       renewLink.addEventListener('click', function(e) {
@@ -416,12 +442,15 @@
     }
   }
 
+  // ─── Event Listeners ────────────────────────────────────────
   function init() {
+    // Open auth modal
     var btnOpenAuth = $('#btn-open-auth');
     if (btnOpenAuth) {
       btnOpenAuth.addEventListener('click', function() { openAuthModal('login'); });
     }
 
+    // Close auth modal
     var btnCloseAuth = $('#btn-close-auth');
     if (btnCloseAuth) {
       btnCloseAuth.addEventListener('click', closeAuthModal);
@@ -433,12 +462,14 @@
       });
     }
 
+    // Auth tabs
     $$('.auth-tab').forEach(function(tab) {
       tab.addEventListener('click', function() {
         openAuthModal(tab.getAttribute('data-auth-tab'));
       });
     });
 
+    // Login form
     var loginForm = $('#auth-login-form');
     if (loginForm) {
       loginForm.addEventListener('submit', async function(e) {
@@ -461,6 +492,7 @@
       });
     }
 
+    // Register form
     var regForm = $('#auth-register-form');
     if (regForm) {
       regForm.addEventListener('submit', async function(e) {
@@ -487,11 +519,13 @@
       });
     }
 
+    // Logout
     var btnLogout = $('#btn-logout');
     if (btnLogout) {
       btnLogout.addEventListener('click', logout);
     }
 
+    // Open plans modal
     var btnBuyCredits = $('#btn-buy-credits');
     if (btnBuyCredits) {
       btnBuyCredits.addEventListener('click', openPlansModal);
@@ -501,6 +535,7 @@
       navCredits.addEventListener('click', openPlansModal);
     }
 
+    // Close plans modal
     var btnClosePlans = $('#btn-close-plans');
     if (btnClosePlans) {
       btnClosePlans.addEventListener('click', closePlansModal);
@@ -512,14 +547,17 @@
       });
     }
 
+    // Payment success detection (from URL param)
     if (window.location.search.includes('payment=success')) {
       toast('支付成功！点数已到账');
       loadCredits();
+      // Clean URL
       var url = new URL(window.location);
       url.searchParams.delete('payment');
       window.history.replaceState({}, '', url.toString());
     }
 
+    // Quota banner "购买点数" links
     var buyLinks = $$('[id^="quota-buy-link-"]');
     buyLinks.forEach(function(link) {
       link.addEventListener('click', function(e) {
@@ -528,6 +566,7 @@
       });
     });
 
+    // Credit logs
     var btnCreditLogs = $('#btn-credit-logs');
     if (btnCreditLogs) {
       btnCreditLogs.addEventListener('click', function(e) {
@@ -546,12 +585,14 @@
       });
     }
 
+    // Initial load
     if (_token) {
       loadFreeQuota().then(function() {
         if (_loggedIn) {
           loadCredits();
           checkSubscription();
         } else {
+          // Token expired
           _token = null;
           localStorage.removeItem('auth_token');
           updateNavUI();
@@ -562,8 +603,11 @@
     }
   }
 
+  // ─── Public API ─────────────────────────────────────────────
+  // Expose functions for app.js to use
   window.Auth = {
     isLoggedIn: function() { return _loggedIn; },
+    isAdmin: function() { return _user && _user.isAdmin; },
     getToken: function() { return _token; },
     getUser: function() { return _user; },
     getCredits: function() { return _credits; },
@@ -573,9 +617,11 @@
     login: login,
     logout: logout,
     openPlansModal: openPlansModal,
-    apiHeaders: apiHeaders
+    apiHeaders: apiHeaders,
+    apiCall: apiCall
   };
 
+  // Run on DOM ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
