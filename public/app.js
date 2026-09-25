@@ -112,28 +112,19 @@ async function loadDashboard() {
         const el = document.createElement('div');
         el.id = 'welcome-hero';
         el.className = 'card';
-        el.style.cssText = 'text-align:center;padding:2.5rem;border:2px dashed var(--accent2);background:linear-gradient(135deg, rgba(79,70,229,0.06), rgba(6,182,212,0.06));';
+        el.style.cssText = 'padding:1rem 1.25rem;background:linear-gradient(135deg, var(--accent-glow), rgba(74,124,89,0.04));';
         el.innerHTML = `
-          <h2 style="margin-bottom:0.8rem;">👋 欢迎使用 InterviewPrep</h2>
-          <p style="color:var(--muted);margin-bottom:1.2rem;">AI 驱动的面试准备工具，三步开始你的面试备战之旅</p>
-          <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;">
-            <div style="flex:1;min-width:140px;max-width:200px;padding:1rem;background:var(--bg1);border-radius:8px;">
-              <div style="font-size:1.5rem;margin-bottom:0.3rem;">1️⃣</div>
-              <div style="font-weight:600;font-size:0.85rem;">填写 JD + 简历</div>
-              <div style="font-size:0.72rem;color:var(--muted);">在「分析 & 押题」页输入岗位描述和你的简历</div>
+          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:0.95rem;">👋 欢迎使用 InterviewPrep<span style="font-weight:400;font-size:0.78rem;color:var(--muted);margin-left:0.5rem;">AI 驱动的面试准备工具，三步开始备战</span></div>
+              <div style="display:flex;gap:1.1rem;flex-wrap:wrap;margin-top:0.3rem;font-size:0.76rem;color:var(--muted);">
+                <span>1️⃣ 填写 JD + 简历</span>
+                <span>2️⃣ AI 自动押题</span>
+                <span>3️⃣ 逐题练习 + 模拟</span>
+              </div>
             </div>
-            <div style="flex:1;min-width:140px;max-width:200px;padding:1rem;background:var(--bg1);border-radius:8px;">
-              <div style="font-size:1.5rem;margin-bottom:0.3rem;">2️⃣</div>
-              <div style="font-weight:600;font-size:0.85rem;">AI 自动押题</div>
-              <div style="font-size:0.72rem;color:var(--muted);">点击分析，AI 生成 5 类面题 + 差距分析</div>
-            </div>
-            <div style="flex:1;min-width:140px;max-width:200px;padding:1rem;background:var(--bg1);border-radius:8px;">
-              <div style="font-size:1.5rem;margin-bottom:0.3rem;">3️⃣</div>
-              <div style="font-weight:600;font-size:0.85rem;">逐题练习 + 模拟</div>
-              <div style="font-size:0.72rem;color:var(--muted);">在「单题练习」打磨每道题，或「全真模拟」1v1 面试</div>
-            </div>
+            <button onclick="switchTab('analyze')" class="btn-primary" style="flex-shrink:0;font-size:0.82rem;">🚀 开始分析</button>
           </div>
-          <button onclick="switchTab('analyze')" class="btn-primary" style="margin-top:1.2rem;">🚀 开始分析</button>
         `;
         dash.prepend(el);
       }
@@ -174,7 +165,7 @@ async function loadDashboard() {
         <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;">
           <div><span style="font-size:1.5rem;font-weight:700;">${data.totalPractices || 0}</span><br><span style="font-size:0.78rem;color:var(--muted);">总练习</span></div>
           <div><span style="font-size:1.5rem;font-weight:700;">${data.totalInterviews || 0}</span><br><span style="font-size:0.78rem;color:var(--muted);">模拟面试</span></div>
-          <div><span style="font-size:1.5rem;font-weight:700;color:var(--accent);">${data.avgScore || 0}</span><br><span style="font-size:0.78rem;color:var(--muted);">平均分</span></div>
+          <div><span style="font-size:1.5rem;font-weight:700;color:var(--accent-text);">${data.avgScore || 0}</span><br><span style="font-size:0.78rem;color:var(--muted);">平均分</span></div>
         </div>
       `;
     }
@@ -616,7 +607,7 @@ function showPracticeDetail(p) {
 
     ${p.improvedVersion ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;display:flex;align-items:center;gap:0.3rem;">💡 AI改进参考</b><div style="background:rgba(79,70,229,0.05);padding:0.6rem;border-radius:6px;margin-top:0.3rem;font-size:0.82rem;line-height:1.7;max-height:250px;overflow-y:auto;white-space:pre-wrap;">' + escHtml(p.improvedVersion) + '</div></div>' : ''}
 
-    ${takeaways ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;display:flex;align-items:center;gap:0.3rem;">🎯 关键改进点</b><div style="font-size:0.82rem;color:var(--accent);margin-top:0.3rem;line-height:1.6;">' + takeaways + '</div></div>' : ''}
+    ${takeaways ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;display:flex;align-items:center;gap:0.3rem;">🎯 关键改进点</b><div style="font-size:0.82rem;color:var(--accent-text);margin-top:0.3rem;line-height:1.6;">' + takeaways + '</div></div>' : ''}
 
     ${p.lineByLine && p.lineByLine.length ? '<div style="margin-bottom:0.8rem;"><b style="font-size:0.85rem;display:flex;align-items:center;gap:0.3rem;">🔍 逐句分析</b><div style="margin-top:0.3rem;">' + p.lineByLine.map(function(l) {
       return '<div style="padding:0.4rem 0.5rem;margin-bottom:0.3rem;background:' + (l.is_good ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)') + ';border-radius:4px;border-left:3px solid ' + (l.is_good ? 'var(--green)' : 'var(--red)') + ';">' +
@@ -714,7 +705,7 @@ function renderInterviewHistory(reports) {
     '<span>🎤</span>' +
     '<span style="flex:1;font-size:0.85rem;">' + (r.label || r.position || '面试') + '</span>' +
     '<span style="font-size:0.78rem;color:var(--muted);">' + (r.date || '').slice(0,10) + '</span>' +
-    '<span style="font-weight:600;color:var(--accent);">' + (r.score || '-') + '分</span>' +
+    '<span style="font-weight:600;color:var(--accent-text);">' + (r.score || '-') + '分</span>' +
     '</div>'
   ).join('');
 }
@@ -762,7 +753,7 @@ async function loadPracticeHistoryFromServer() {
           <div style="color:var(--muted);margin-bottom:0.3rem;"><b>题目：</b>${p.question||''}</div>
           <div style="color:var(--muted);margin-bottom:0.3rem;"><b>你的回答：</b>${(p.answer||'').slice(0, 300)}${(p.answer||'').length>300?'...':''}</div>
           ${p.improvedVersion ? `<div style="background:rgba(79,70,229,0.05);padding:0.4rem;border-radius:4px;margin-bottom:0.3rem;"><b>💡 改进版参考：</b>${p.improvedVersion}</div>` : ''}
-          ${p.keyTakeaways ? `<div style="color:var(--accent);"><b>🎯 关键改进点：</b>${p.keyTakeaways}</div>` : ''}
+          ${p.keyTakeaways ? `<div style="color:var(--accent-text);"><b>🎯 关键改进点：</b>${p.keyTakeaways}</div>` : ''}
           ${p.scores ? `<div style="font-size:0.72rem;color:var(--muted);margin-top:0.2rem;">STAR:${p.scores.star_completeness||'-'} | 量化:${p.scores.quantification||'-'} | 匹配:${p.scores.position_match||'-'} | 结构:${p.scores.structure||'-'} | 亮点:${p.scores.highlight||'-'}</div>` : ''}
         </div>
       </details>`;
@@ -966,7 +957,7 @@ function renderCounterQuestions(mode, data) {
   };
 
   container.innerHTML = `
-    <div style="font-weight:600;font-size:0.95rem;margin-bottom:0.6rem;color:var(--accent);">🔄 反问面试官 — 高质量问题建议</div>
+    <div style="font-weight:600;font-size:0.95rem;margin-bottom:0.6rem;color:var(--accent-text);">🔄 反问面试官 — 高质量问题建议</div>
     <div style="display:flex;flex-direction:column;gap:0.5rem;">
       ${data.questions.map(function(q, i) {
         var color = catColors[q.category] || 'var(--accent)';
@@ -1184,7 +1175,7 @@ $('#btn-check-update')?.addEventListener('click', async () => {
 
       detailEl.innerHTML = `
         <div style="background:var(--bg2);border:1px solid var(--accent);border-radius:8px;padding:0.8rem;">
-          <p style="font-weight:600;color:var(--accent);margin:0 0 0.5rem 0;">📦 v${latestVer} 更新内容</p>
+          <p style="font-weight:600;color:var(--accent-text);margin:0 0 0.5rem 0;">📦 v${latestVer} 更新内容</p>
           <p style="font-size:0.8rem;color:var(--muted);margin:0 0 0.8rem 0;">${body || '（无详细说明）'}</p>
           ${isElectron
             ? `<button id="btn-install-update" class="btn-primary" style="font-size:0.82rem;" data-url="${downloadUrl}" data-sha="${assetSha}">⬇️ 一键安装更新</button>`
@@ -2038,7 +2029,7 @@ function renderFilteredPracticeList(allQs, filterType, filterSource) {
   $('#practice-question-list').innerHTML = filtered.map((q, i) => `
     <li data-idx="${i}" data-question="${encodeURIComponent(q.question||'')}" style="${q._source ? 'background:var(--tag-bg);border-radius:4px;margin:2px 0;' : ''}">
       <span class="q-num">${i + 1}</span>
-      ${q._source ? `<span style="font-size:0.65rem;color:var(--accent);margin-right:4px;">${q._source}</span>` : ''}
+      ${q._source ? `<span style="font-size:0.65rem;color:var(--accent-text);margin-right:4px;">${q._source}</span>` : ''}
       ${q.type ? `<span class="q-type ${getTypeClass(q.type)}" style="font-size:0.62rem;padding:1px 4px;margin-right:4px;">${q.type}</span>` : ''}
       ${q.question || ''}
     </li>
@@ -2875,7 +2866,7 @@ function updateMultiRoundBar(rounds, currentRound, totalRounds) {
   if (stepsEl && rounds && rounds.length) {
     stepsEl.innerHTML = rounds.map(function(r, i) {
       var status = i + 1 < currentRound ? 'completed' : (i + 1 === currentRound ? 'active' : 'pending');
-      var cls = status === 'completed' ? 'color:var(--green);' : (status === 'active' ? 'color:var(--accent);font-weight:600;' : 'color:var(--muted);opacity:0.5;');
+      var cls = status === 'completed' ? 'color:var(--green);' : (status === 'active' ? 'color:var(--accent-text);font-weight:600;' : 'color:var(--muted);opacity:0.5;');
       var icon = status === 'completed' ? '✅' : (status === 'active' ? '🔵' : '⚪');
       return '<span style="display:flex;align-items:center;gap:0.2rem;font-size:0.72rem;' + cls + '">' + icon + ' ' + r.label + '</span>';
     }).join(' → ');
@@ -2926,7 +2917,7 @@ async function loadMultiRoundFinalReport() {
     
     $('#interview-report').classList.remove('hidden');
     var html = '<div class="card"><h2>🏆 多轮面试综合报告</h2>';
-    html += '<div style="text-align:center;margin:1rem 0;"><div style="font-size:2.5rem;font-weight:800;color:var(--accent);">' + (res.overallScore || '--') + '</div><div style="font-size:0.85rem;color:var(--muted);">综合评分 · 共' + res.completedRounds + '/' + res.totalRounds + '轮</div></div>';
+    html += '<div style="text-align:center;margin:1rem 0;"><div style="font-size:2.5rem;font-weight:800;color:var(--accent-text);">' + (res.overallScore || '--') + '</div><div style="font-size:0.85rem;color:var(--muted);">综合评分 · 共' + res.completedRounds + '/' + res.totalRounds + '轮</div></div>';
     
     // 各维度平均分
     var dims = [
@@ -2948,7 +2939,7 @@ async function loadMultiRoundFinalReport() {
       html += '<h3 style="margin-bottom:0.5rem;">轮次对比</h3>';
       html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">';
       res.roundReports.forEach(function(r) {
-        html += '<div style="flex:1;min-width:120px;padding:0.5rem;background:var(--bg1);border-radius:6px;border-left:3px solid var(--accent);"><div style="font-size:0.78rem;font-weight:600;">' + (r.label || '第' + r.round + '轮') + '</div><div style="font-size:1.1rem;font-weight:700;color:var(--accent);">' + (r.score || '--') + '</div><div style="font-size:0.7rem;color:var(--muted);">' + (r.totalQuestions || 0) + '题</div></div>';
+        html += '<div style="flex:1;min-width:120px;padding:0.5rem;background:var(--bg1);border-radius:6px;border-left:3px solid var(--accent);"><div style="font-size:0.78rem;font-weight:600;">' + (r.label || '第' + r.round + '轮') + '</div><div style="font-size:1.1rem;font-weight:700;color:var(--accent-text);">' + (r.score || '--') + '</div><div style="font-size:0.7rem;color:var(--muted);">' + (r.totalQuestions || 0) + '题</div></div>';
       });
       html += '</div>';
     }
@@ -3232,7 +3223,7 @@ function renderResumeOptimization(data) {
     el.style.display = 'block';
     el.innerHTML = `
       <h3>🎤 一句话自我介绍</h3>
-      <p style="font-size:1rem;font-weight:600;color:var(--accent);">${data.elevator_pitch || ''}</p>
+      <p style="font-size:1rem;font-weight:600;color:var(--accent-text);">${data.elevator_pitch || ''}</p>
       ${data.self_intro_script ? `
       <h3 style="margin-top:1rem;">📝 1分钟自我介绍脚本</h3>
       <p style="background:var(--tag-bg);padding:1rem;border-radius:8px;font-size:0.88rem;line-height:1.7;">${data.self_intro_script}</p>` : ''}
@@ -3601,7 +3592,7 @@ async function refreshConnectionList() {
       <div class="conn-item">
         <div class="conn-info">
           <span class="conn-provider">${conn.name || conn.providerId}</span>
-          <span class="conn-key">${conn.providerId} · ${conn.hasApiKey ? '🔑 已配置' : '⚠️ 无Key'} · 模型: ${conn.model || '未设置'} · 创意度: ${t}${conn.id === activeId ? ' · <strong style="color:var(--accent);">激活</strong>' : ''}</span>
+          <span class="conn-key">${conn.providerId} · ${conn.hasApiKey ? '🔑 已配置' : '⚠️ 无Key'} · 模型: ${conn.model || '未设置'} · 创意度: ${t}${conn.id === activeId ? ' · <strong style="color:var(--accent-text);">激活</strong>' : ''}</span>
           ${conn.models?.length ? `<span class="conn-key" style="display:block;margin-top:2px;">可用模型: ${conn.models.slice(0,10).join(', ')}${conn.models.length > 10 ? '...等' + conn.models.length + '个' : ''}</span>` : ''}
         </div>
         <div class="conn-actions">
@@ -4058,7 +4049,7 @@ function renderBehavioralSidebar(searchText = '') {
   var totalCount = _behavioralQuestions.length;
   html += `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.5rem;margin-bottom:0.5rem;background:var(--bg0);border-radius:6px;font-size:0.78rem;">
     <span style="color:var(--muted);">进度</span>
-    <span style="font-weight:700;color:var(--accent);">${answeredCount}/${totalCount}</span>
+    <span style="font-weight:700;color:var(--accent-text);">${answeredCount}/${totalCount}</span>
     <div style="flex:1;height:4px;background:var(--bg2);border-radius:2px;overflow:hidden;">
       <div style="height:100%;background:var(--accent);border-radius:2px;width:${totalCount > 0 ? Math.round(answeredCount/totalCount*100) : 0}%;transition:width 0.3s;"></div>
     </div>
@@ -4085,7 +4076,7 @@ function renderBehavioralSidebar(searchText = '') {
         <div style="display:flex;align-items:flex-start;gap:0.3rem;">
           <span style="color:var(--muted);font-size:0.68rem;flex-shrink:0;">${q.id.replace('gb','#')}</span>
           <span style="flex:1;">${q.question.length > 40 ? q.question.slice(0,40)+'...' : q.question}</span>
-          ${saved ? '<span style="font-size:0.65rem;color:var(--accent);flex-shrink:0;">✅</span>' : ''}
+          ${saved ? '<span style="font-size:0.65rem;color:var(--accent-text);flex-shrink:0;">✅</span>' : ''}
         </div>
       </div>`;
     }
@@ -4134,7 +4125,7 @@ function renderBehavioralDetail(qId) {
 
       <!-- 回答框架 -->
       <details style="margin-bottom:0.8rem;font-size:0.82rem;">
-        <summary style="cursor:pointer;font-weight:600;color:var(--accent);">📋 回答框架 & 危险区</summary>
+        <summary style="cursor:pointer;font-weight:600;color:var(--accent-text);">📋 回答框架 & 危险区</summary>
         <div style="margin-top:0.4rem;padding:0.5rem;background:var(--bg0);border-radius:6px;line-height:1.6;">
           <div style="margin-bottom:0.4rem;"><strong>框架：</strong>${q.framework || '无'}</div>
           <div style="color:var(--red);"><strong>⚠️ 危险区：</strong>${q.danger_zones || '无'}</div>
@@ -4144,16 +4135,16 @@ function renderBehavioralDetail(qId) {
       <!-- 已生成答案 -->
       ${answerHtml ? `
       <div class="behavioral-answer-box" style="background:var(--bg0);padding:0.8rem;border-radius:8px;margin-bottom:0.6rem;">
-        <div style="font-weight:600;font-size:0.82rem;color:var(--accent);margin-bottom:0.5rem;">✨ 标准化回答</div>
+        <div style="font-weight:600;font-size:0.82rem;color:var(--accent-text);margin-bottom:0.5rem;">✨ 标准化回答</div>
         <div class="behavioral-answer-content" style="font-size:0.88rem;line-height:1.8;color:var(--fg);">
           ${answerHtml}
         </div>
         ${saved.key_points?.length ? `
         <div style="margin-top:0.6rem;display:flex;flex-wrap:wrap;gap:0.3rem;">
-          ${saved.key_points.map(kp => `<span style="font-size:0.72rem;background:var(--accent-glow);color:var(--accent);padding:2px 8px;border-radius:10px;">${kp}</span>`).join('')}
+          ${saved.key_points.map(kp => `<span style="font-size:0.72rem;background:var(--accent-glow);color:var(--accent-text);padding:2px 8px;border-radius:10px;">${kp}</span>`).join('')}
         </div>` : ''}
         <div style="display:flex;gap:0.5rem;margin-top:0.6rem;flex-wrap:wrap;align-items:center;">
-          <span style="font-size:0.75rem;color:var(--accent);">⏱ ${saved.duration_estimate || ''}</span>
+          <span style="font-size:0.75rem;color:var(--accent-text);">⏱ ${saved.duration_estimate || ''}</span>
           ${saved.tips ? `<span style="font-size:0.75rem;color:var(--muted);">💡 ${saved.tips}</span>` : ''}
         </div>
       </div>` : ''}
@@ -4419,7 +4410,7 @@ function formatBehavioralAnswer(text) {
       var level = p.match(/^(#{1,3})\s/)[1].length;
       var titleText = p.replace(/^#{1,3}\s+/, '');
       var fontSize = level === 1 ? '1.05rem' : level === 2 ? '0.95rem' : '0.88rem';
-      result += '<h4 style="font-size:' + fontSize + ';font-weight:700;color:var(--accent);margin:0.8rem 0 0.4rem 0;line-height:1.4;">' + titleText + '</h4>';
+      result += '<h4 style="font-size:' + fontSize + ';font-weight:700;color:var(--accent-text);margin:0.8rem 0 0.4rem 0;line-height:1.4;">' + titleText + '</h4>';
       continue;
     }
 
@@ -4531,7 +4522,7 @@ function renderMianjingResults(mData) {
     <div class="card" style="padding:0.8rem;margin-bottom:0.5rem;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
         <div style="flex:1;">
-          <span style="font-size:0.75rem;color:var(--accent);background:var(--tag-bg);padding:1px 6px;border-radius:3px;">${q.type || '未知'}</span>
+          <span style="font-size:0.75rem;color:var(--accent-text);background:var(--tag-bg);padding:1px 6px;border-radius:3px;">${q.type || '未知'}</span>
           <span style="margin-left:0.5rem;font-size:0.85rem;">${i+1}. ${q.question || ''}</span>
           ${q.sample_answer_points?.length ? '<div style="font-size:0.75rem;color:var(--muted);margin-top:0.3rem;">💡 ' + q.sample_answer_points.join(' / ') + '</div>' : ''}
         </div>
@@ -4800,7 +4791,7 @@ function renderCompanyInterviewPrep(data, company) {
     const qas = data.mock_qa.map(qa => `
       <div class="ci-line" style="margin-bottom:0.6rem;padding:0.4rem 0.6rem;background:var(--bg2);border-radius:4px;">
         <b>❓ ${qa.q}</b><br>
-        <span style="color:var(--accent);font-size:0.8rem;">💡 ${qa.a_tips}</span>
+        <span style="color:var(--accent-text);font-size:0.8rem;">💡 ${qa.a_tips}</span>
       </div>
     `).join('');
     html.push(`<div class="ci-section">
@@ -4916,7 +4907,7 @@ function renderEnvPanel(healthData) {
   const itemsHtml = items.map(it => '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;">' +
     '<span>' + statusIcon(it.ok) + '</span>' +
     '<span style="flex:1;"><b>' + it.label + '</b>: ' + it.detail + '</span>' +
-    (it.fix ? '<span style="color:var(--accent);cursor:pointer;font-size:0.78rem;" data-fix="' + it.fix + '">🔧 修复</span>' : '') +
+    (it.fix ? '<span style="color:var(--accent-text);cursor:pointer;font-size:0.78rem;" data-fix="' + it.fix + '">🔧 修复</span>' : '') +
     '</div>').join('');
 
   itemsContainer.innerHTML = '<div style="margin-bottom:0.4rem;"><b>' + overallStatus + '</b></div>' + itemsHtml;
@@ -5239,7 +5230,7 @@ function downloadFile(filename, content, mimeType) {
     }
 
     listEl.innerHTML = filtered.map(function(q, i) {
-      var source = q._source ? '<span style="font-size:0.65rem;color:var(--accent);margin-right:4px;">' + q._source + '</span>' : '';
+      var source = q._source ? '<span style="font-size:0.65rem;color:var(--accent-text);margin-right:4px;">' + q._source + '</span>' : '';
       var done = false;
       try {
         var stored2 = localStorage.getItem('drill_completed_' + (state.sessionId || ''));
@@ -5576,7 +5567,7 @@ function downloadFile(filename, content, mimeType) {
         return '<div class="drill-history-item">' +
           '<span class="drill-attempt-badge">#' + (r.attemptNumber || '-') + '</span>' +
           '<span style="flex:1;">' + date + '</span>' +
-          '<span style="font-weight:700;font-size:1.1rem;color:var(--accent);">' + (r.overallScore || '-') + '分</span>' +
+          '<span style="font-weight:700;font-size:1.1rem;color:var(--accent-text);">' + (r.overallScore || '-') + '分</span>' +
           trend + '</div>';
       }).join('');
       var chartEl = document.getElementById('drill-history-chart');
@@ -6200,7 +6191,7 @@ function showComparisonView(question, userAnswer, modelAnswer, feedback) {
     (feedback ? '<div style="background:rgba(200,135,43,0.06);border-radius:8px;padding:0.8rem;margin-bottom:1rem;font-size:0.82rem;"><strong>AI \u70B9\u8BC4: </strong>' + escapeHtml(feedback) + '</div>' : '') +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">' +
     '<div><h4 style="color:var(--muted);margin-bottom:0.5rem;">\u4F60\u7684\u56DE\u7B54</h4><div style="background:var(--bg);border:1px solid var(--rule);border-radius:8px;padding:0.8rem;font-size:0.82rem;line-height:1.7;white-space:pre-line;min-height:100px;">' + escapeHtml(userAnswer || '(\u672A\u4F5C\u7B54)') + '</div></div>' +
-    '<div><h4 style="color:var(--accent);margin-bottom:0.5rem;">AI \u6807\u51C6\u7B54\u6848</h4><div style="background:rgba(200,135,43,0.04);border:1px solid rgba(200,135,43,0.15);border-radius:8px;padding:0.8rem;font-size:0.82rem;line-height:1.7;white-space:pre-line;min-height:100px;">' + escapeHtml(modelAnswer || '(\u6682\u65E0)') + '</div></div>' +
+    '<div><h4 style="color:var(--accent-text);margin-bottom:0.5rem;">AI \u6807\u51C6\u7B54\u6848</h4><div style="background:rgba(200,135,43,0.04);border:1px solid rgba(200,135,43,0.15);border-radius:8px;padding:0.8rem;font-size:0.82rem;line-height:1.7;white-space:pre-line;min-height:100px;">' + escapeHtml(modelAnswer || '(\u6682\u65E0)') + '</div></div>' +
     '</div></div></div>';
   document.body.appendChild(overlay);
   overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
@@ -6260,14 +6251,14 @@ async function loadWrongBook() {
       statsEl.innerHTML = '<div style="display:flex;gap:1rem;flex-wrap:wrap;">' +
         '<div class="card" style="flex:1;min-width:120px;text-align:center;"><div style="font-size:2rem;font-weight:700;color:var(--red);">' + data.stats.wrong_count + '</div><div style="font-size:0.78rem;color:var(--muted);">\u9519\u9898</div></div>' +
         '<div class="card" style="flex:1;min-width:120px;text-align:center;"><div style="font-size:2rem;font-weight:700;color:var(--green);">' + data.stats.improvement_rate + '%</div><div style="font-size:0.78rem;color:var(--muted);">\u8FDB\u6B65\u7387</div></div>' +
-        '<div class="card" style="flex:1;min-width:120px;text-align:center;"><div style="font-size:2rem;font-weight:700;color:var(--accent);">' + data.stats.total_practice + '</div><div style="font-size:0.78rem;color:var(--muted);">\u603B\u7EC3\u4E60</div></div></div>';
+        '<div class="card" style="flex:1;min-width:120px;text-align:center;"><div style="font-size:2rem;font-weight:700;color:var(--accent-text);">' + data.stats.total_practice + '</div><div style="font-size:0.78rem;color:var(--muted);">\u603B\u7EC3\u4E60</div></div></div>';
     }
     var typeFilter = document.getElementById('wrongbook-type-filter');
     if (typeFilter) typeFilter.innerHTML = '<option value="">\u5168\u90E8\u9898\u578B</option>' + (data.all_types || []).map(function(t) { return '<option value="' + t + '">' + t + '</option>'; }).join('');
     var listHTML = '';
     (data.wrong || []).forEach(function(q, i) {
       var color = q.bestScore < 40 ? 'var(--red)' : q.bestScore < 60 ? 'var(--accent)' : 'var(--green)';
-      listHTML += '<div class="card" style="margin-bottom:0.6rem;"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;"><div style="flex:1;"><div style="font-weight:600;font-size:0.85rem;">' + (i+1) + '. ' + escapeHtml(q.question) + '</div><div style="display:flex;gap:0.5rem;margin-top:0.3rem;flex-wrap:wrap;"><span style="font-size:0.72rem;background:rgba(200,135,43,0.1);color:var(--accent);padding:0.1rem 0.4rem;border-radius:3px;">' + q.questionType + '</span><span style="font-size:0.72rem;color:' + color + ';font-weight:600;">\u6700\u4F73: ' + q.bestScore + '</span><span style="font-size:0.72rem;color:var(--muted);">\u5C1D\u8BD5: ' + q.attempts.length + ' \u6B21</span></div></div><button class="btn-ai-action btn-ai-followup" onclick="redoWrongQuestion(\'' + escapeHtml(q.question).replace(/'/g, "\\'") + '\')" style="flex-shrink:0;">\u91CD\u505A</button></div></div>';
+      listHTML += '<div class="card" style="margin-bottom:0.6rem;"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;"><div style="flex:1;"><div style="font-weight:600;font-size:0.85rem;">' + (i+1) + '. ' + escapeHtml(q.question) + '</div><div style="display:flex;gap:0.5rem;margin-top:0.3rem;flex-wrap:wrap;"><span style="font-size:0.72rem;background:rgba(200,135,43,0.1);color:var(--accent-text);padding:0.1rem 0.4rem;border-radius:3px;">' + q.questionType + '</span><span style="font-size:0.72rem;color:' + color + ';font-weight:600;">\u6700\u4F73: ' + q.bestScore + '</span><span style="font-size:0.72rem;color:var(--muted);">\u5C1D\u8BD5: ' + q.attempts.length + ' \u6B21</span></div></div><button class="btn-ai-action btn-ai-followup" onclick="redoWrongQuestion(\'' + escapeHtml(q.question).replace(/'/g, "\\'") + '\')" style="flex-shrink:0;">\u91CD\u505A</button></div></div>';
     });
     var listEl = document.getElementById('wrongbook-list');
     if (listEl) listEl.innerHTML = listHTML || '<p style="color:var(--muted);text-align:center;padding:2rem;">\u6CA1\u6709\u9519\u9898\uFF01</p>';
@@ -6529,7 +6520,7 @@ function renderGroupTopic(topic) {
     '<div style=\"background:var(--tag-bg);padding:0.8rem;border-radius:var(--radius-sm);\">' +
     '<strong>' + escapeHtml(topic.topic) + '</strong>' +
     '<p style=\"margin:0.5rem 0 0;color:var(--muted);\">' + escapeHtml(topic.background) + '</p>' +
-    '<span style=\"font-size:0.75rem;color:var(--accent);\">\u9898\u578B\uFF1A' + escapeHtml(topic.type) + '</span>' +
+    '<span style=\"font-size:0.75rem;color:var(--accent-text);\">\u9898\u578B\uFF1A' + escapeHtml(topic.type) + '</span>' +
     '</div>';
 }
 
@@ -6538,7 +6529,7 @@ function renderGroupReport(report) {
   var dimsHTML = (report.dimensions || []).map(function(d) {
     return '<div style=\"margin-bottom:0.8rem;\">' +
       '<div style=\"display:flex;justify-content:space-between;\">' +
-      '<span>' + d.name + '</span><span style=\"color:var(--accent);\">' + d.score + '/100</span>' +
+      '<span>' + d.name + '</span><span style=\"color:var(--accent-text);\">' + d.score + '/100</span>' +
       '</div>' +
       '<div style=\"background:var(--rule);height:6px;border-radius:3px;margin-top:0.3rem;\">' +
       '<div style=\"background:var(--accent);height:100%;border-radius:3px;width:' + d.score + '%;\"></div>' +
@@ -6548,7 +6539,7 @@ function renderGroupReport(report) {
   }).join('');
   content.innerHTML = 
     '<div style=\"text-align:center;margin-bottom:1rem;\">' +
-    '<div style=\"font-size:3rem;font-weight:700;color:var(--accent);\">' + report.overall_score + '</div>' +
+    '<div style=\"font-size:3rem;font-weight:700;color:var(--accent-text);\">' + report.overall_score + '</div>' +
     '<div style=\"color:var(--muted);\">\u7EFC\u5408\u8BC4\u5206</div>' +
     '</div>' +
     dimsHTML +
@@ -6622,7 +6613,7 @@ function _unused_renderKBSection(kb, section) {
       '<p><strong>\u76EE\u7684\uFF1A</strong>' + data.purpose + '</p>' +
       '<p><strong>\u5F62\u5F0F\uFF1A</strong>' + data.typical_format + '</p>' +
       '<p><strong>\u901A\u8FC7\u7387\uFF1A</strong>' + data.pass_rate + '</p>' +
-      '<p style=\"color:var(--accent);\"><strong>\u6838\u5FC3\u6D1E\u5BDF\uFF1A</strong>' + data.key_insight + '</p>' +
+      '<p style=\"color:var(--accent-text);\"><strong>\u6838\u5FC3\u6D1E\u5BDF\uFF1A</strong>' + data.key_insight + '</p>' +
       '</div>';
   }
   
@@ -6642,7 +6633,7 @@ function _unused_renderKBSection(kb, section) {
         return '<div style=\"margin-bottom:0.8rem;padding:0.8rem;background:var(--tag-bg);border-radius:var(--radius-sm);\">' +
           '<strong>' + r.icon + ' ' + r.name + '</strong>' +
           '<p style=\"margin:0.3rem 0;\">' + r.responsibility + '</p>' +
-          '<p style=\"font-size:0.85rem;color:var(--accent);\">\uD83D\uDCA1 ' + r.how_to + '</p>' +
+          '<p style=\"font-size:0.85rem;color:var(--accent-text);\">\uD83D\uDCA1 ' + r.how_to + '</p>' +
           '<p style=\"font-size:0.8rem;color:var(--red);\">\u26A0 ' + r.risk + '</p>' +
           '</div>';
       }).join('') + '<p style=\"color:var(--muted);\">' + data.role_selection_advice + '</p>';
@@ -6651,7 +6642,7 @@ function _unused_renderKBSection(kb, section) {
   if (section === 'question_types') {
     return data.types.map(function(t) {
       return '<div style=\"margin-bottom:0.8rem;padding:0.8rem;background:var(--tag-bg);border-radius:var(--radius-sm);\">' +
-        '<strong>' + t.name + '</strong> <span style=\"color:var(--accent);\">\u96BE\u5EA6\uFF1A' + t.difficulty + '</span>' +
+        '<strong>' + t.name + '</strong> <span style=\"color:var(--accent-text);\">\u96BE\u5EA6\uFF1A' + t.difficulty + '</span>' +
         '<p style=\"margin:0.3rem 0;\"><em>\u793A\u4F8B\uFF1A' + t.example + '</em></p>' +
         '<p style=\"font-size:0.85rem;\">' + t.characteristics + '</p>' +
         '<p style=\"font-size:0.85rem;color:var(--accent2);\">\u7B56\u7565\uFF1A' + t.strategy + '</p>' +
@@ -6682,11 +6673,11 @@ function _unused_renderKBSection(kb, section) {
   if (section === 'classic_cases') {
     return data.map(function(c) {
       return '<div style=\"margin-bottom:1rem;padding:0.8rem;background:var(--tag-bg);border-radius:var(--radius-sm);\">' +
-        '<strong>' + c.title + '</strong> <span style=\"color:var(--accent);\">[' + c.type + ']</span>' +
+        '<strong>' + c.title + '</strong> <span style=\"color:var(--accent-text);\">[' + c.type + ']</span>' +
         '<p style=\"margin:0.3rem 0;\">' + c.scenario + '</p>' +
         (c.analysis_framework ? '<p style=\"font-size:0.85rem;color:var(--accent2);\">\u5206\u6790\u6846\u67B6\uFF1A' + c.analysis_framework + '</p>' : '') +
         (c.items ? '<p style=\"font-size:0.8rem;color:var(--muted);\">\u7269\u54C1\uFF1A' + c.items + '</p>' : '') +
-        '<p style=\"font-size:0.85rem;color:var(--accent);\">\uD83D\uDCA1 ' + c.key_insight + '</p>' +
+        '<p style=\"font-size:0.85rem;color:var(--accent-text);\">\uD83D\uDCA1 ' + c.key_insight + '</p>' +
         '</div>';
     }).join('');
   }
@@ -7131,7 +7122,7 @@ function renderStudyPlan(plan) {
         '<span style="font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:' + color + '20;color:' + color + ';font-weight:600;">' + item.match + '</span>' +
         '<span style="font-weight:600;font-size:0.85rem;">' + item.requirement + '</span></div>' +
         (item.match_detail ? '<div style="font-size:0.8rem;color:var(--muted);margin-left:1.5rem;">' + item.match_detail + '</div>' : '') +
-        (item.evidence ? '<div style="font-size:0.78rem;color:var(--accent);margin-left:1.5rem;margin-top:0.15rem;">📎 ' + item.evidence + '</div>' : '') + '</div>';
+        (item.evidence ? '<div style="font-size:0.78rem;color:var(--accent-text);margin-left:1.5rem;margin-top:0.15rem;">📎 ' + item.evidence + '</div>' : '') + '</div>';
     }).join('');
   }
 
@@ -7161,7 +7152,7 @@ function renderStudyPlan(plan) {
         '<div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem;">' +
         '<span style="font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:' + color + '20;color:' + color + ';font-weight:600;">🔴 ' + item.priority + '优先级</span>' +
         '<span style="font-weight:600;font-size:0.85rem;">' + item.action + '</span></div>' +
-        (item.resource ? '<div style="font-size:0.8rem;color:var(--accent);margin-bottom:0.15rem;">📚 ' + item.resource + '</div>' : '') +
+        (item.resource ? '<div style="font-size:0.8rem;color:var(--accent-text);margin-bottom:0.15rem;">📚 ' + item.resource + '</div>' : '') +
         (item.estimated_time ? '<div style="font-size:0.78rem;color:var(--muted);">⏱ ' + item.estimated_time + '</div>' : '') +
         (item.tips ? '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.15rem;">💡 ' + item.tips + '</div>' : '') + '</div>';
     }).join('');
@@ -7173,7 +7164,7 @@ function renderStudyPlan(plan) {
     scheduleEl.innerHTML = plan.weekly_schedule.map(function(week) {
       return '<div style="padding:0.6rem;border:1px solid var(--rule);border-radius:8px;margin-bottom:0.5rem;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">' +
-        '<span style="font-weight:700;font-size:0.9rem;color:var(--accent);">' + week.week + '</span>' +
+        '<span style="font-weight:700;font-size:0.9rem;color:var(--accent-text);">' + week.week + '</span>' +
         '<span style="font-size:0.78rem;color:var(--muted);">🎯 ' + (week.goal || '') + '</span></div>' +
         '<div style="font-size:0.82rem;font-weight:500;margin-bottom:0.3rem;">📌 ' + (week.focus || '') + '</div>' +
         '<ul style="margin:0;padding-left:1.2rem;font-size:0.8rem;color:var(--muted);">' +
@@ -7371,12 +7362,12 @@ function renderStudyPlan(plan) {
     if (qEl && review.questions && review.questions.length) {
       qEl.innerHTML = review.questions.map(function(q, i) {
         var scoreColor = q.score >= 80 ? 'var(--green)' : (q.score >= 60 ? 'var(--accent)' : 'var(--red)');
-        var followUpHtml = q.follow_up ? '<div style="font-size:0.8rem;color:var(--accent);margin-top:0.2rem;">🔍 追问：' + q.follow_up + '</div>' : '';
+        var followUpHtml = q.follow_up ? '<div style="font-size:0.8rem;color:var(--accent-text);margin-top:0.2rem;">🔍 追问：' + q.follow_up + '</div>' : '';
         var feedbackHtml = q.interviewer_feedback ? '<div style="font-size:0.8rem;color:var(--muted);margin-top:0.2rem;">📌 面试官反馈：' + q.interviewer_feedback + '</div>' : '';
         var strengthsHtml = q.strengths && q.strengths.length ? q.strengths.map(function(s) { return '<span style="display:inline-block;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--green)15;color:var(--green);margin:0.15rem;">✅ ' + s + '</span>'; }).join('') : '';
         var weaknessesHtml = q.weaknesses && q.weaknesses.length ? q.weaknesses.map(function(w) { return '<span style="display:inline-block;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--red)15;color:var(--red);margin:0.15rem;">⚠️ ' + w + '</span>'; }).join('') : '';
         var improvedHtml = q.improved_answer ? '<div style="margin-top:0.4rem;padding:0.5rem;background:var(--bg1);border-radius:6px;border-left:3px solid var(--accent);">' +
-          '<div style="font-size:0.78rem;font-weight:600;color:var(--accent);margin-bottom:0.2rem;">💡 改进版回答</div>' +
+          '<div style="font-size:0.78rem;font-weight:600;color:var(--accent-text);margin-bottom:0.2rem;">💡 改进版回答</div>' +
           '<div style="font-size:0.8rem;color:var(--ink);line-height:1.6;">' + q.improved_answer.replace(/\n/g, '<br>') + '</div></div>' : '';
 
         return '<div style="padding:0.8rem;border:1px solid var(--rule);border-radius:8px;margin-bottom:0.6rem;">' +
@@ -7402,7 +7393,7 @@ function renderStudyPlan(plan) {
           '<span style="font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:' + color + '20;color:' + color + ';font-weight:600;">🔴 ' + item.priority + '优先级</span>' +
           '<span style="font-weight:600;font-size:0.85rem;">' + (item.area || '') + '</span></div>' +
           '<div style="font-size:0.8rem;color:var(--muted);">' + (item.suggestion || '') + '</div>' +
-          (item.practice_method ? '<div style="font-size:0.78rem;color:var(--accent);margin-top:0.2rem;">📖 ' + item.practice_method + '</div>' : '') + '</div>';
+          (item.practice_method ? '<div style="font-size:0.78rem;color:var(--accent-text);margin-top:0.2rem;">📖 ' + item.practice_method + '</div>' : '') + '</div>';
       }).join('');
     }
 

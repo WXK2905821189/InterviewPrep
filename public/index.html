@@ -12,7 +12,7 @@
 </head>
 <body>
 
-<!-- ====== 顶部导航（三行布局：工具行 + 主模块 + 子模块）====== -->
+<!-- ====== 顶部导航（两行布局：工具行 + 导航行）====== -->
 <nav class="navbar">
   <!-- 第一行：品牌 + 岗位 + 状态 + 操作 -->
   <div class="nav-toolbar">
@@ -31,27 +31,23 @@
       <button class="nav-settings-btn btn-delete" id="btn-delete-session" title="删除当前岗位会话">🗑</button>
     </div>
   </div>
-  <!-- 第二行：一级导航（主模块，由 nav.js 渲染） -->
-  <div class="nav-module-bar" id="nav-modules"></div>
-  <!-- 第三行：二级导航（子模块，由 nav.js 渲染） -->
-  <nav class="sub-nav" id="sub-nav"></nav>
+  <!-- 第二行：一级导航（主模块）+ 二级导航（子模块），同行排布 -->
+  <div class="nav-secondary">
+    <div class="nav-module-bar" id="nav-modules"></div>
+    <nav class="sub-nav" id="sub-nav"></nav>
+  </div>
 </nav>
 
 <main class="container">
 
   <!-- ====== Tab 0: 仪表盘 ====== -->
   <section id="tab-dashboard" class="tab-content active">
-    <div class="card hero-card">
-      <h1>📊 面试仪表盘</h1>
-      <p class="subtitle">追踪练习进度，发现薄弱环节，见证成长轨迹</p>
-    </div>
-
     <!-- 面试准备度 -->
     <div class="card" style="margin-bottom:1rem;">
       <h3>面试准备度</h3>
       <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;margin-top:0.8rem;">
         <div style="text-align:center;min-width:120px;">
-          <div style="font-size:3rem;font-weight:700;color:var(--accent);" id="readiness-score">--</div>
+          <div style="font-size:3rem;font-weight:700;color:var(--accent-text);" id="readiness-score">--</div>
           <div style="font-size:0.85rem;margin-top:0.2rem;" id="readiness-level">加载中...</div>
         </div>
         <div style="flex:1;min-width:200px;" id="readiness-dimensions"></div>
@@ -128,7 +124,7 @@
     <div class="card" style="margin-bottom:1rem;display:none;" id="dash-recent-trend-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
         <h3 style="margin:0;">📋 最近练习分数趋势</h3>
-        <a href="#" id="btn-view-all-reports" style="font-size:0.78rem;color:var(--accent);text-decoration:none;">查看全部报告 →</a>
+        <a href="#" id="btn-view-all-reports" style="font-size:0.78rem;color:var(--accent-text);text-decoration:none;">查看全部报告 →</a>
       </div>
       <div id="dash-recent-trend" style="height:200px;"></div>
     </div>
@@ -252,7 +248,7 @@
         <textarea id="jd-input" placeholder="粘贴目标岗位的JD全文...&#10;&#10;或在上方粘贴岗位链接后点击「扒取」自动获取" rows="10"></textarea>
         <div class="input-hint" style="display:flex;align-items:center;gap:0.5rem;">
           <span>支持 Boss直聘/51job/LinkedIn 等链接自动扒取，也可直接粘贴文本</span>
-          <button id="btn-jd-format" class="btn-outline" style="font-size:0.72rem;padding:0.15rem 0.5rem;border-color:var(--accent);color:var(--accent);margin-left:auto;" title="AI自动优化排版，分行分段">✨ 排版</button>
+          <button id="btn-jd-format" class="btn-outline" style="font-size:0.72rem;padding:0.15rem 0.5rem;border-color:var(--accent);color:var(--accent-text);margin-left:auto;" title="AI自动优化排版，分行分段">✨ 排版</button>
         </div>
       </div>
       <div class="input-card">
@@ -458,7 +454,7 @@
 
     <div id="interview-report" class="hidden"></div>
     <div id="interview-report-actions" class="hidden" style="display:flex;gap:0.4rem;margin-top:0.5rem;justify-content:flex-end;">
-      <button id="btn-interview-counter" class="btn-outline" style="font-size:0.78rem;padding:0.3rem 0.8rem;color:var(--accent);border-color:var(--accent);">🔄 生成反问问题</button>
+      <button id="btn-interview-counter" class="btn-outline" style="font-size:0.78rem;padding:0.3rem 0.8rem;color:var(--accent-text);border-color:var(--accent);">🔄 生成反问问题</button>
       <button id="btn-export-interview-md" class="btn-outline" style="font-size:0.72rem;padding:0.2rem 0.5rem;">📥 导出 MD</button>
       <button id="btn-export-interview-docx" class="btn-outline" style="font-size:0.72rem;padding:0.2rem 0.5rem;">📄 导出 DOCX</button>
     </div>
@@ -571,7 +567,7 @@
 
     <div class="card">
       <details>
-        <summary style="cursor:pointer;font-weight:600;color:var(--accent);">📎 手动粘贴小红书面经链接（可选）</summary>
+        <summary style="cursor:pointer;font-weight:600;color:var(--accent-text);">📎 手动粘贴小红书面经链接（可选）</summary>
         <textarea id="mj-manual-urls" rows="2" placeholder="https://www.xiaohongshu.com/explore/xxx&#10;https://www.xiaohongshu.com/explore/yyy" style="width:100%;font-size:0.78rem;font-family:monospace;margin-top:0.5rem;"></textarea>
       </details>
     </div>
@@ -715,7 +711,7 @@
       <div class="card" style="margin-top:0.8rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">
           <h3 style="margin:0;">📋 题目列表 (<span id="drill-q-count">0</span>)</h3>
-          <span id="drill-current-type" style="font-size:0.78rem;color:var(--accent);"></span>
+          <span id="drill-current-type" style="font-size:0.78rem;color:var(--accent-text);"></span>
         </div>
         <ul id="drill-question-list" style="max-height:400px;overflow-y:auto;"></ul>
       </div>
@@ -739,7 +735,7 @@
     <div class="card">
       <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;">
         <div style="text-align:center;min-width:110px;">
-          <div style="font-size:2.8rem;font-weight:700;color:var(--accent);" id="pg8-overall">--</div>
+          <div style="font-size:2.8rem;font-weight:700;color:var(--accent-text);" id="pg8-overall">--</div>
           <div style="font-size:0.8rem;color:var(--muted);margin-top:0.2rem;">整体熟练度</div>
         </div>
         <div style="flex:1;min-width:220px;font-size:0.85rem;" id="pg8-overview-meta"></div>
@@ -907,7 +903,7 @@
         <h3 style="margin-bottom:0.8rem;">🎯 整体表现评分</h3>
         <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;">
           <div style="text-align:center;">
-            <div id="review-overall-score" style="font-size:3rem;font-weight:700;color:var(--accent);">--</div>
+            <div id="review-overall-score" style="font-size:3rem;font-weight:700;color:var(--accent-text);">--</div>
             <div style="font-size:0.78rem;color:var(--muted);">综合评分</div>
           </div>
           <div id="review-score-dims" style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:0.4rem;"></div>
@@ -978,7 +974,7 @@
         <h3 style="margin:0;">💬 自由讨论</h3>
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <span style="font-size:0.85rem;color:var(--muted);" id="group-stage">准备阶段</span>
-          <span style="font-size:0.85rem;font-weight:600;color:var(--accent);" id="group-timer">00:00</span>
+          <span style="font-size:0.85rem;font-weight:600;color:var(--accent-text);" id="group-timer">00:00</span>
         </div>
       </div>
       <div id="group-discussion-log" style="max-height:450px;overflow-y:auto;margin-bottom:1rem;padding:0.5rem;background:var(--bg);border-radius:var(--radius-sm);"></div>
