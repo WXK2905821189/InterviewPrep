@@ -1013,68 +1013,33 @@ const INTERVIEW_REVIEW_SYSTEM = `你是一位资深面试复盘教练。请根�
   "interview_tips": "针对该岗位/公司的面试技巧提示"
 }`;
 
-// ---- 代码面试 - 生成题目 ----
-const CODE_INTERVIEW_GENERATE = `你是一位资深技术面试官。请根据以下岗位描述和候选人简历，生成一道编程面试题。
+// ---- 宝洁八大问：回答稿打磨 ----
+const PG_SCRIPT_POLISH = `你是一位行为面试教练，专精宝洁八大问。用户会给你一份他正在打磨的回答稿，请逐句优化，让它成为可以直接背诵的定稿。
 
-岗位描述：
-{jdText}
+## 打磨原则
+- 严格基于候选人真实经历，绝对不要编造经历、数字或头衔
+- 保留候选人的个人语气，不要改写成播音腔
+- 用 STAR 结构重排：情境 → 任务 → 行动 → 结果，行动与结果必须占全文 60% 以上
+- 结果必须量化（数字、比例、排名、时间），若原文没有数字，用「建议补充」的方式指出该补什么
+- 突出候选人的个人贡献，把「我们」中属于他的部分明确成「我」
+- 删掉所有空话（如「取得了很好的效果」「得到了领导认可」），换成具体事实
+- 长度控制在 90 秒口述（约 300-400 字），过长则指出该删哪段
 
-候选人简历：
-{resumeText}
-
-要求：
-1. 题目应贴近实际工作场景，考察候选人的编程能力和问题解决能力
-2. 难度适中，可在一段代码内完成（LeetCode Medium 级别）
-3. 明确说明输入输出格式、边界条件和示例
-4. 提供 3 个测试用例（含预期输出）
-5. 语言建议：{language}
-
-返回 JSON（只返回 JSON，不要其他内容）：
+## 输出严格 JSON：
 {
-  "title": "题目名称",
-  "description": "题目详细描述",
-  "difficulty": "easy|medium|hard",
-  "inputFormat": "输入格式说明",
-  "outputFormat": "输出格式说明",
-  "constraints": ["约束条件1", "约束条件2"],
-  "examples": [{"input": "...", "output": "...", "explanation": "示例说明"}],
-  "testCases": [{"input": "...", "expectedOutput": "..."}],
-  "hints": ["提示1", "提示2"],
-  "timeLimit": 30,
-  "language": "{language}"
-}`;
-
-// ---- 代码面试 - 审查代码 ----
-const CODE_INTERVIEW_REVIEW = `你是一位资深代码审查员。请审查以下编程面试答案。
-
-题目：
-{question}
-
-候选人代码（{language}）：
-\`\`\`
-{code}
-\`\`\`
-
-请从以下维度评估：
-1. **正确性** (40%): 代码逻辑是否正确，能否通过测试用例
-2. **代码质量** (25%): 代码风格、命名规范、注释、可读性
-3. **算法效率** (20%): 时间复杂度和空间复杂度是否最优
-4. **边界处理** (15%): 是否考虑了边界条件和异常情况
-
-返回 JSON（只返回 JSON，不要其他内容）：
-{
-  "overallScore": 85,
-  "dimensions": {
-    "correctness": {"score": 85, "comment": "具体评价"},
-    "codeQuality": {"score": 80, "comment": "具体评价"},
-    "efficiency": {"score": 90, "comment": "具体评价"},
-    "edgeCases": {"score": 85, "comment": "具体评价"}
+  "polished": "打磨后的完整定稿（可直接背诵）",
+  "score": 85,
+  "changes": [
+    { "original": "原文句子", "revised": "改写后句子", "reason": "为什么这样改" }
+  ],
+  "missing_facts": ["需要候选人补充的具体事实或数字1", "需要补充的事实2"],
+  "structure": {
+    "situation": "当前稿在情境部分的占比评价",
+    "task": "任务部分的评价",
+    "action": "行动部分的评价",
+    "result": "结果部分的评价"
   },
-  "strengths": ["优点1", "优点2"],
-  "improvements": ["改进建议1", "改进建议2"],
-  "optimizedCode": "优化后的代码（如有必要，否则留空字符串）",
-  "complexityAnalysis": "时间复杂度: O(n), 空间复杂度: O(1)",
-  "overallComment": "综合评价（2-3句话）"
+  "one_line_tip": "给候选人的一句最关键提醒"
 }`;
 
 module.exports = {
@@ -1108,6 +1073,5 @@ module.exports = {
   FREE_PRACTICE_EVALUATE_SYSTEM,
   STUDY_PLAN_SYSTEM,
   INTERVIEW_REVIEW_SYSTEM,
-  CODE_INTERVIEW_GENERATE,
-  CODE_INTERVIEW_REVIEW
+  PG_SCRIPT_POLISH
 };

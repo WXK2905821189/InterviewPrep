@@ -12,11 +12,11 @@ const { searchKnowledgeBase } = require('../knowledge');
 // Chatflow 1: JD解析 + 简历解析 + 差距分析 + 押题生成
 // ============================================================
 async function runAnalysisPipeline(jdText, resumeText, useMianjing = false) {
-  // 节点1: JD解析
-  const jdParsed = await llm(prompts.JD_PARSE_SYSTEM, jdText);
-
-  // 节点2: 简历解析
-  const resumeParsed = await llm(prompts.RESUME_PARSE_SYSTEM, resumeText);
+  // 节点1+2: JD解析与简历解析互不依赖，并行执行以缩短整体耗时
+  const [jdParsed, resumeParsed] = await Promise.all([
+    llm(prompts.JD_PARSE_SYSTEM, jdText),
+    llm(prompts.RESUME_PARSE_SYSTEM, resumeText)
+  ]);
 
   // 节点3: 差距分析
   const gapPrompt = fillTemplate(prompts.GAP_ANALYSIS_SYSTEM, {

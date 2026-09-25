@@ -8,8 +8,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
   // 获取真实版本号（从 package.json 读取）
   getVersion: () => ipcRenderer.invoke('get-app-version'),
-  // 一键更新：下载 → 解压 → 安装
-  installUpdate: (downloadUrl) => ipcRenderer.invoke('install-update', downloadUrl),
+  // 一键更新：校验 → 下载 → 完整性校验 → 用户确认 → 解压
+  installUpdate: (payload) => ipcRenderer.invoke('install-update', payload),
   restartApp: () => ipcRenderer.send('restart-app')
 });
 

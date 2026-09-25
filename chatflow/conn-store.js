@@ -24,7 +24,13 @@ function readJSON(filePath, fallback = {}) {
 
 function writeJSON(filePath, data) {
   ensureDir();
-  try { fs.writeFileSync(filePath, JSON.stringify(data, null, 2)); } catch {}
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    return true;
+  } catch (e) {
+    console.error('[ConnStore] 写入失败:', filePath, e.message);
+    return false;
+  }
 }
 
 // ─── 内置供应商预设 ───
@@ -59,14 +65,14 @@ function saveConnection(input) {
   }
   state.aiConnections = list;
   if (!state.activeConnectionId && list.length > 0) state.activeConnectionId = list[0].id;
-  writeJSON(CONNECTIONS_FILE, state);
+  if (!writeJSON(CONNECTIONS_FILE, state)) return { ok: false, error: '写入连接配置失败，请检查磁盘权限' };
   return { ok: true, connection: input };
 }
 
 function setActiveConnection(id) {
   const state = readJSON(CONNECTIONS_FILE, { aiConnections: [], activeConnectionId: '' });
   state.activeConnectionId = id;
-  writeJSON(CONNECTIONS_FILE, state);
+  if (!writeJSON(CONNECTIONS_FILE, state)) return { ok: false, error: '写入连接配置失败，请检查磁盘权限' };
   return { ok: true };
 }
 

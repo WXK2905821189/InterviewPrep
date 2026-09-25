@@ -12,15 +12,21 @@ let _backend = 'unknown';
 async function loadLlm() {
   if (_llm) return _llm;
 
-  // 尝试加载 ai-provider-kit
+  // 尝试 ai-provider-kit
+  // 判定条件必须是「能否真实初始化」：ai-provider-kit 是延迟 import，
+  // require 阶段不会抛错，若只判断 require 则降级分支永远不会进入。
   try {
     const provider = require('./ai-provider');
+    if (!provider.isAvailable()) {
+      throw new Error(`未安装于 ${provider.PROVIDER_KIT_PATH}`);
+    }
+    await provider.warmup();
     _llm = provider.llm;
     _backend = 'ai-provider-kit';
     console.log('[LLM] 使用 ai-provider-kit');
     return _llm;
   } catch (e) {
-    console.warn('[LLM] ai-provider-kit 不可用, 尝试 standalone...');
+    console.warn('[LLM] ai-provider-kit 不可用, 降级 standalone:', e.message);
   }
 
   // 回退到 standalone
@@ -53,15 +59,13 @@ function fillTemplate(template, vars) {
 }
 
 async function* llmStream(systemPrompt, userContent, opts = {}) {
-  // 尝试从 ai-provider 获取流式接口
-  try {
-    const provider = require('./ai-provider');
-    if (provider.llmStream) {
-      yield* provider.llmStream(systemPrompt, userContent, opts);
-      return;
-    }
-  } catch {}
-  throw new Error('llmStream not available');
+  // 复用与 llm() 相同的后端判定，避免在 kit 不可用时误用其流式实现
+  await loadLlm();
+  if (_backend !== 'ai-provider-kit') {
+    throw new Error(`流式接口仅由 ai-provider-kit 提供，当前后端为 ${_backend}`);
+  }
+  const provider = require('./ai-provider');
+  yield* provider.llmStream(systemPrompt, userContent, opts);
 }
 
 module.exports = { llm, fillTemplate, llmStream };

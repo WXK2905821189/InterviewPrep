@@ -48,18 +48,11 @@ function resetTokenUsage() { _tokenUsage = { prompt: 0, completion: 0, total: 0,
 
 // ai-provider-kit 路径查找（优先级）:
 //   1) 环境变量 AI_PROVIDER_KIT_PATH
-//   2) 项目根目录下的 ai-provider-kit/ 子目录（build 版本）
-//   3) 硬编码的开发机路径
+//   2) 项目根目录下的 ai-provider-kit/ 子目录
+// 目录不存在时由 isAvailable() 判定为不可用，上层自动降级到 standalone-llm。
 function resolveProviderKitPath() {
-  // 1) 环境变量
   if (process.env.AI_PROVIDER_KIT_PATH) return process.env.AI_PROVIDER_KIT_PATH;
-
-  // 2) 项目根目录下自带
-  const local = path.resolve(__dirname, '..', 'ai-provider-kit');
-  if (fs.existsSync(local)) return local;
-
-  // 3) 硬编码后备
-  return 'C:\\Users\\wxk29\\Documents\\Codex\\2026-07-09\\c-users-wxk29-codex-skills-ai\\outputs\\ai-provider-kit';
+  return path.resolve(__dirname, '..', 'ai-provider-kit');
 }
 
 const PROVIDER_KIT_PATH = resolveProviderKitPath();
@@ -83,6 +76,23 @@ async function loadKit() {
   const mod = await import(PROVIDER_KIT_URL);
   _kit = mod;
   return _kit;
+}
+
+// ---- 可用性探测（同步） ----
+// 注意：require('./ai-provider') 成功 ≠ 后端可用。ai-provider-kit 是延迟 import，
+// 只有真正初始化时才会暴露缺失，因此调用方必须用本方法或 warmup() 判定。
+function isAvailable() {
+  try {
+    return fs.existsSync(path.join(PROVIDER_KIT_PATH, 'src', 'index.js'));
+  } catch {
+    return false;
+  }
+}
+
+// ---- 预热（异步）---- 初始化失败直接抛出，供上层决定是否降级
+async function warmup() {
+  await loadKit();
+  return true;
 }
 
 // ---- 获取或创建共享 client ----
@@ -336,7 +346,9 @@ async function startGateway(port = 8787) {
   ]);
 
   const gateway = kit.createGatewayServer({ client: gatewayClient });
-  const { url } = await gateway.listen(port, '0.0.0.0');
+  // 默认仅监听回环地址，避免本地网关暴露到局域网；确需外部访问须显式设置 GATEWAY_HOST
+  const GATEWAY_HOST = process.env.GATEWAY_HOST || '127.0.0.1';
+  const { url } = await gateway.listen(port, GATEWAY_HOST);
 
   console.log(`[AI Provider Kit] 网关已启动: ${url}`);
   console.log(`[AI Provider Kit] OpenAI-compatible Base URL: ${url}/v1`);
@@ -368,6 +380,10 @@ module.exports = {
 
   // 网关
   startGateway,
+
+  // 可用性探测
+  isAvailable,
+  warmup,
 
   // 常量
   PROVIDER_KIT_PATH

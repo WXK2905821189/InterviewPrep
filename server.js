@@ -6,16 +6,23 @@
 try { require('dotenv').config(); } catch {}
 const express = require('express');
 const multer = require('multer');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
-const { execSync, exec } = require('child_process');
+const { execSync, execFile } = require('child_process');
 
 // ============================================================
-// async exec 辅助 — 避免长时间子进程阻塞 event loop
+// 外部命令调用 — 一律 execFile + 参数数组，参数不经 shell 解析
+// 安全约束：禁止改回 exec / 字符串拼接形式，否则将重新引入命令注入
 // ============================================================
-function execAsync(cmd, options = {}) {
+function execFileAsync(file, args = [], options = {}) {
   return new Promise((resolve, reject) => {
-    exec(cmd, { timeout: options.timeout || 30000, maxBuffer: options.maxBuffer || 5 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
+    execFile(file, args, {
+      timeout: options.timeout || 30000,
+      maxBuffer: options.maxBuffer || 5 * 1024 * 1024,
+      windowsHide: true
+    }, (error, stdout) => {
       if (error) {
         if (stdout && stdout.length > 20) resolve(stdout);
         else reject(error);
@@ -24,7 +31,7 @@ function execAsync(cmd, options = {}) {
   });
 }
 async function closeOpencliWindow() {
-  try { await execAsync('opencli close', { timeout: 5000 }); } catch {}
+  try { await execFileAsync('opencli', ['close'], { timeout: 5000 }); } catch {}
 }
 
 // ---- 数据目录 (Electron模式用app.getPath('userData')，普通模式用__dirname) ----
@@ -129,12 +136,19 @@ function detectPositionType(position) {
 }
 
 // ---- ai-provider-kit 集成（云端自动降级） ----
+// 判定条件为「能否真实初始化」：require 成功不代表 kit 可用（其内部为延迟 import）
 let provider;
 try {
-  provider = require('./chatflow/ai-provider');
-  console.log('[Server] 使用 ai-provider-kit');
+  const kitProvider = require('./chatflow/ai-provider');
+  if (kitProvider.isAvailable()) {
+    provider = kitProvider;
+    console.log('[Server] 使用 ai-provider-kit');
+  } else {
+    console.log('[Server] ai-provider-kit 未安装, 使用独立连接存储');
+    provider = require('./chatflow/conn-store');
+  }
 } catch (e) {
-  console.log('[Server] ai-provider-kit 不可用, 使用独立连接存储');
+  console.log('[Server] ai-provider-kit 加载失败, 使用独立连接存储:', e.message);
   provider = require('./chatflow/conn-store');
 }
 
@@ -154,24 +168,29 @@ const {
 } = provider;
 
 const app = express();
+
+// ============================================================
+// 基础防护中间件
+// ============================================================
+// 安全响应头。CSP 显式关闭：前端存在大量内联脚本与样式，
+// 启用 helmet 默认 CSP 会直接白屏，需单独治理后再开启。
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'same-origin' }
+}));
+
+// 全局限流：接口会触发真实 LLM 计费，必须防止被脚本无限轰炸
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: '请求过于频繁，请稍后再试' }
+});
+app.use('/api', apiLimiter);
+
 app.use(express.json({ limit: '2mb' }));
-
-// ─── 商业化模块 ───────────────────────────────────────────────
-const { authMiddleware, registerAuthRoutes } = require('./server/auth');
-const { creditCheck, registerCreditRoutes } = require('./server/credits');
-const { registerPlanRoutes } = require('./server/plans');
-const { registerAdminRoutes } = require('./server/admin');
-const { registerCodeInterviewRoutes } = require('./server/code-interview');
-
-// 认证中间件：解析 JWT，注入 req.user
-app.use(authMiddleware);
-
-// 注册商业化路由
-registerAuthRoutes(app);
-registerCreditRoutes(app);
-registerPlanRoutes(app);
-registerAdminRoutes(app);
-registerCodeInterviewRoutes(app);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/knowledge', express.static(path.join(__dirname, 'knowledge')));
@@ -190,7 +209,11 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname || '.txt').toLowerCase();
     if (['.txt','.md','.docx','.doc','.pdf'].includes(ext)) cb(null, true);
-    else cb(new Error('仅支持 TXT / MD / DOCX / PDF 文件'));
+    else {
+      const err = new Error('仅支持 TXT / MD / DOCX / PDF 文件');
+      err.status = 400; // 交由全局错误处理返回 400，而非 500
+      cb(err);
+    }
   }
 });
 
@@ -212,7 +235,13 @@ function loadSessions() {
   catch(e) { console.warn('会话加载失败:', e.message); }
 }
 function saveSessions() {
-  try { fs.writeFileSync(SESSIONS_FILE, JSON.stringify(Object.fromEntries(sessions), null, 2)); } catch {}
+  try {
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(Object.fromEntries(sessions), null, 2));
+    return true;
+  } catch (e) {
+    console.error('[持久化] 会话写入失败:', e.message);
+    return false;
+  }
 }
 loadSessions();
 
@@ -244,7 +273,13 @@ function loadMianjingBank() {
   return [];
 }
 function saveMianjingBank(bank) {
-  try { fs.writeFileSync(MIANJING_BANK_FILE, JSON.stringify(bank, null, 2)); } catch {}
+  try {
+    fs.writeFileSync(MIANJING_BANK_FILE, JSON.stringify(bank, null, 2));
+    return true;
+  } catch (e) {
+    console.error('[持久化] 面经库写入失败:', e.message);
+    return false;
+  }
 }
 
 // 话术库持久化
@@ -254,7 +289,13 @@ function loadPhrases() {
   return [];
 }
 function savePhrases(phrases) {
-  try { fs.writeFileSync(PHRASES_FILE, JSON.stringify(phrases, null, 2)); } catch {}
+  try {
+    fs.writeFileSync(PHRASES_FILE, JSON.stringify(phrases, null, 2));
+    return true;
+  } catch (e) {
+    console.error('[持久化] 话术库写入失败:', e.message);
+    return false;
+  }
 }
 
 // ============================================================
@@ -307,16 +348,29 @@ app.post('/api/parse-jd-url', async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: '请提供JD链接' });
 
+    // 与 /api/jd-fetch 保持同一防线：仅允许公网 http/https，阻断 SSRF 与云元数据读取
+    let safeUrl;
+    try {
+      safeUrl = assertPublicUrl(url);
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
+
     const { llm } = require('./chatflow/llm-client');
     const prompts = require('./chatflow/prompts');
 
     // 尝试 fetch 页面
     let pageText = '';
     try {
-      const resp = await fetch(url, {
+      const resp = await fetch(safeUrl, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
         signal: AbortSignal.timeout(15000)
       });
+      // fetch 默认跟随重定向，必须复核最终地址，否则 302 可绕过上面的校验
+      if (resp.url && resp.url !== safeUrl) {
+        try { assertPublicUrl(resp.url); }
+        catch (e) { return res.status(400).json({ error: '链接重定向到不安全地址: ' + e.message }); }
+      }
       const html = await resp.text();
       // 简单提取文本
       pageText = html.replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -350,7 +404,7 @@ app.post('/api/parse-jd-url', async (req, res) => {
 // ============================================================
 // API 1: 一键分析（SSE 流式 + 进度 + 预估剩余时间）
 // ============================================================
-app.post('/api/analyze', creditCheck('analyze', 'analysis'), async (req, res) => {
+app.post('/api/analyze', async (req, res) => {
   const { jdText, resumeText, useMianjing, quickMode, manualUrls, resumeFileName, resumeSourceType } = req.body;
   if (!jdText || !resumeText) {
     return res.status(400).json({ error: '请同时提供JD文本和简历文本' });
@@ -543,7 +597,7 @@ ${text.slice(0, 6000)}`;
 // ============================================================
 // API 2: 开始模拟面试
 // ============================================================
-app.post('/api/interview/start', creditCheck('interview-start', 'evaluation'), async (req, res) => {
+app.post('/api/interview/start', async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = sessions.get(sessionId);
@@ -614,7 +668,7 @@ app.post('/api/interview/skip', async (req, res) => {
 // ============================================================
 // API 5: 结束面试并获取评估报告
 // ============================================================
-app.post('/api/interview/evaluate', creditCheck('interview-evaluate', null), async (req, res) => {
+app.post('/api/interview/evaluate', async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = sessions.get(sessionId);
@@ -828,6 +882,7 @@ app.post('/api/interview/stress/evaluate', async (req, res) => {
     const report = await llm(evalPrompt, '', { temperature: 0.5 });
 
     // 保存压力面试记录到话术库
+    let persisted = false;
     try {
       const phrasesPath = path.join(DATA_DIR, '.data', 'phrase-library.json');
       let phrases = [];
@@ -847,9 +902,12 @@ app.post('/api/interview/stress/evaluate', async (req, res) => {
         source: 'stress_interview'
       });
       fs.writeFileSync(phrasesPath, JSON.stringify(phrases, null, 2));
-    } catch {}
+      persisted = true;
+    } catch (e) {
+      console.error('[持久化] 压力面试记录写入失败:', e.message);
+    }
 
-    res.json({ report, stressMode: true });
+    res.json({ report, stressMode: true, persisted });
   } catch (e) {
     console.error('[API] 压力面试评估失败:', e);
     res.status(500).json({ error: '评估失败: ' + e.message });
@@ -982,7 +1040,8 @@ app.post('/api/practice/free/evaluate', async (req, res) => {
 
     const report = await llm(evalPrompt, '', { temperature: 0.5 });
 
-    // 保存陪练记录
+    // 保存陪练记录到话术库
+    let persisted = false;
     try {
       const phrasesPath = path.join(DATA_DIR, '.data', 'phrase-library.json');
       let phrases = [];
@@ -1002,9 +1061,12 @@ app.post('/api/practice/free/evaluate', async (req, res) => {
         source: 'free_practice'
       });
       fs.writeFileSync(phrasesPath, JSON.stringify(phrases, null, 2));
-    } catch {}
+      persisted = true;
+    } catch (e) {
+      console.error('[持久化] 陪练记录写入失败:', e.message);
+    }
 
-    res.json({ report, freeMode: true });
+    res.json({ report, freeMode: true, persisted });
   } catch (e) {
     console.error('[API] 陪练评估失败:', e);
     res.status(500).json({ error: '评估失败: ' + e.message });
@@ -1295,7 +1357,7 @@ app.get('/api/interview/multi/report', (req, res) => {
 // ============================================================
 // API 6: 简历优化
 // ============================================================
-app.post('/api/optimize-resume', creditCheck('optimize-resume', 'analysis'), async (req, res) => {
+app.post('/api/optimize-resume', async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = sessions.get(sessionId);
@@ -1525,7 +1587,7 @@ app.post('/api/optimize-resume-stream', async (req, res) => {
 // ============================================================
 // API 7: 单题评估（不依赖面试会话）
 // ============================================================
-app.post('/api/evaluate-single', creditCheck('evaluate-single', 'evaluation'), async (req, res) => {
+app.post('/api/evaluate-single', async (req, res) => {
   try {
     const { question, answer, jdSummary, resumeText } = req.body;
     if (!question || !answer) {
@@ -1545,7 +1607,7 @@ app.post('/api/evaluate-single', creditCheck('evaluate-single', 'evaluation'), a
 // ============================================================
 // API 7b: AI追问
 // ============================================================
-app.post('/api/follow-up', creditCheck('follow-up', null), async (req, res) => {
+app.post('/api/follow-up', async (req, res) => {
   try {
     const { question, answer, jdSummary, resumeText } = req.body;
     if (!question || !answer) {
@@ -1568,7 +1630,7 @@ app.post('/api/follow-up', creditCheck('follow-up', null), async (req, res) => {
 // ============================================================
 // API 7c: AI 生成基于简历的标准答案
 // ============================================================
-app.post('/api/generate-model-answer', creditCheck('generate-model-answer', null), async (req, res) => {
+app.post('/api/generate-model-answer', async (req, res) => {
   try {
     const { question, jdSummary, resumeText, fullExperiences } = req.body;
     if (!question) return res.status(400).json({ error: '请提供题目' });
@@ -1594,7 +1656,7 @@ ${fullExperiences?.length ? '候选人完整经历补充（简历之外的详细
 // ============================================================
 // API: 面试备考方案生成
 // ============================================================
-app.post('/api/study-plan/generate', creditCheck('study-plan', null), async (req, res) => {
+app.post('/api/study-plan/generate', async (req, res) => {
   try {
     const { sessionId } = req.body;
     if (!sessionId) return res.status(400).json({ error: '请提供会话ID' });
@@ -1629,7 +1691,7 @@ app.post('/api/study-plan/generate', creditCheck('study-plan', null), async (req
 // ============================================================
 // API 7d: AI 生成基于简历的自我介绍
 // ============================================================
-app.post('/api/generate-self-intro', creditCheck('generate-self-intro', null), async (req, res) => {
+app.post('/api/generate-self-intro', async (req, res) => {
   try {
     const { jdSummary, resumeText, customPrompt, style, duration } = req.body;
     if (!resumeText) return res.status(400).json({ error: '请先提供简历内容' });
@@ -1693,6 +1755,11 @@ ${fullExperiences?.length ? '候选人完整经历补充（简历之外的详细
     res.status(500).json({ error: '生成失败: ' + e.message });
   }
 });
+
+// ============================================================
+// 宝洁八大问（独立子模块）— 题目 / 稿件版本 / 熟练度 / AI 打磨
+// ============================================================
+require('./server/pg8').registerPg8Routes(app, DATA_DIR);
 
 // 反问生成：为候选人生成反问面试官的问题
 app.post('/api/generate-counter-questions', async (req, res) => {
@@ -1866,8 +1933,8 @@ app.post('/api/phrases', (req, res) => {
       createdAt: new Date().toISOString()
     };
     phrases.unshift(entry);
-    savePhrases(phrases);
-    res.json({ ok: true, entry, total: phrases.length });
+    const persisted = savePhrases(phrases);
+    res.json({ ok: true, entry, total: phrases.length, persisted });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1886,8 +1953,8 @@ app.delete('/api/phrases/:id', (req, res) => {
   try {
     let phrases = loadPhrases();
     phrases = phrases.filter(p => p.id !== req.params.id);
-    savePhrases(phrases);
-    res.json({ ok: true, total: phrases.length });
+    const persisted = savePhrases(phrases);
+    res.json({ ok: true, total: phrases.length, persisted });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1915,7 +1982,7 @@ function saveDrillRecords(records) {
 }
 
 // 保存专项训练记录
-app.post('/api/drill/records', creditCheck('drill-evaluate', 'evaluation'), (req, res) => {
+app.post('/api/drill/records', (req, res) => {
   try {
     const { question, questionType, answer, scores, overallScore, improvedVersion, keyTakeaways, lineByLine } = req.body;
     if (!question || !answer) return res.status(400).json({ error: '需要 question 和 answer' });
@@ -2436,7 +2503,7 @@ app.post('/api/interview-review/upload', upload.single('file'), async (req, res)
 });
 
 // 生成面试复盘
-app.post('/api/interview-review/generate', creditCheck('interview-review', null), async (req, res) => {
+app.post('/api/interview-review/generate', async (req, res) => {
   try {
     const { interviewText } = req.body;
     if (!interviewText || !interviewText.trim()) {
@@ -3157,7 +3224,7 @@ app.get('/api/mianjing-bank', (req, res) => {
 // ============================================================
 // Company Research API — 公司调研（SSE流式）
 // ============================================================
-app.post('/api/company-research', creditCheck('company-research', null), async (req, res) => {
+app.post('/api/company-research', async (req, res) => {
   const { company, position } = req.body;
   if (!company) return res.status(400).json({ error: '请提供公司名' });
 
@@ -3300,12 +3367,44 @@ app.get('/api/export/mianjing', async (req, res) => {
 });
 
 // ============================================================
+// URL 安全校验 — 仅允许公网 http/https，阻断 SSRF 与云元数据读取
+// ============================================================
+function assertPublicUrl(raw) {
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error('URL 格式无效');
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    throw new Error('仅支持 http/https 链接');
+  }
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const isPrivate =
+    host === 'localhost' || host === '0.0.0.0' ||
+    host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local') ||
+    /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    host === '::1' || /^f[cd][0-9a-f]{2}:/i.test(host) || /^fe80:/i.test(host);
+  if (isPrivate) {
+    throw new Error('不允许访问内网或云元数据地址');
+  }
+  return u.toString();
+}
+
+// ============================================================
 // API 14: JD URL 扒取（opencli browser bridge → 可过登录墙）
 // ============================================================
 app.post('/api/jd-fetch', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: '请提供岗位链接URL' });
-  if (!/^https?:\/\//.test(url)) return res.status(400).json({ error: '请输入完整URL' });
+
+  let safeUrl;
+  try {
+    safeUrl = assertPublicUrl(url);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
 
   const ocErr = requireOpencli('JD链接扒取');
   if (ocErr) return res.status(503).json({ error: ocErr });
@@ -3314,15 +3413,16 @@ app.post('/api/jd-fetch', async (req, res) => {
     let text = '';
 
     // 策略1: 专属 adapter — Boss直聘有 detail 命令
-    const bossMatch = url.match(/boss\.com.*?(?:job_detail|jobDetail).*?[?&]jid=([\w-]+)/i)
-                   || url.match(/boss\.com.*?(?:job_detail|jobDetail)\/([\w-]+)/i)
-                   || url.match(/boss\.com.*?securityId=([\w-]+)/i);
+    const bossMatch = safeUrl.match(/boss\.com.*?(?:job_detail|jobDetail).*?[?&]jid=([\w-]+)/i)
+                   || safeUrl.match(/boss\.com.*?(?:job_detail|jobDetail)\/([\w-]+)/i)
+                   || safeUrl.match(/boss\.com.*?securityId=([\w-]+)/i);
     if (bossMatch) {
       const securityId = bossMatch[1];
       console.log('[JD扒取] Boss直聘详情:', securityId);
       try {
-        const result = await execAsync(
-          `opencli boss detail "${securityId}" -f md --stdout true`,
+        const result = await execFileAsync(
+          'opencli',
+          ['boss', 'detail', securityId, '-f', 'md', '--stdout', 'true'],
           { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }
         );
         text = result || '';
@@ -3333,10 +3433,11 @@ app.post('/api/jd-fetch', async (req, res) => {
 
     // 策略2: 51job 等 — 通用 web read
     if (!text || text.length < 100) {
-      console.log('[JD扒取] 通用web read:', url);
+      console.log('[JD扒取] 通用web read:', safeUrl);
       try {
-        const result = await execAsync(
-          `opencli web read --url "${url}" -f md --stdout true --wait 2`,
+        const result = await execFileAsync(
+          'opencli',
+          ['web', 'read', '--url', safeUrl, '-f', 'md', '--stdout', 'true', '--wait', '2'],
           { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }
         );
         text = result || '';
@@ -3503,7 +3604,7 @@ app.post('/api/generate-questions-batch', async (req, res) => {
 
 // 面经采集 — 独立触发
 // ============================================================
-app.post('/api/mianjing-collect', creditCheck('mianjing-collect', 'analysis'), async (req, res) => {
+app.post('/api/mianjing-collect', async (req, res) => {
   const { sessionId, jdText, resumeText, company: reqCompany, position: reqPosition, manualUrls } = req.body;
   const session = sessions.get(sessionId);
   
@@ -3607,7 +3708,7 @@ app.post('/api/mianjing-collect', creditCheck('mianjing-collect', 'analysis'), a
 // ============================================================
 // API: 群面模拟 - 开始
 // ============================================================
-app.post('/api/group-interview/start', creditCheck('group-interview', 'evaluation'), async (req, res) => {
+app.post('/api/group-interview/start', async (req, res) => {
   try {
     const { sessionId } = req.body;
     const session = sessions.get(sessionId);
@@ -3884,7 +3985,7 @@ app.post('/api/open-xhs-login', async (req, res) => {
   if (ocErr) return res.status(503).json({ error: ocErr });
   try {
     // 使用 opencli xiaohongshu search 命令，会自动打开浏览器（让用户扫码登录）
-    await execAsync('opencli xiaohongshu search "面试经验" --foreground', { timeout: 20000 });
+    await execFileAsync('opencli', ['xiaohongshu', 'search', '面试经验', '--foreground'], { timeout: 20000 });
     res.json({ ok: true });
   } catch(e) {
     // opencli 可能返回非0（daemon已在运行等），只要命令执行了就认为成功
@@ -3967,11 +4068,39 @@ app.post('/api/export/generate-docx', async (req, res) => {
 });
 
 // ============================================================
+// 全局错误处理 — 兜底未捕获异常，避免 Express 默认错误页泄露堆栈
+// 必须注册在所有路由之后
+// ============================================================
+app.use((err, req, res, next) => {
+  const isMulter = err && err.name === 'MulterError';
+  const status = isMulter ? 400 : (err.status || err.statusCode || 500);
+
+  if (status >= 500) console.error('[未捕获错误]', req.method, req.originalUrl, err);
+  else console.warn('[请求错误]', req.method, req.originalUrl, err.message);
+
+  if (res.headersSent) return next(err);
+
+  let message;
+  if (isMulter) {
+    message = err.code === 'LIMIT_FILE_SIZE' ? '文件超过 10MB 限制' : '文件上传失败：' + err.message;
+  } else if (status >= 500) {
+    message = '服务器内部错误'; // 不回传 err.message / stack
+  } else {
+    message = err.message || '请求失败';
+  }
+  res.status(status).json({ error: message });
+});
+
+// ============================================================
 // 启动
 // ============================================================
 const PORT = process.env.PORT || 3456;
 const GATEWAY_PORT = process.env.GATEWAY_PORT || 8787;
 const IS_ELECTRON = process.env.ELECTRON_MODE === '1';
+
+// 默认仅监听回环地址：避免同网段设备直接读取会话、调用本机 AI 配置。
+// 云端部署（如 Render）需显式设置 HOST=0.0.0.0，并在反向代理层做访问控制。
+const HOST = process.env.HOST || '127.0.0.1';
 
 // 网关就绪标志（用于 SSE 流式等依赖网关的功能）
 let _gatewayReady = false;
@@ -3982,12 +4111,15 @@ let _server = null;
 
 function startServer() {
   return new Promise((resolve, reject) => {
-    _server = app.listen(PORT, async () => {
-      logInfo(`服务器已启动 — http://localhost:${PORT}`);
-      logInfo(`AI Provider Kit: ${PROVIDER_KIT_PATH}`);
+    _server = app.listen(PORT, HOST, async () => {
+      logInfo(`服务器已启动 — http://${HOST}:${PORT}`);
+      logInfo(`AI Provider Kit: ${PROVIDER_KIT_PATH || '(未安装，使用 standalone 后端)'}`);
       console.log(`\n🎯 InterviewPrep MVP 已启动`);
-      console.log(`   应用地址: http://localhost:${PORT}`);
-      console.log(`   AI Provider Kit: ${PROVIDER_KIT_PATH}`);
+      console.log(`   应用地址: http://${HOST}:${PORT}`);
+      console.log(`   AI Provider Kit: ${PROVIDER_KIT_PATH || '(未安装，使用 standalone 后端)'}`);
+      if (HOST !== '127.0.0.1' && HOST !== 'localhost' && HOST !== '::1') {
+        console.warn(`   ⚠️ 已绑定 ${HOST}，服务对本网络开放，请确保有反向代理与访问控制`);
+      }
 
       // 立即 resolve，不阻塞窗口显示
       resolve(_server);
@@ -4031,20 +4163,31 @@ function startServer() {
   });
 }
 
-// 停止 HTTP 服务器，清理所有连接
-function stopServer() {
-  if (_server) {
+// 停止 HTTP 服务器：先停止接受新连接并等待在途请求写完，超时后强制断开
+function stopServer({ graceMs = 2000 } = {}) {
+  return new Promise((resolve) => {
+    if (!_server) return resolve();
+    const srv = _server;
+    _server = null;
+
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+
     try {
-      // 关闭所有活跃连接
-      _server.closeAllConnections?.();
-      _server.close(() => {
+      srv.close(() => {
         logInfo('HTTP 服务器已关闭');
+        finish();
       });
-      _server = null;
+      // 宽限期内让在途响应写完，之后强制断开，避免退出被长连接拖住
+      setTimeout(() => {
+        try { srv.closeAllConnections?.(); } catch {}
+        finish();
+      }, graceMs);
     } catch (e) {
       logWarn('关闭服务器时出错: ' + e.message);
+      finish();
     }
-  }
+  });
 }
 
 // 直接运行时启动
@@ -4055,6 +4198,14 @@ if (!IS_ELECTRON || require.main === module) {
 // Electron 主进程引用用
 module.exports = { app, startServer, stopServer, PORT, isGatewayReady };
 
-// 优雅退出
-process.on('SIGINT', () => { logInfo('收到 SIGINT，正在关闭...'); process.exit(0); });
-process.on('SIGTERM', () => { logInfo('收到 SIGTERM，正在关闭...'); process.exit(0); });
+// 优雅退出：等待在途请求写完再退出，避免截断响应与丢失落盘数据
+let _shuttingDown = false;
+async function shutdown(signal) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  logInfo(`收到 ${signal}，正在优雅关闭...`);
+  await stopServer();
+  process.exit(0);
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

@@ -155,69 +155,199 @@ app.whenReady().then(async () => {
 
 // ── 一键更新：IPC 处理 ──
 const UPDATE_TEMP_DIR = path.join(require('os').tmpdir(), 'interviewprep-update');
+const UPDATE_ZIP_PATH = path.join(require('os').tmpdir(), 'InterviewPrep-update.zip');
+const UPDATE_MARKER_NAME = '.update-verified.json';
+const MAX_UPDATE_BYTES = 500 * 1024 * 1024;
+const MAX_UPDATE_REDIRECTS = 5;
 
-// 每次启动时检查是否有待安装的更新
+// 允许的更新来源主机（GitHub Releases 及其 CDN）
+const ALLOWED_UPDATE_HOSTS = new Set([
+  'github.com',
+  'api.github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'github-releases.githubusercontent.com',
+  'codeload.github.com'
+]);
+
+function validateUpdateUrl(rawUrl, { requireZip = false } = {}) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) throw new Error('更新地址为空');
+  let parsed;
+  try { parsed = new URL(rawUrl); } catch { throw new Error('更新地址格式非法'); }
+  if (parsed.protocol !== 'https:') throw new Error('更新地址必须使用 HTTPS');
+  const host = parsed.hostname.toLowerCase();
+  if (!ALLOWED_UPDATE_HOSTS.has(host)) throw new Error(`更新来源不在白名单内：${host}`);
+  if (requireZip && !/\.zip$/i.test(parsed.pathname)) throw new Error('更新包必须为 .zip 文件');
+  return parsed;
+}
+
+// 逐跳校验重定向目标，避免被跳转到任意主机
+function downloadToFile(urlStr, destPath, redirectsLeft = MAX_UPDATE_REDIRECTS) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try { parsed = validateUpdateUrl(urlStr); } catch (e) { return reject(e); }
+
+    const https = require('https');
+    const req = https.get(parsed, {
+      headers: { 'User-Agent': 'InterviewPrep-Updater', 'Accept': 'application/octet-stream' },
+      timeout: 30000
+    }, (resp) => {
+      const status = resp.statusCode || 0;
+
+      if (status >= 300 && status < 400 && resp.headers.location) {
+        resp.resume();
+        if (redirectsLeft <= 0) return reject(new Error('更新重定向次数过多'));
+        let next;
+        try { next = new URL(resp.headers.location, parsed).toString(); } catch { return reject(new Error('重定向地址非法')); }
+        return downloadToFile(next, destPath, redirectsLeft - 1).then(resolve, reject);
+      }
+
+      if (status !== 200) { resp.resume(); return reject(new Error(`下载失败：HTTP ${status}`)); }
+      const total = parseInt(resp.headers['content-length'] || '0', 10);
+      if (total > MAX_UPDATE_BYTES) { resp.resume(); return reject(new Error('更新包体积超过上限')); }
+
+      const file = fs.createWriteStream(destPath);
+      let received = 0;
+      let aborted = false;
+      const fail = (err) => {
+        if (aborted) return;
+        aborted = true;
+        req.destroy();
+        file.destroy();
+        reject(err);
+      };
+      resp.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > MAX_UPDATE_BYTES) fail(new Error('更新包体积超过上限'));
+      });
+      resp.on('error', fail);
+      file.on('error', fail);
+      file.on('finish', () => { if (!aborted) file.close(() => resolve()); });
+      resp.pipe(file);
+    });
+
+    req.on('timeout', () => req.destroy(new Error('下载超时')));
+    req.on('error', reject);
+  });
+}
+
+function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = require('crypto').createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (d) => hash.update(d));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+function normalizeSha256(value) {
+  if (!value || typeof value !== 'string') return '';
+  const hex = value.trim().toLowerCase().replace(/^sha256[:=]/, '');
+  return /^[a-f0-9]{64}$/.test(hex) ? hex : '';
+}
+
+// 每次启动时检查是否有待安装的更新（仅安装通过校验的包）
 app.whenReady().then(() => {
   try {
-    if (fs.existsSync(UPDATE_TEMP_DIR)) {
-      const appRoot = path.dirname(path.dirname(__dirname)); // electron/ → mvp root
-      copyDirSync(UPDATE_TEMP_DIR, appRoot);
+    if (!fs.existsSync(UPDATE_TEMP_DIR)) return;
+
+    let sha = '';
+    try {
+      const marker = JSON.parse(fs.readFileSync(path.join(UPDATE_TEMP_DIR, UPDATE_MARKER_NAME), 'utf8'));
+      sha = normalizeSha256(marker && marker.sha256);
+    } catch { sha = ''; }
+    if (!sha) {
       fs.rmSync(UPDATE_TEMP_DIR, { recursive: true, force: true });
-      console.log('[Update] 已安装待处理更新');
+      console.warn('[Update] 更新包缺少有效的完整性校验标记，已丢弃');
+      return;
     }
+
+    const appRoot = path.dirname(path.dirname(__dirname)); // electron/ → mvp root
+    copyDirSync(UPDATE_TEMP_DIR, appRoot, new Set([UPDATE_MARKER_NAME]));
+    fs.rmSync(UPDATE_TEMP_DIR, { recursive: true, force: true });
+    console.log('[Update] 已安装待处理更新 sha256=' + sha.slice(0, 12));
   } catch (e) { console.warn('[Update] 安装待处理更新失败:', e.message); }
 });
 
-function copyDirSync(src, dest) {
+function copyDirSync(src, dest, skip = new Set()) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (skip.has(entry.name)) continue;
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
-    if (entry.isDirectory()) { copyDirSync(s, d); }
+    if (entry.isDirectory()) { copyDirSync(s, d, skip); }
     else { try { fs.copyFileSync(s, d); } catch {} }
   }
 }
 
-ipcMain.handle('install-update', async (_event, downloadUrl) => {
+ipcMain.handle('install-update', async (_event, payload) => {
+  const downloadUrl = typeof payload === 'string' ? payload : (payload && payload.url);
+  const expectedSha = normalizeSha256(payload && typeof payload === 'object' ? payload.sha256 : '');
+  let extractionStarted = false;
+
   try {
-    const https = require('https');
-    const { spawnSync } = require('child_process');
-    const zipPath = path.join(require('os').tmpdir(), 'InterviewPrep-update.zip');
+    // 1. 前置校验：HTTPS + 主机白名单 + .zip 后缀（快速失败，避免无谓下载）
+    const source = validateUpdateUrl(downloadUrl, { requireZip: true });
+    try { fs.rmSync(UPDATE_ZIP_PATH, { force: true }); } catch {}
 
-    // 1. 下载 zip
-    await new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(zipPath);
-      https.get(downloadUrl, (resp) => {
-        if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
-          // Follow redirect
-          https.get(resp.headers.location, (r2) => {
-            r2.pipe(file);
-            file.on('finish', () => { file.close(); resolve(); });
-          }).on('error', reject);
-          return;
-        }
-        resp.pipe(file);
-        file.on('finish', () => { file.close(); resolve(); });
-      }).on('error', reject);
+    // 2. 下载（重定向逐跳复核）
+    await downloadToFile(downloadUrl, UPDATE_ZIP_PATH);
+
+    // 3. 完整性校验
+    const actualSha = await sha256File(UPDATE_ZIP_PATH);
+    if (expectedSha && actualSha !== expectedSha) {
+      throw new Error(`完整性校验失败（期望 ${expectedSha.slice(0, 12)}…，实际 ${actualSha.slice(0, 12)}…）`);
+    }
+
+    // 4. 安装前必须由用户确认
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['取消', '确认安装'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: '确认安装更新',
+      message: '即将安装已下载的更新包',
+      detail: `来源：${source.hostname}\nSHA256：${actualSha}\n\n${expectedSha ? '完整性校验已通过。' : '⚠️ 发布方未提供校验值，无法验证完整性。'}\n安装完成后需要重启应用才能生效。`
     });
+    if (response !== 1) {
+      try { fs.rmSync(UPDATE_ZIP_PATH, { force: true }); } catch {}
+      return { success: false, canceled: true, message: '已取消安装。' };
+    }
 
-    // 2. 解压到临时目录
+    // 5. 解压到临时目录
     if (fs.existsSync(UPDATE_TEMP_DIR)) fs.rmSync(UPDATE_TEMP_DIR, { recursive: true, force: true });
     fs.mkdirSync(UPDATE_TEMP_DIR, { recursive: true });
-    spawnSync('7z', ['x', zipPath, `-o${UPDATE_TEMP_DIR}`, '-y'], { stdio: 'pipe' });
+    extractionStarted = true;
+    const { spawnSync } = require('child_process');
+    const unzip = spawnSync('7z', ['x', UPDATE_ZIP_PATH, `-o${UPDATE_TEMP_DIR}`, '-y'], { stdio: 'pipe' });
+    if (unzip.error || unzip.status !== 0) {
+      throw new Error('解压失败：未找到可用的 7z 解压程序或压缩包已损坏');
+    }
 
-    // 3. 查找解压后的实际内容目录 (可能是 win-unpacked 子目录)
+    // 6. 写入校验标记，供下次启动安装时复核
+    fs.writeFileSync(path.join(UPDATE_TEMP_DIR, UPDATE_MARKER_NAME), JSON.stringify({
+      sha256: actualSha,
+      source: source.hostname,
+      url: downloadUrl,
+      verifiedAt: new Date().toISOString()
+    }, null, 2));
+
+    // 7. 查找解压后的实际内容目录 (可能是 win-unpacked 子目录)
     const extractedDirs = fs.readdirSync(UPDATE_TEMP_DIR, { withFileTypes: true }).filter(d => d.isDirectory());
     let contentDir = UPDATE_TEMP_DIR;
     if (extractedDirs.length === 1 && extractedDirs[0].name === 'win-unpacked') {
       contentDir = path.join(UPDATE_TEMP_DIR, 'win-unpacked');
     }
 
-    // 4. 清理下载文件
-    try { fs.unlinkSync(zipPath); } catch {}
-
-    return { success: true, message: '更新已下载，重启后生效。是否立即重启？', contentDir };
+    try { fs.rmSync(UPDATE_ZIP_PATH, { force: true }); } catch {}
+    return { success: true, message: '更新已校验并准备就绪，重启后生效。是否立即重启？', contentDir, sha256: actualSha };
   } catch (e) {
+    try { fs.rmSync(UPDATE_ZIP_PATH, { force: true }); } catch {}
+    if (extractionStarted) {
+      try { fs.rmSync(UPDATE_TEMP_DIR, { recursive: true, force: true }); } catch {}
+    }
     return { success: false, message: '更新失败: ' + (e.message || '未知错误') };
   }
 });
@@ -234,13 +364,24 @@ app.on('window-all-closed', () => {
 });
 
 // 确保退出时彻底清理所有进程
-app.on('will-quit', () => {
-  // 关闭 HTTP 服务器，释放端口
+let _quitCleanupDone = false;
+app.on('will-quit', (event) => {
+  if (_quitCleanupDone) return;
+  event.preventDefault();
+  const finish = () => {
+    if (_quitCleanupDone) return;
+    _quitCleanupDone = true;
+    // 强制退出进程，确保不会有残留（Windows 上尤为重要）
+    app.exit(0);
+  };
+  // 先等待 HTTP 服务器关闭（释放端口、写完在途请求），再退出
   if (_serverModule && typeof _serverModule.stopServer === 'function') {
-    _serverModule.stopServer();
+    Promise.resolve(_serverModule.stopServer()).then(finish, finish);
+    // 兜底：清理超时也不能让进程挂住
+    setTimeout(finish, 3000);
+  } else {
+    finish();
   }
-  // 强制退出进程，确保不会有残留（Windows 上尤为重要）
-  app.exit(0);
 });
 
 app.on('activate', () => {

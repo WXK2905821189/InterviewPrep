@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;0,800;1,500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1785766500">
+<link rel="stylesheet" href="style.css?v=1785770000">
 </head>
 <body>
 
-<!-- ====== 顶部导航（双行布局）====== -->
+<!-- ====== 顶部导航（三行布局：工具行 + 主模块 + 子模块）====== -->
 <nav class="navbar">
   <!-- 第一行：品牌 + 岗位 + 状态 + 操作 -->
   <div class="nav-toolbar">
@@ -25,41 +25,16 @@
       <button id="btn-edit-session-label" class="nav-settings-btn" title="编辑岗位名称" style="font-size:0.8rem;background:none;border:1px solid var(--rule);border-radius:4px;padding:0.1rem 0.4rem;cursor:pointer;color:var(--muted);">✏️</button>
     </div>
     <div class="nav-status" id="nav-status">⚪ 就绪</div>
-    <!-- 用户认证区域 -->
-    <div class="nav-auth" id="nav-auth">
-      <button class="btn-login" id="btn-open-auth" title="登录/注册">🔐 登录</button>
-      <div class="nav-user-info hidden" id="nav-user-info">
-        <span class="nav-credits" id="nav-credits" title="剩余点数">🪙 <b id="nav-credits-num">0</b></span>
-        <a href="#" id="btn-credit-logs" class="nav-credit-logs" title="点数记录">📋</a>
-        <span class="nav-user-email" id="nav-user-email"></span>
-        <button class="nav-settings-btn" id="btn-buy-credits" title="购买点数" style="font-size:0.72rem;">💎</button>
-        <button class="nav-settings-btn" id="btn-logout" title="退出登录" style="font-size:0.72rem;">🚪</button>
-      </div>
-    </div>
     <div class="nav-actions">
       <button class="dark-toggle" id="btn-dark-toggle" title="切换暗色模式">🌙</button>
       <button class="nav-settings-btn" id="btn-open-settings" title="设置AI供应商">⚙️</button>
       <button class="nav-settings-btn btn-delete" id="btn-delete-session" title="删除当前岗位会话">🗑</button>
     </div>
   </div>
-  <!-- 第二行：功能标签栏 -->
-  <div class="nav-tab-bar" id="nav-tabs">
-    <button class="nav-tab active" data-tab="dashboard">📊 仪表盘</button>
-    <button class="nav-tab" data-tab="analyze">分析 & 押题<span class="tab-dot" data-dot-tab="analyze"></span></button>
-    <button class="nav-tab" data-tab="practice">单题练习<span class="tab-dot" data-dot-tab="practice"></span></button>
-    <button class="nav-tab" data-tab="interview">全真模拟<span class="tab-dot" data-dot-tab="interview"></span></button>
-    <button class="nav-tab" data-tab="resume">简历优化<span class="tab-dot" data-dot-tab="resume"></span></button>
-    <button class="nav-tab" data-tab="mianjing">📡 面经采集<span class="tab-dot" data-dot-tab="mianjing"></span></button>
-    <button class="nav-tab" data-tab="drill">🎯 专项训练<span class="tab-dot" data-dot-tab="drill"></span></button>
-    <button class="nav-tab" data-tab="behavioral">💡 通用题库</button>
-    <button class="nav-tab" data-tab="company">公司调研</button>
-    <button class="nav-tab" data-tab="wrongbook">📝 错题集</button>
-    <button class="nav-tab" data-tab="studyplan">📋 备考方案</button>
-    <button class="nav-tab" data-tab="review">📝 面试复盘</button>
-    <button class="nav-tab" data-tab="group">👥 群面模拟<span class="tab-dot" data-dot-tab="group"></span></button>
-    <button class="nav-tab" data-tab="code-interview">💻 技术面试</button>
-    <button class="nav-tab" id="tab-admin" data-tab="admin" style="display:none;">⚙️ 管理后台</button>
-  </div>
+  <!-- 第二行：一级导航（主模块，由 nav.js 渲染） -->
+  <div class="nav-module-bar" id="nav-modules"></div>
+  <!-- 第三行：二级导航（子模块，由 nav.js 渲染） -->
+  <nav class="sub-nav" id="sub-nav"></nav>
 </nav>
 
 <main class="container">
@@ -82,6 +57,18 @@
         <div style="flex:1;min-width:200px;" id="readiness-dimensions"></div>
         <div style="flex:1;min-width:200px;" id="readiness-suggestions"></div>
       </div>
+    </div>
+
+    <!-- 宝洁八大问熟练度 -->
+    <div class="card" style="margin-bottom:1rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.8rem;">
+        <div>
+          <h3 style="margin:0;">🎯 宝洁八大问熟练度</h3>
+          <p style="font-size:0.78rem;color:var(--muted);margin:0.2rem 0 0 0;">8 道必考题的打磨进度 —— 覆盖 80% 行为面试</p>
+        </div>
+        <button class="btn-primary" onclick="switchTab('pg8')" style="font-size:0.8rem;">开始打磨 →</button>
+      </div>
+      <div id="dash-pg8-bars" style="display:flex;flex-direction:column;gap:0.35rem;"></div>
     </div>
 
     <!-- Stats row -->
@@ -255,13 +242,6 @@
       <h1>上传JD+简历，AI一键押题</h1>
       <p class="subtitle">自动解析岗位要求，对比你的简历，生成针对性面试题 — AI 驱动的高频押题</p>
     </div>
-    <div class="quota-banner free" data-quota-type="analysis" style="margin-bottom:1rem;">
-      <span class="quota-dot"></span>
-      <span class="quota-msg">加载中...</span>
-      <span style="margin-left:auto;font-size:0.75rem;">剩余 <b class="quota-count">-</b></span>
-      <a href="#" id="quota-buy-link-analysis" style="color:var(--accent);font-weight:600;text-decoration:none;font-size:0.75rem;display:none;">购买点数 →</a>
-    </div>
-
     <div class="input-grid">
       <div class="input-card">
         <label>📋 岗位JD</label>
@@ -329,7 +309,7 @@
       <!-- 话术库快速入口 -->
       <div class="card phrase-banner" id="phrase-banner" style="display:none;">
         <span>💬 你在本次练习中的高分回答已自动保存到话术库</span>
-        <button class="btn-outline" onclick="switchTab('practice'); document.getElementById('practice-area').classList.contains('hidden') || document.getElementById('show-phrases-btn')?.click();">查看话术库 →</button>
+        <button class="btn-outline" onclick="switchTab('phrases')">查看话术库 →</button>
       </div>
     </div>
   </section>
@@ -340,13 +320,6 @@
       <h1>单题练习</h1>
       <p>从押题清单中选题，深度打磨每一道题的回答</p>
     </div>
-    <div class="quota-banner free" data-quota-type="evaluation" style="margin-bottom:1rem;">
-      <span class="quota-dot"></span>
-      <span class="quota-msg">加载中...</span>
-      <span style="margin-left:auto;font-size:0.75rem;">剩余 <b class="quota-count">-</b></span>
-      <a href="#" id="quota-buy-link-evaluation" style="color:var(--accent);font-weight:600;text-decoration:none;font-size:0.75rem;display:none;">购买点数 →</a>
-    </div>
-
     <div id="practice-empty" class="empty-state">
       <p>请先在「分析 & 押题」页完成分析，然后选择一道题开始练习</p>
     </div>
@@ -424,22 +397,11 @@
         </div>
       </details>
 
-      <!-- 话术库面板 -->
-      <details id="phrase-panel" class="card hidden" style="margin-top:0.8rem;">
-        <summary style="cursor:pointer;font-weight:600;color:var(--accent);user-select:none;">📚 个人话术库</summary>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.6rem;margin-bottom:0.8rem;">
-          <select id="phrase-score-filter" class="styled-select" style="font-size:0.78rem;">
-            <option value="">全部分数</option>
-            <option value="90">≥90分</option>
-            <option value="80">≥80分</option>
-            <option value="70">≥70分</option>
-          </select>
-          <div style="display:flex;gap:0.4rem;">
-            <a id="btn-export-phrases" href="/api/export/phrases" class="btn-outline" style="font-size:0.78rem;text-decoration:none;">📥 导出DOCX</a>
-          </div>
-        </div>
-        <div id="phrase-list"><p style="color:var(--muted);">话术库为空。练习中得分85+的回答会自动存入。</p></div>
-      </details>
+      <!-- 话术库已拆为独立子模块：产出与复盘 → 话术库 -->
+      <div class="card" style="margin-top:0.8rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <span style="font-size:0.88rem;">📚 高分回答会存入「话术库」，可随时筛选、导出成稿</span>
+        <button class="btn-outline" onclick="switchTab('phrases')" style="font-size:0.82rem;white-space:nowrap;">前往话术库 →</button>
+      </div>
     </div>
   </section>
 
@@ -766,6 +728,31 @@
     </div>
   </section>
 
+    <!-- ====== Tab: 宝洁八大问 ====== -->
+  <section id="tab-pg8" class="tab-content">
+    <div class="card hero-card">
+      <h1>🎯 宝洁八大问</h1>
+      <p class="subtitle">8 道固定必考题，覆盖 80% 行为面试。反复计时练习 + 回答稿版本迭代，直到把这 8 题练成条件反射</p>
+    </div>
+
+    <!-- 熟练度总览 -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;">
+        <div style="text-align:center;min-width:110px;">
+          <div style="font-size:2.8rem;font-weight:700;color:var(--accent);" id="pg8-overall">--</div>
+          <div style="font-size:0.8rem;color:var(--muted);margin-top:0.2rem;">整体熟练度</div>
+        </div>
+        <div style="flex:1;min-width:220px;font-size:0.85rem;" id="pg8-overview-meta"></div>
+      </div>
+    </div>
+
+    <!-- 8 题卡片墙 -->
+    <div id="pg8-grid" class="pg8-grid"></div>
+
+    <!-- 单题工作台 -->
+    <div id="pg8-workbench" class="hidden"></div>
+  </section>
+
     <!-- ====== 错题集 ====== -->
   <section id="tab-wrongbook" class="tab-content">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
@@ -842,6 +829,36 @@
         <h3 style="margin-bottom:0.8rem;">💡 核心备考建议</h3>
         <div id="studyplan-advice"></div>
       </div>
+    </div>
+  </section>
+
+  <!-- ====== Tab: 话术库（从单题练习拆出的独立子模块）====== -->
+  <section id="tab-phrases" class="tab-content">
+    <div class="card hero-card">
+      <h1>📚 个人话术库</h1>
+      <p class="subtitle">练习中得分 85+ 的回答可存入这里 —— 按分数筛选、逐条回看，沉淀出属于你自己的高分手感</p>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;">
+          <select id="phrase-score-filter" class="styled-select" style="font-size:0.82rem;">
+            <option value="">全部分数</option>
+            <option value="90">≥90分</option>
+            <option value="80">≥80分</option>
+            <option value="70">≥70分</option>
+          </select>
+          <span id="phrase-count" style="font-size:0.8rem;color:var(--muted);"></span>
+        </div>
+        <div style="display:flex;gap:0.4rem;">
+          <button id="btn-refresh-phrases" class="btn-outline" style="font-size:0.78rem;">🔄 刷新</button>
+          <a id="btn-export-phrases" href="/api/export/phrases" class="btn-outline" style="font-size:0.78rem;text-decoration:none;">📥 导出DOCX</a>
+        </div>
+      </div>
+    </div>
+
+    <div id="phrase-list">
+      <p style="color:var(--muted);">话术库为空。在「单题练习」中提交回答后，点击「⭐ 存入话术库」即可收藏到这里。</p>
     </div>
   </section>
 
@@ -1007,53 +1024,6 @@
     </div>
   </section>
 
-  <!-- ====== 代码面试（技术面试） ====== -->
-  <section id="tab-code-interview" class="tab-content">
-    <div class="card hero-card">
-      <h1>💻 技术面试（编程题）</h1>
-      <p class="subtitle">AI 生成贴近实际工作场景的编程题，提交代码后获得专业审查反馈</p>
-    </div>
-    <div class="code-interview-container">
-      <div class="ci-left">
-        <div class="ci-header">
-          <select id="ci-language" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:14px;">
-            <option value="javascript">JavaScript</option>
-            <option value="python">Python</option>
-            <option value="java">Java</option>
-            <option value="go">Go</option>
-            <option value="cpp">C++</option>
-          </select>
-          <button id="ci-generate-btn" class="btn btn-primary">🎲 生成题目</button>
-        </div>
-        <div id="ci-question-area" class="ci-question">
-          <div class="ci-empty">点击「生成题目」获取一道编程面试题</div>
-        </div>
-        <div id="ci-editor-container" class="ci-editor" style="height:300px;"></div>
-        <div class="ci-actions">
-          <button id="ci-submit-btn" class="btn btn-primary">📝 提交审查</button>
-          <button id="ci-hint-btn" class="btn btn-ghost">💡 提示</button>
-        </div>
-      </div>
-      <div class="ci-right">
-        <div id="ci-review-area" class="ci-review">
-          <div class="ci-empty">提交代码后查看 AI 审查结果</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ====== 管理后台 ====== -->
-  <section id="tab-admin" class="tab-content">
-    <div class="admin-layout">
-      <aside class="admin-sidebar">
-        <div class="admin-nav-item active" data-page="dashboard" onclick="window.Admin.switchPage('dashboard')">📊 仪表盘</div>
-        <div class="admin-nav-item" data-page="users" onclick="window.Admin.switchPage('users')">👥 用户管理</div>
-        <div class="admin-nav-item" data-page="costs" onclick="window.Admin.switchPage('costs')">💰 消耗配置</div>
-      </aside>
-      <main class="admin-main" id="admin-content"></main>
-    </div>
-  </section>
-
 </main>
 
 <!-- 练习详情弹窗 / 完整报告 -->
@@ -1079,87 +1049,6 @@
 </div>
 
 <div id="toast" class="toast"></div>
-
-<!-- ====== 设置面板 ====== -->
-<div class="modal-overlay hidden" id="auth-modal">
-  <div class="modal" style="max-width:420px;">
-    <div class="modal-header">
-      <h2>🔐 <span id="auth-modal-title">登录</span></h2>
-      <button class="modal-close" id="btn-close-auth">✕</button>
-    </div>
-    <div class="modal-body">
-      <div id="auth-tabs" style="display:flex;gap:0;margin-bottom:1.5rem;border-bottom:2px solid var(--rule);">
-        <button class="auth-tab active" data-auth-tab="login">登录</button>
-        <button class="auth-tab" data-auth-tab="register">注册</button>
-      </div>
-      <form id="auth-login-form">
-        <div class="form-row">
-          <label>邮箱</label>
-          <input type="email" id="auth-email" placeholder="your@email.com" required autocomplete="email">
-        </div>
-        <div class="form-row">
-          <label>密码</label>
-          <input type="password" id="auth-password" placeholder="至少6位" required autocomplete="current-password">
-        </div>
-        <div id="auth-error" style="color:var(--red);font-size:0.82rem;margin-bottom:0.5rem;display:none;"></div>
-        <button type="submit" class="btn-primary" style="width:100%;">登录</button>
-      </form>
-      <form id="auth-register-form" class="hidden">
-        <div class="form-row">
-          <label>邮箱</label>
-          <input type="email" id="auth-reg-email" placeholder="your@email.com" required autocomplete="email">
-        </div>
-        <div class="form-row">
-          <label>密码</label>
-          <input type="password" id="auth-reg-password" placeholder="至少6位" required autocomplete="new-password">
-        </div>
-        <div id="auth-reg-error" style="color:var(--red);font-size:0.82rem;margin-bottom:0.5rem;display:none;"></div>
-        <button type="submit" class="btn-primary" style="width:100%;">注册</button>
-      </form>
-      <div style="text-align:center;margin-top:1rem;font-size:0.78rem;color:var(--muted);">
-        注册即享每日 <b>3次</b> 免费评估 + <b>1次</b> 免费分析
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- 套餐购买模态框 -->
-<div class="modal-overlay hidden" id="plans-modal">
-  <div class="modal" style="max-width:680px;">
-    <div class="modal-header">
-      <h2>💎 购买点数</h2>
-      <button class="modal-close" id="btn-close-plans">✕</button>
-    </div>
-    <div class="modal-body">
-      <div id="plans-user-balance" style="text-align:center;margin-bottom:1.2rem;padding:0.8rem;background:var(--accent-glow);border-radius:8px;font-size:0.9rem;">
-        当前点数：<b style="font-size:1.3rem;color:var(--accent);" id="plans-balance-num">0</b> 🪙
-      </div>
-      <div id="plans-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.8rem;">
-        <!-- JS 动态填充 -->
-      </div>
-      <div style="text-align:center;margin-top:1rem;font-size:0.78rem;color:var(--muted);">
-        支付由 <b>LemonSqueezy</b> 安全处理 · 支持国际信用卡
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay hidden" id="credit-logs-modal">
-  <div class="modal" style="max-width:520px;">
-    <div class="modal-header">
-      <h2>📋 点数记录</h2>
-      <button class="modal-close" id="btn-close-credit-logs">✕</button>
-    </div>
-    <div class="modal-body">
-      <div id="credit-logs-balance" style="text-align:center;margin-bottom:1rem;padding:0.6rem;background:var(--accent-glow);border-radius:8px;font-size:0.9rem;">
-        当前点数：<b style="font-size:1.2rem;color:var(--accent);">--</b> 🪙
-      </div>
-      <div id="credit-logs-list" style="max-height:50vh;overflow-y:auto;">
-        <div style="text-align:center;padding:2rem;color:var(--muted);">加载中...</div>
-      </div>
-    </div>
-  </div>
-</div>
 
 <div class="modal-overlay hidden" id="settings-modal">
   <div class="modal">
@@ -1233,7 +1122,7 @@
       <div class="settings-section">
         <h3>版本更新</h3>
         <div id="update-section">
-          <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.5rem;">当前版本：<b id="current-version">v1.9.0</b></p>
+          <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.5rem;">当前版本：<b id="current-version">v2.0.0</b></p>
           <button id="btn-check-update" class="btn-outline" style="font-size:0.82rem;">🔍 检查更新</button>
           <span id="update-status" style="font-size:0.82rem;margin-left:0.5rem;"></span>
           <div id="update-detail" class="hidden" style="margin-top:0.6rem;"></div>
@@ -1252,9 +1141,8 @@
 </div>
 
 <script src="echarts.min.js" defer></script>
-<script src="auth.js?v=1786200371" defer></script>
-<script src="admin.js?v=1786200500" defer></script>
-<script src="code-interview.js?v=1786200500" defer></script>
-<script src="app.js?v=1785766500" defer></script>
+<script src="nav.js?v=1785770000" defer></script>
+<script src="pg8.js?v=1785770000" defer></script>
+<script src="app.js?v=1785770000" defer></script>
 </body>
 </html>

@@ -9,7 +9,7 @@
 [![Electron](https://img.shields.io/badge/Electron-33.3-blue?style=flat-square&logo=electron)](https://electronjs.org)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?style=flat-square&logo=nodedotjs)](https://nodejs.org)
 
-**输入 JD + 简历 → AI 精准押题、面经采集、差距分析、模拟面试、简历优化**
+**输入 JD + 简历 → AI 精准押题、面经采集、差距分析、模拟面试、简历优化、宝洁八大问打磨**
 
 </div>
 
@@ -43,6 +43,22 @@ npm run dev
 
 ---
 
+## 🧭 功能导航
+
+v2.0.0 起，导航从「15 个平铺 Tab」改为**两级结构：5 个主模块 / 15 个子模块**（`public/nav.js` 动态渲染）。
+
+| 主模块 | 子模块 |
+|---|---|
+| ① 概览 | 仪表盘 · 备考方案 |
+| ② 准备 | 分析 & 押题 · 面经采集 · 公司调研 · 通用题库 |
+| ③ 练习 | 单题练习 · 专项训练 · **宝洁八大问** · 错题集 |
+| ④ 模拟 | 全真模拟面试 · 群面模拟 |
+| ⑤ 产出与复盘 | 简历优化 · **话术库** · 面试复盘 |
+
+> 支持 `#tab=drill` 形式的 hash 直达，会自动切到所属主模块。
+
+---
+
 ## ✨ 功能全景
 
 ### 🔍 分析 & 押题
@@ -65,6 +81,15 @@ AI 扮演面试官，从自我介绍开始多轮追问。**智能追问**不充�
 
 ### 🎯 专项训练
 题型过滤 + 任务卡 + 计时器（30s 准备 + 120s 作答）+ 历史记录 + ECharts 趋势图。支持语音输入。
+
+### 🎯 宝洁八大问
+8 道固定必考题（覆盖 80% 行为面试）的**深度打磨流水线**：题目卡片墙展示熟练度徽章，单题工作台给出考察意图 + STAR 提示 + 危险区，计时作答后复用五维评分，**回答稿版本迭代**（v1/v2/v3 保留每次评分）+ **AI 逐句打磨**（`PG_SCRIPT_POLISH`），最终沉淀一份可直接背诵/投递的定稿。仪表盘有独立熟练度卡片作为引流入口。
+
+### 📋 备考方案
+JD 逐条拆解 → 现有能力匹配度 → 需要补充什么 → 怎么补，AI 一键生成个性化备考方案（含周计划与核心建议）。
+
+### 📝 面试复盘
+导入面试记录（MD / DOCX / 文本），AI 生成结构化复盘报告 —— 逐题分析、评分、改进建议。
 
 ### 📄 简历优化
 AI 逐段分析简历，对标 JD 给出逐句优化建议。**原文 vs 优化后左右对照**，**全文化化**生成可直接投递的简历，**阶段指示器**实时显示优化进度。自动生成自我介绍脚本（支持自定义 Prompt 追加个性化要求）。
@@ -116,7 +141,7 @@ Space 暂停 / 1-5 评分 / Enter 提交 / Esc 关闭。
 │           NSIS 安装包 / portable 便携版           │
 ├─────────────────────────────────────────────────┤
 │            Express Server (端口 3456)             │
-│       SSE 流式 · 65 个 API 路由 · 会话管理        │
+│       SSE 流式 · 99 个 API 路由 · 会话管理        │
 ├────────────┬──────────────┬─────────────────────┤
 │  Chatflow  │   LLM Client  │      OpenCLI        │
 │  分析引擎   │   双后端切换   │   JD扒取 / 面经搜索  │
@@ -135,14 +160,16 @@ Space 暂停 / 1-5 评分 / Enter 提交 / Esc 关闭。
 
 ```
 InterviewPrep/
-├── server.js              # Express 主服务（65 个 API 路由）
+├── server.js              # Express 主服务（92 个 API 路由）
+├── server/                # 领域路由模块
+│   └── pg8.js             # 宝洁八大问 API（题目 / 稿件版本 / 熟练度 / AI 打磨）
 ├── electron/              # Electron 桌面客户端
 │   ├── main.js            # 主进程（窗口管理 + 延迟启动网关）
 │   └── preload.js         # 预加载脚本
 ├── chatflow/              # AI 引擎核心
 │   ├── engine.js          # 分析流水线编排
 │   ├── llm-client.js      # LLM 统一调用（双后端）
-│   ├── prompts.js         # 20+ 个 System Prompt 模板
+│   ├── prompts.js         # 31 个 System Prompt 模板
 │   ├── ai-provider.js     # AI 供应商连接管理
 │   ├── standalone-llm.js  # 独立 LLM 降级模式
 │   ├── resume-parser.js   # 简历文件解析
@@ -152,19 +179,22 @@ InterviewPrep/
 │       ├── company-research.js  # 公司调研
 │       └── opencli-setup.js     # OpenCLI 配置
 ├── public/                # 前端 SPA
-│   ├── index.html         # 主页面（11 个功能 Tab）
-│   ├── app.js             # 前端逻辑（~5000 行）
+│   ├── index.html         # 主页面（5 主模块 / 15 子模块）
+│   ├── nav.js             # 两级导航外壳（主模块 + 子模块）
+│   ├── app.js             # 前端逻辑（~7.5k 行）
+│   ├── pg8.js             # 宝洁八大问模块
 │   ├── style.css          # 样式（亮色/暗色双主题）
 │   ├── echarts.min.js     # ECharts 图表
 │   └── group-kb-embed.html # 群面知识库嵌入页
 ├── knowledge/             # 知识库（JSON）
 │   ├── behavioral-questions.json  # 20 道通用行为面试题
+│   ├── pg-8-questions.json        # 宝洁八大问（8 题 + 考察维度 + STAR 提示）
 │   ├── group-interview.json       # 群面题库
 │   ├── star-framework.json        # STAR 框架
 │   └── general-qa.json            # 通用问答
 ├── .data/                 # 本地数据存储（无数据库依赖）
 ├── logs/                  # 错误日志
-├── docs/                  # ★ 开发者知识库（架构/API/前端/AI/商业化/知识库/运维）
+├── docs/                  # ★ 开发者知识库（架构/API/前端/AI/知识库/运维）
 └── README.md              # 本文件
 ```
 
@@ -180,10 +210,11 @@ InterviewPrep/
 | [docs/01-architecture.md](./docs/01-architecture.md) | 进程模型、启动时序、目录结构、数据流、Electron 集成 |
 | [docs/02-backend.md](./docs/02-backend.md) | Express 骨架、**全部 API 路由清单（带行号）**、数据文件与 Schema |
 | [docs/03-frontend.md](./docs/03-frontend.md) | Tab 路由、app.js 分段索引、工具函数、CSS 主题、模块注册规范、UI 约定 |
-| [docs/04-ai-engine.md](./docs/04-ai-engine.md) | LLM 双后端、Chatflow 流水线、面试状态机、**32 个 Prompt 清单** |
-| [docs/05-commercial.md](./docs/05-commercial.md) | JWT 认证、点数系统、套餐与支付、管理后台、管理员账号 |
+| [docs/04-ai-engine.md](./docs/04-ai-engine.md) | LLM 双后端、Chatflow 流水线、面试状态机、**31 个 Prompt 清单** |
 | [docs/06-knowledge-base.md](./docs/06-knowledge-base.md) | 5 层知识库结构、检索打分逻辑、题库 Schema、加题库流程 |
-| [docs/07-dev-ops.md](./docs/07-dev-ops.md) | 本地运行、打包发布、编码约定、**20 条已知坑清单**、调试技巧 |
+| [docs/07-dev-ops.md](./docs/07-dev-ops.md) | 本地运行、打包发布、编码约定、**18 条已知坑清单**、调试技巧 |
+
+> ℹ️ v2.0.0 已移除商业化（认证 / 点数 / 套餐支付 / 管理后台）与技术面试模块，原 `docs/05-commercial.md` 已删除 —— 商业化待 v2.1 重构，届时重建文档。
 
 ---
 
@@ -208,6 +239,41 @@ npm run pack
 ---
 
 ## 📝 更新日志
+
+### v2.0.0 (2026-09-25) — 模块整合与清理
+- 🗑 **移除商业化模块**：JWT 认证（`server/auth.js`）、点数系统（`server/credits.js`）、套餐支付（`server/plans.js`，含 LemonSqueezy）、管理后台（`server/admin.js`）及对应前端 `auth.js` / `admin.js` 全部删除；摘除 14 处 `creditCheck` 中间件与 `authMiddleware`，AI 功能不再需要登录
+- 🗑 **移除技术面试模块**：`server/code-interview.js` / `public/code-interview.js` 及 2 个 Prompt 删除
+- 🗑 **依赖瘦身**：移除 `jsonwebtoken`、`bcryptjs`
+- 🧭 **导航重构**：15 个平铺 Tab → **5 主模块 / 15 子模块**两级导航（新增 `public/nav.js`），支持 hash 直达
+- ✨ **新增「宝洁八大问」模块**：8 道必考题深度打磨 —— 熟练度卡片墙 + 计时作答 + 五维评分 + **回答稿版本迭代** + **AI 逐句打磨**（新增 `PG_SCRIPT_POLISH` Prompt），仪表盘加熟练度引流卡片
+- ✨ **话术库拆为独立子模块**：从「单题练习」Tab 内独立出来，归入「产出与复盘」
+- 🔧 数据归档：`users.json` / `credits.json` / `credit_logs.json` 等移入 `.data/_archived/`
+- 🔧 环境变量清理：移除 `JWT_SECRET`、`LEMONSQUEEZY_*`、`APP_URL`
+
+### v1.9.0 (2026-08-08)
+- ✨ 商业化功能：用户认证、点数系统、套餐购买
+- ✨ 面试备考方案模块（JD 逐条拆解 → 能力匹配 → 补充清单 → 行动方案 + 周计划）
+- 🔧 切换题目时自动清除旧标准答案
+
+### v1.8.0 (2026-07-31)
+- ✨ 压力面试模式
+- ✨ 自由练习模式
+- ✨ 多轮面试
+- ✨ 竞争力雷达 + 趋势分析
+- ✨ 面试报告归档与趋势分析
+- ✨ 自定义岗位名称、自我介绍风格、经历模块
+- ✨ AI 标准答案参考
+
+### v1.7.3 (2026-08-03)
+- ✨ AI 朗读停止按钮
+- 🔧 多轮面试修复
+- 🔧 筛选按钮美化、重复按钮清理
+
+### v1.7.0 (2026-08-02)
+- ✨ AI 标准答案按钮前置
+- ✨ 通用题库答题评估 + 全 AI 操作进度提示
+- 🔧 进程清理优化
+- 🔧 岗位名称编辑修复
 
 ### v1.6.0 (2026-07-25)
 - ✨ 通用题库：20 道高频行为面试题，覆盖 5 大分类，AI 一键生成标准化回答

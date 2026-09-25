@@ -41,28 +41,11 @@ function debounce(fn, ms = 300) {
 
 // 全局 fetch 重试包装器（LLM API 错误时自动处理）
 async function fetchRetry(url, options = {}, retries = 2) {
-  // 自动注入认证 token
-  var opts = Object.assign({}, options);
-  if (window.Auth && window.Auth.getToken()) {
-    opts.headers = Object.assign({}, opts.headers || {});
-    opts.headers['Authorization'] = 'Bearer ' + window.Auth.getToken();
-  }
+  const opts = Object.assign({}, options);
   for (let i = 0; i <= retries; i++) {
     try {
       const resp = await fetch(url, opts);
       if (!resp.ok) {
-        // 处理 402 点数不足
-        if (resp.status === 402) {
-          const err = await resp.json().catch(() => ({ error: '点数不足' }));
-          if (err.code === 'INSUFFICIENT_CREDITS') {
-            toast('点数不足，请购买点数后继续使用');
-            // 触发打开购买弹窗
-            if (window.Auth && typeof window.Auth.openPlansModal === 'function') {
-              setTimeout(function() { window.Auth.openPlansModal(); }, 500);
-            }
-          }
-          throw new Error(err.error || '点数不足');
-        }
         const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
         throw new Error(err.error || `请求失败 (${resp.status})`);
       }
@@ -1195,15 +1178,16 @@ $('#btn-check-update')?.addEventListener('click', async () => {
       detailEl.classList.remove('hidden');
       const body = (release.body || '').slice(0, 500).replace(/\n/g, '<br>');
       const asset = (release.assets || []).find(a => a.name.endsWith('.zip'));
-      const downloadUrl = asset?.browser_download_url || release.html_url;
-      const isElectron = window.__IS_ELECTRON__ && window.electronAPI?.installUpdate;
+      const downloadUrl = asset?.browser_download_url || '';
+      const assetSha = (asset?.digest || '').replace(/^sha256:/i, '');
+      const isElectron = window.__IS_ELECTRON__ && window.electronAPI?.installUpdate && !!downloadUrl;
 
       detailEl.innerHTML = `
         <div style="background:var(--bg2);border:1px solid var(--accent);border-radius:8px;padding:0.8rem;">
           <p style="font-weight:600;color:var(--accent);margin:0 0 0.5rem 0;">📦 v${latestVer} 更新内容</p>
           <p style="font-size:0.8rem;color:var(--muted);margin:0 0 0.8rem 0;">${body || '（无详细说明）'}</p>
           ${isElectron
-            ? `<button id="btn-install-update" class="btn-primary" style="font-size:0.82rem;" data-url="${downloadUrl}">⬇️ 一键安装更新</button>`
+            ? `<button id="btn-install-update" class="btn-primary" style="font-size:0.82rem;" data-url="${downloadUrl}" data-sha="${assetSha}">⬇️ 一键安装更新</button>`
             : `<a href="${release.html_url}" target="_blank" class="btn-primary" style="font-size:0.82rem;text-decoration:none;display:inline-block;">📥 前往下载</a>`}
         </div>`;
 
@@ -1215,7 +1199,7 @@ $('#btn-check-update')?.addEventListener('click', async () => {
           installBtn.textContent = '⏳ 下载中...';
           statusEl.textContent = '⏳ 正在下载更新...';
           try {
-            const result = await window.electronAPI.installUpdate(installBtn.dataset.url);
+            const result = await window.electronAPI.installUpdate({ url: installBtn.dataset.url, sha256: installBtn.dataset.sha || '' });
             if (result.success) {
               statusEl.textContent = '✅ 更新已就绪';
               detailEl.innerHTML = `<p style="color:var(--green);font-size:0.82rem;">${result.message}</p>
@@ -1224,6 +1208,9 @@ $('#btn-check-update')?.addEventListener('click', async () => {
                 const restartBtn = document.getElementById('btn-restart-update');
                 if (restartBtn) restartBtn.addEventListener('click', () => window.electronAPI.restartApp());
               }, 100);
+            } else if (result.canceled) {
+              statusEl.textContent = '已取消安装';
+              detailEl.innerHTML = `<p style="font-size:0.82rem;color:var(--muted);">${result.message}</p>`;
             } else {
               statusEl.textContent = '❌ 更新失败';
               detailEl.innerHTML = `<p style="color:var(--red);font-size:0.82rem;">${result.message}</p>`;
@@ -1384,7 +1371,7 @@ function switchTab(tabName) {
     if (tabName === 'company') { renderCompanyResearchHistory(); }
   }
 
-  if (tabName === 'dashboard') { loadDashboard(); loadReadinessScore(); }
+  if (tabName === 'dashboard') { loadDashboard(); loadReadinessScore(); window.Pg8?.renderDashboard(); }
   if (tabName === 'interview') renderInterviewTabHistory();
   if (tabName === 'practice') {
     if (state.analysis) renderPracticeQuestions();
@@ -1426,20 +1413,15 @@ function switchTab(tabName) {
   if (tabName === 'review') {
     loadReviewHistory();
   }
-  if (tabName === 'code-interview') {
-    if (typeof window.CodeInterview !== 'undefined' && window.CodeInterview.init) {
-      window.CodeInterview.init();
-    }
-  }
-  if (tabName === 'admin') {
-    if (typeof window.Admin !== 'undefined' && window.Admin.init) {
-      window.Admin.init();
-    }
-  }
+  if (tabName === 'phrases') refreshPhraseList();
+  if (tabName === 'pg8') window.Pg8?.init();
+  window.Nav?.sync(tabName);
 }
 
-$$('.nav-tab').forEach(tab => {
-  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+// 二级导航点击（事件委托：子导航按钮由 nav.js 动态渲染，不能直接绑定）
+document.addEventListener('click', (e) => {
+  const tabBtn = e.target.closest('.nav-tab[data-tab]');
+  if (tabBtn) switchTab(tabBtn.dataset.tab);
 });
 
 // ============================================================
@@ -2251,32 +2233,24 @@ $('#btn-save-phrase').addEventListener('click', async () => {
     });
     toast('✅ 已存入话术库');
     $('#btn-save-phrase').textContent = '✅ 已保存';
-    // 自动打开话术库面板
-    const pp = document.getElementById('phrase-panel');
-    if (pp) { pp.open = true; pp.classList.remove('hidden'); refreshPhraseList(); }
     setTimeout(() => { $('#btn-save-phrase').classList.add('hidden'); }, 2000);
   } catch (e) { toast('保存失败: ' + e.message); }
 });
 
-// 话术库面板（使用 <details> 原生折叠，自动加载）
-(function() {
-  const panel = document.getElementById('phrase-panel');
-  if (panel) {
-    panel.addEventListener('toggle', () => {
-      if (panel.open) refreshPhraseList();
-    });
-  }
-})();
 $('#phrase-score-filter')?.addEventListener('change', () => refreshPhraseList());
+$('#btn-refresh-phrases')?.addEventListener('click', () => refreshPhraseList());
 
 async function refreshPhraseList() {
   try {
     const minScore = parseInt($('#phrase-score-filter')?.value || '0') || 0;
     const data = await apiLoadPhrases();
-    let phrases = data.phrases;
+    const all = data.phrases || [];
+    let phrases = all;
     if (minScore > 0) phrases = phrases.filter(p => (p.score || 0) >= minScore);
+    const countEl = $('#phrase-count');
+    if (countEl) countEl.textContent = minScore > 0 ? `共 ${all.length} 条，当前筛选 ${phrases.length} 条` : `共 ${all.length} 条`;
     if (phrases.length === 0) {
-      $('#phrase-list').innerHTML = '<p style="color:var(--muted);">' + (minScore > 0 ? '没有 ≥' + minScore + '分 的话术' : '话术库为空。练习中得分85+的回答可手动存入。') + '</p>';
+      $('#phrase-list').innerHTML = '<p style="color:var(--muted);">' + (minScore > 0 ? '没有 ≥' + minScore + '分 的话术' : '话术库为空。在「单题练习」中提交回答后，点击「⭐ 存入话术库」即可收藏到这里。') + '</p>';
       return;
     }
     $('#phrase-list').innerHTML = phrases.map(p => `
@@ -5088,28 +5062,12 @@ async function exportCurrentQuestionsDocx() {
 }
 
 function exportPracticeHistoryMD() {
-  const el = $('#phrase-panel');
-  if (!el || el.classList.contains('hidden')) { 
-    // Force load phrases
-    loadPhrasesForExport().then(phrases => {
-      if (!phrases.length) return toast('暂无练习记录');
-      const sections = {};
-      sections['练习历史'] = phrases.map((p,i) => `${i+1}. **${p.question||''}** (${p.score||0}分)\n   回答: ${(p.answer||'').slice(0, 200)}${(p.answer||'').length>200?'...':''}\n   ${p.improvedVersion ? '改进版: ' + p.improvedVersion + '\n' : ''}${p.keyTakeaways ? '关键点: ' + p.keyTakeaways : ''}`).join('\n\n');
-      exportMarkdown('练习历史记录', '', sections);
-    });
-    return;
-  }
-  // Read from rendered DOM
-  const items = document.querySelectorAll('#phrase-list .phrase-item');
-  if (!items.length) return toast('暂无练习记录');
-  const sections = {};
-  sections['练习历史'] = Array.from(items).map((item, i) => {
-    const qEl = item.querySelector('.phrase-q');
-    const aEl = item.querySelector('.phrase-a');
-    const scoreEl = item.querySelector('.phrase-score');
-    return `${i+1}. ${qEl?.textContent?.replace(/^Q:\s*/,'')||''} (${scoreEl?.textContent||'0分'})\n   ${aEl?.textContent?.slice(0,300)||''}`;
-  }).join('\n\n');
-  exportMarkdown('练习历史记录', '', sections);
+  loadPhrasesForExport().then(phrases => {
+    if (!phrases.length) return toast('暂无练习记录');
+    const sections = {};
+    sections['练习历史'] = phrases.map((p,i) => `${i+1}. **${p.question||''}** (${p.score||0}分)\n   回答: ${(p.answer||'').slice(0, 200)}${(p.answer||'').length>200?'...':''}\n   ${p.improvedVersion ? '改进版: ' + p.improvedVersion + '\n' : ''}${p.keyTakeaways ? '关键点: ' + p.keyTakeaways : ''}`).join('\n\n');
+    exportMarkdown('练习历史记录', '', sections);
+  });
 }
 
 async function loadPhrasesForExport() {
