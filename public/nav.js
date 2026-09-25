@@ -18,25 +18,25 @@
       { tab: 'studyplan',  label: '📋 备考方案' }
     ]},
     { id: 'prepare', label: '准备', tabs: [
-      { tab: 'analyze',    label: '分析 & 押题', dot: true },
+      { tab: 'analyze',    label: '🔍 分析 & 押题', dot: true },
       { tab: 'mianjing',   label: '📡 面经采集', dot: true },
-      { tab: 'company',    label: '公司调研' },
+      { tab: 'company',    label: '🏢 公司调研' },
       { tab: 'behavioral', label: '💡 通用题库', dot: true }
     ]},
     { id: 'practice', label: '练习', tabs: [
-      { tab: 'practice',   label: '单题练习', dot: true },
+      { tab: 'practice',   label: '✏️ 单题练习', dot: true },
       { tab: 'drill',      label: '🎯 专项训练', dot: true },
-      { tab: 'pg8',        label: '🎯 宝洁八大问' },
+      { tab: 'pg8',        label: '🏆 宝洁八大问' },
       { tab: 'wrongbook',  label: '📝 错题集' }
     ]},
     { id: 'simulate', label: '模拟', tabs: [
-      { tab: 'interview',  label: '全真模拟', dot: true },
+      { tab: 'interview',  label: '🎬 全真模拟', dot: true },
       { tab: 'group',      label: '👥 群面模拟', dot: true }
     ]},
     { id: 'output', label: '产出与复盘', tabs: [
-      { tab: 'resume',     label: '简历优化', dot: true },
+      { tab: 'resume',     label: '📄 简历优化', dot: true },
       { tab: 'phrases',    label: '📚 话术库' },
-      { tab: 'review',     label: '📝 面试复盘' }
+      { tab: 'review',     label: '🔄 面试复盘' }
     ]}
   ];
 

@@ -119,9 +119,9 @@ async function loadDashboard() {
             <div style="flex:1;min-width:0;">
               <div style="font-weight:700;font-size:0.95rem;">👋 欢迎使用 InterviewPrep<span style="font-weight:400;font-size:0.78rem;color:var(--muted);margin-left:0.5rem;">AI 驱动的面试准备工具，三步开始备战</span></div>
               <div style="display:flex;gap:1.1rem;flex-wrap:wrap;margin-top:0.3rem;font-size:0.76rem;color:var(--muted);">
-                <span>1️⃣ 填写 JD + 简历</span>
-                <span>2️⃣ AI 自动押题</span>
-                <span>3️⃣ 逐题练习 + 模拟</span>
+                <span><span class="step-badge">1</span>填写 JD + 简历</span>
+                <span><span class="step-badge">2</span>AI 自动押题</span>
+                <span><span class="step-badge">3</span>逐题练习 + 模拟</span>
               </div>
             </div>
             <button onclick="switchTab('analyze')" class="btn-primary" style="flex-shrink:0;font-size:0.82rem;">🚀 开始分析</button>
@@ -3464,8 +3464,14 @@ document.getElementById('btn-save-self-intro')?.addEventListener('click', async 
 // ============================================================
 
 // 打开/关闭设置
+function setSettingsOpen(open) {
+  const modal = $('#settings-modal');
+  if (modal) modal.classList.toggle('hidden', !open);
+  const btn = $('#btn-open-settings');
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
 $('#btn-open-settings')?.addEventListener('click', async () => {
-  $('#settings-modal').classList.remove('hidden');
+  setSettingsOpen(true);
   loadSettingsData();
   loadTemperatures();
   // 默认显示当前版本号（从 Electron 主进程获取或使用注入值）
@@ -3509,9 +3515,9 @@ function applyStoredTemperatures() {
   $('#settings-temp-val').textContent = t;
 }
 let _settingsSelectedConnectionId = null;
-$('#btn-close-settings').addEventListener('click', () => $('#settings-modal').classList.add('hidden'));
+$('#btn-close-settings').addEventListener('click', () => setSettingsOpen(false));
 $('#settings-modal').addEventListener('click', (e) => {
-  if (e.target === $('#settings-modal')) $('#settings-modal').classList.add('hidden');
+  if (e.target === $('#settings-modal')) setSettingsOpen(false);
 });
 const opencliSetupBtn = $('#btn-opencli-setup-settings');
 if (opencliSetupBtn) opencliSetupBtn.onclick = () => startOpencliSetup();
@@ -6265,11 +6271,21 @@ function renderBatchResults(questions) {
 async function loadWrongBook() {
   var minScore = (document.getElementById('wrongbook-score-filter') ? document.getElementById('wrongbook-score-filter').value : '60');
   var type = (document.getElementById('wrongbook-type-filter') ? document.getElementById('wrongbook-type-filter').value : '');
+  var statsEl = document.getElementById('wrongbook-stats');
+  var listEl = document.getElementById('wrongbook-list');
+  var setBusy = function (on) {
+    if (statsEl) statsEl.setAttribute('aria-busy', on ? 'true' : 'false');
+    if (listEl) listEl.setAttribute('aria-busy', on ? 'true' : 'false');
+  };
+  var fail = function () {
+    setBusy(false);
+    if (listEl) listEl.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem;">\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5</p>';
+  };
+  setBusy(true);
   try {
     var resp = await fetch(API + '/drill/wrong-answers?min_score=' + minScore + (type ? '&type=' + encodeURIComponent(type) : ''));
-    if (!resp.ok) return;
+    if (!resp.ok) { fail(); return; }
     var data = await resp.json();
-    var statsEl = document.getElementById('wrongbook-stats');
     if (statsEl) {
       statsEl.innerHTML = '<div style="display:flex;gap:1rem;flex-wrap:wrap;">' +
         '<div class="card" style="flex:1;min-width:120px;text-align:center;"><div style="font-size:2rem;font-weight:700;color:var(--red);">' + data.stats.wrong_count + '</div><div style="font-size:0.78rem;color:var(--muted);">\u9519\u9898</div></div>' +
@@ -6283,9 +6299,9 @@ async function loadWrongBook() {
       var color = q.bestScore < 40 ? 'var(--red)' : q.bestScore < 60 ? 'var(--accent)' : 'var(--green)';
       listHTML += '<div class="card" style="margin-bottom:0.6rem;"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;"><div style="flex:1;"><div style="font-weight:600;font-size:0.85rem;">' + (i+1) + '. ' + escapeHtml(q.question) + '</div><div style="display:flex;gap:0.5rem;margin-top:0.3rem;flex-wrap:wrap;"><span style="font-size:0.72rem;background:rgba(200,135,43,0.1);color:var(--accent-text);padding:0.1rem 0.4rem;border-radius:3px;">' + q.questionType + '</span><span style="font-size:0.72rem;color:' + color + ';font-weight:600;">\u6700\u4F73: ' + q.bestScore + '</span><span style="font-size:0.72rem;color:var(--muted);">\u5C1D\u8BD5: ' + q.attempts.length + ' \u6B21</span></div></div><button class="btn-ai-action btn-ai-followup" onclick="redoWrongQuestion(\'' + escapeHtml(q.question).replace(/'/g, "\\'") + '\')" style="flex-shrink:0;">\u91CD\u505A</button></div></div>';
     });
-    var listEl = document.getElementById('wrongbook-list');
     if (listEl) listEl.innerHTML = listHTML || '<p style="color:var(--muted);text-align:center;padding:2rem;">\u6CA1\u6709\u9519\u9898\uFF01</p>';
-  } catch (e) { console.warn('Wrong book load failed:', e); }
+    setBusy(false);
+  } catch (e) { console.warn('Wrong book load failed:', e); fail(); }
 }
 function redoWrongQuestion(question) {
   switchTab('practice');

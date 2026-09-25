@@ -5,10 +5,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>InterviewPrep - AI面试押题与模拟面试官</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;0,800;1,500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1785770000">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="alternate icon" href="favicon.ico">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="style.css?v=1785770001">
 </head>
 <body>
 
@@ -22,13 +22,13 @@
       <select id="nav-session-select" class="styled-select">
         <option value="">暂无面试</option>
       </select>
-      <button id="btn-edit-session-label" class="nav-settings-btn" title="编辑岗位名称" style="font-size:0.8rem;background:none;border:1px solid var(--rule);border-radius:4px;padding:0.1rem 0.4rem;cursor:pointer;color:var(--muted);">✏️</button>
+      <button id="btn-edit-session-label" class="nav-settings-btn" title="编辑岗位名称" aria-label="编辑岗位名称" style="font-size:0.8rem;background:none;border:1px solid var(--rule);border-radius:4px;padding:0.1rem 0.4rem;cursor:pointer;color:var(--muted);">✏️</button>
     </div>
     <div class="nav-status" id="nav-status">⚪ 就绪</div>
     <div class="nav-actions">
-      <button class="dark-toggle" id="btn-dark-toggle" title="切换暗色模式">🌙</button>
-      <button class="nav-settings-btn" id="btn-open-settings" title="设置AI供应商">⚙️</button>
-      <button class="nav-settings-btn btn-delete" id="btn-delete-session" title="删除当前岗位会话">🗑</button>
+      <button class="dark-toggle" id="btn-dark-toggle" title="切换暗色模式" aria-label="切换暗色模式">🌙</button>
+      <button class="nav-settings-btn" id="btn-open-settings" title="设置AI供应商" aria-label="设置AI供应商" aria-expanded="false" aria-controls="settings-modal">⚙️</button>
+      <button class="nav-settings-btn btn-delete" id="btn-delete-session" title="删除当前岗位会话" aria-label="删除当前岗位会话">🗑</button>
     </div>
   </div>
   <!-- 第二行：一级导航（主模块）+ 二级导航（子模块），同行排布 -->
@@ -758,8 +758,21 @@
         <select id="wrongbook-score-filter" style="padding:0.3rem 0.5rem;border:1px solid var(--rule);border-radius:6px;font-size:0.8rem;background:var(--bg);" onchange="loadWrongBook()"><option value="60">低于60分</option><option value="70">低于70分</option><option value="80">低于80分</option></select>
       </div>
     </div>
-    <div id="wrongbook-stats" style="margin-bottom:1rem;"></div>
-    <div id="wrongbook-list"></div>
+    <div id="wrongbook-stats" style="margin-bottom:1rem;" aria-busy="true">
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;" aria-hidden="true">
+        <div class="card" style="flex:1;min-width:120px;text-align:center;"><div class="skeleton sk-num"></div><div class="skeleton sk-cap"></div></div>
+        <div class="card" style="flex:1;min-width:120px;text-align:center;"><div class="skeleton sk-num"></div><div class="skeleton sk-cap"></div></div>
+        <div class="card" style="flex:1;min-width:120px;text-align:center;"><div class="skeleton sk-num"></div><div class="skeleton sk-cap"></div></div>
+      </div>
+    </div>
+    <div id="wrongbook-list" aria-busy="true">
+      <div aria-hidden="true">
+        <div class="card" style="margin-bottom:0.6rem;"><div class="skeleton sk-row"></div><div class="skeleton sk-meta"></div></div>
+        <div class="card" style="margin-bottom:0.6rem;"><div class="skeleton sk-row"></div><div class="skeleton sk-meta"></div></div>
+        <div class="card" style="margin-bottom:0.6rem;"><div class="skeleton sk-row"></div><div class="skeleton sk-meta"></div></div>
+        <div class="card" style="margin-bottom:0.6rem;"><div class="skeleton sk-row"></div><div class="skeleton sk-meta"></div></div>
+      </div>
+    </div>
   </section>
 
   <!-- ====== 群面模拟 ====== -->
