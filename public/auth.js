@@ -55,7 +55,7 @@
   async function login(email, password) {
     var data = await apiCall('POST', '/auth/login', { email: email, password: password });
     _token = data.token;
-    _user = { userId: data.userId, email: data.email };
+    _user = { userId: data.userId, email: data.email, isAdmin: data.isAdmin || false };
     localStorage.setItem('auth_token', _token);
     _loggedIn = true;
     updateNavUI();
@@ -67,7 +67,7 @@
   async function register(email, password) {
     var data = await apiCall('POST', '/auth/register', { email: email, password: password });
     _token = data.token;
-    _user = { userId: data.userId, email: data.email };
+    _user = { userId: data.userId, email: data.email, isAdmin: data.isAdmin || false };
     localStorage.setItem('auth_token', _token);
     _loggedIn = true;
     updateNavUI();
@@ -131,10 +131,16 @@
       if (userInfo) userInfo.classList.remove('hidden');
       if (userEmail) userEmail.textContent = _user.email;
       if (creditsEl) creditsEl.classList.remove('hidden');
+      // 显示/隐藏管理后台 Tab
+      var adminTab = $('#tab-admin');
+      if (adminTab) adminTab.style.display = _user.isAdmin ? '' : 'none';
     } else {
       if (btnLogin) btnLogin.classList.remove('hidden');
       if (userInfo) userInfo.classList.add('hidden');
       if (creditsEl) creditsEl.classList.add('hidden');
+      // 隐藏管理后台 Tab
+      var adminTab = $('#tab-admin');
+      if (adminTab) adminTab.style.display = 'none';
     }
   }
 
@@ -601,6 +607,7 @@
   // Expose functions for app.js to use
   window.Auth = {
     isLoggedIn: function() { return _loggedIn; },
+    isAdmin: function() { return _user && _user.isAdmin; },
     getToken: function() { return _token; },
     getUser: function() { return _user; },
     getCredits: function() { return _credits; },
@@ -610,7 +617,8 @@
     login: login,
     logout: logout,
     openPlansModal: openPlansModal,
-    apiHeaders: apiHeaders
+    apiHeaders: apiHeaders,
+    apiCall: apiCall
   };
 
   // Run on DOM ready

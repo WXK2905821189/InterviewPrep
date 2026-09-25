@@ -29,6 +29,8 @@ const API_COSTS = {
   'behavioral-answer': 1,    // 通用题库回答
   'study-plan': 1,           // 备考方案
   'counter-questions': 1,    // 反问生成
+  'code-interview-generate': 2,  // 代码题生成
+  'code-interview-review': 1,    // 代码审查
 };
 
 // ─── Credit Storage ──────────────────────────────────────────

@@ -57,6 +57,8 @@
     <button class="nav-tab" data-tab="studyplan">📋 备考方案</button>
     <button class="nav-tab" data-tab="review">📝 面试复盘</button>
     <button class="nav-tab" data-tab="group">👥 群面模拟<span class="tab-dot" data-dot-tab="group"></span></button>
+    <button class="nav-tab" data-tab="code-interview">💻 技术面试</button>
+    <button class="nav-tab" id="tab-admin" data-tab="admin" style="display:none;">⚙️ 管理后台</button>
   </div>
 </nav>
 
@@ -1005,6 +1007,53 @@
     </div>
   </section>
 
+  <!-- ====== 代码面试（技术面试） ====== -->
+  <section id="tab-code-interview" class="tab-content">
+    <div class="card hero-card">
+      <h1>💻 技术面试（编程题）</h1>
+      <p class="subtitle">AI 生成贴近实际工作场景的编程题，提交代码后获得专业审查反馈</p>
+    </div>
+    <div class="code-interview-container">
+      <div class="ci-left">
+        <div class="ci-header">
+          <select id="ci-language" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:14px;">
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="java">Java</option>
+            <option value="go">Go</option>
+            <option value="cpp">C++</option>
+          </select>
+          <button id="ci-generate-btn" class="btn btn-primary">🎲 生成题目</button>
+        </div>
+        <div id="ci-question-area" class="ci-question">
+          <div class="ci-empty">点击「生成题目」获取一道编程面试题</div>
+        </div>
+        <div id="ci-editor-container" class="ci-editor" style="height:300px;"></div>
+        <div class="ci-actions">
+          <button id="ci-submit-btn" class="btn btn-primary">📝 提交审查</button>
+          <button id="ci-hint-btn" class="btn btn-ghost">💡 提示</button>
+        </div>
+      </div>
+      <div class="ci-right">
+        <div id="ci-review-area" class="ci-review">
+          <div class="ci-empty">提交代码后查看 AI 审查结果</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== 管理后台 ====== -->
+  <section id="tab-admin" class="tab-content">
+    <div class="admin-layout">
+      <aside class="admin-sidebar">
+        <div class="admin-nav-item active" data-page="dashboard" onclick="window.Admin.switchPage('dashboard')">📊 仪表盘</div>
+        <div class="admin-nav-item" data-page="users" onclick="window.Admin.switchPage('users')">👥 用户管理</div>
+        <div class="admin-nav-item" data-page="costs" onclick="window.Admin.switchPage('costs')">💰 消耗配置</div>
+      </aside>
+      <main class="admin-main" id="admin-content"></main>
+    </div>
+  </section>
+
 </main>
 
 <!-- 练习详情弹窗 / 完整报告 -->
@@ -1204,6 +1253,8 @@
 
 <script src="echarts.min.js" defer></script>
 <script src="auth.js?v=1786200371" defer></script>
+<script src="admin.js?v=1786200500" defer></script>
+<script src="code-interview.js?v=1786200500" defer></script>
 <script src="app.js?v=1785766500" defer></script>
 </body>
 </html>

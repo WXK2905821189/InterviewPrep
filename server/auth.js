@@ -103,8 +103,8 @@ function registerAuthRoutes(app) {
         fs.writeFileSync(userSessionsFile, '{}', 'utf8');
       }
 
-      const token = jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      res.json({ token, userId, email });
+      const token = jwt.sign({ userId, email, isAdmin: !!user.isAdmin }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      res.json({ token, userId, email, isAdmin: !!user.isAdmin });
     } catch (e) {
       console.error('Register error:', e);
       res.status(500).json({ error: '注册失败' });
@@ -128,8 +128,8 @@ function registerAuthRoutes(app) {
       if (!valid) {
         return res.status(401).json({ error: '邮箱或密码错误' });
       }
-      const token = jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      res.json({ token, userId, email });
+      const token = jwt.sign({ userId, email, isAdmin: !!user.isAdmin }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      res.json({ token, userId, email, isAdmin: !!user.isAdmin });
     } catch (e) {
       console.error('Login error:', e);
       res.status(500).json({ error: '登录失败' });
@@ -144,7 +144,8 @@ function registerAuthRoutes(app) {
     res.json({
       userId: req.user.userId,
       email: user.email,
-      createdAt: user.createdAt
+      createdAt: user.createdAt,
+      isAdmin: !!user.isAdmin
     });
   });
 

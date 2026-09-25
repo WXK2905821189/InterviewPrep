@@ -164,10 +164,26 @@ InterviewPrep/
 │   └── general-qa.json            # 通用问答
 ├── .data/                 # 本地数据存储（无数据库依赖）
 ├── logs/                  # 错误日志
-├── TODO.md                # 实时任务清单
-├── ARCHITECTURE.md        # 项目架构图（Mermaid 图表）
+├── docs/                  # ★ 开发者知识库（架构/API/前端/AI/商业化/知识库/运维）
 └── README.md              # 本文件
 ```
+
+---
+
+## 📚 开发者文档
+
+完整项目知识沉淀在 [`docs/`](./docs/README.md)，适合新成员上手与多对话并行开发：
+
+| 文档 | 内容 |
+|---|---|
+| [docs/README.md](./docs/README.md) | 文档索引 + **多对话并行开发手册**（模块边界 / 冲突高发区 / 分工建议） |
+| [docs/01-architecture.md](./docs/01-architecture.md) | 进程模型、启动时序、目录结构、数据流、Electron 集成 |
+| [docs/02-backend.md](./docs/02-backend.md) | Express 骨架、**全部 API 路由清单（带行号）**、数据文件与 Schema |
+| [docs/03-frontend.md](./docs/03-frontend.md) | Tab 路由、app.js 分段索引、工具函数、CSS 主题、模块注册规范、UI 约定 |
+| [docs/04-ai-engine.md](./docs/04-ai-engine.md) | LLM 双后端、Chatflow 流水线、面试状态机、**32 个 Prompt 清单** |
+| [docs/05-commercial.md](./docs/05-commercial.md) | JWT 认证、点数系统、套餐与支付、管理后台、管理员账号 |
+| [docs/06-knowledge-base.md](./docs/06-knowledge-base.md) | 5 层知识库结构、检索打分逻辑、题库 Schema、加题库流程 |
+| [docs/07-dev-ops.md](./docs/07-dev-ops.md) | 本地运行、打包发布、编码约定、**20 条已知坑清单**、调试技巧 |
 
 ---
 

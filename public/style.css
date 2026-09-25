@@ -1916,3 +1916,333 @@ select:focus, .styled-select:focus {
   background: rgba(74,124,89,0.06);
 }
 
+/* ============================================================
+   管理后台样式
+   ============================================================ */
+
+.admin-layout {
+  display: flex;
+  height: calc(100vh - 140px);
+  gap: 0;
+}
+.admin-sidebar {
+  width: 200px;
+  background: var(--bg2);
+  border-right: 1px solid var(--rule);
+  padding: 16px 0;
+  flex-shrink: 0;
+  border-radius: 12px 0 0 12px;
+}
+.admin-nav-item {
+  padding: 12px 24px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted);
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+.admin-nav-item:hover { background: var(--bg-hover); color: var(--text); }
+.admin-nav-item.active {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+.admin-main {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  background: var(--bg);
+  border-radius: 0 12px 12px 0;
+}
+
+/* 仪表盘 */
+.admin-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.admin-stat-card {
+  background: var(--bg2);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+.admin-stat-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.admin-stat-label {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.admin-chart-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.admin-chart-box {
+  background: var(--bg2);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+/* 用户管理 */
+.admin-toolbar {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+}
+.admin-search {
+  padding: 8px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  width: 300px;
+  font-size: 14px;
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.admin-table th, .admin-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.admin-table th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.admin-td-email { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.admin-badge {
+  background: var(--accent);
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.admin-btn-sm {
+  padding: 4px 14px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+.admin-btn-sm:hover { background: var(--accent); color: #fff; }
+.admin-empty { text-align: center; color: var(--muted); padding: 40px; }
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.admin-pagination button {
+  padding: 6px 16px;
+  border: 1px solid var(--rule);
+  background: var(--bg2);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.admin-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 用户详情弹窗 */
+.admin-user-detail { position: relative; }
+.admin-close-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.admin-user-info { margin: 16px 0; }
+.admin-user-info p { margin: 8px 0; font-size: 14px; }
+.admin-credit-actions { margin: 20px 0; padding: 16px; background: var(--bg); border-radius: 8px; border: 1px solid var(--rule); }
+.admin-credit-actions h4 { margin: 0 0 8px; }
+.admin-credit-form { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.admin-credit-form input {
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--text);
+  width: 120px;
+}
+.admin-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #fff;
+  font-weight: 600;
+}
+.admin-btn-grant { background: #22c55e; }
+.admin-btn-deduct { background: #ef4444; }
+.admin-credit-plus { color: #22c55e; font-weight: 600; }
+.admin-credit-minus { color: #ef4444; font-weight: 600; }
+.admin-loading { text-align: center; padding: 40px; color: var(--muted); }
+.admin-error { text-align: center; padding: 40px; color: #ef4444; }
+.admin-modal-content { max-width: 600px; max-height: 80vh; overflow-y: auto; }
+
+.admin-costs { padding: 8px 0; }
+.admin-costs h3 { margin: 0 0 8px; }
+.admin-costs code { background: var(--bg2); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+
+/* ============================================================
+   代码面试样式
+   ============================================================ */
+
+.code-interview-container {
+  display: flex;
+  gap: 16px;
+  height: calc(100vh - 220px);
+}
+.ci-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.ci-right {
+  width: 380px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+.ci-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ci-question {
+  background: var(--bg2);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 16px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.ci-question h4 { margin: 0 0 8px; font-size: 16px; }
+.ci-question pre, .ci-question code {
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+.ci-question ul { padding-left: 20px; margin: 4px 0; }
+.ci-example {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.ci-example code { font-size: 12px; }
+.ci-difficulty {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 8px;
+}
+.ci-difficulty-easy { background: #22c55e20; color: #22c55e; }
+.ci-difficulty-medium { background: #f59e0b20; color: #f59e0b; }
+.ci-difficulty-hard { background: #ef444420; color: #ef4444; }
+.ci-editor {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+  flex: 1;
+  min-height: 250px;
+}
+.ci-actions {
+  display: flex;
+  gap: 8px;
+}
+.ci-review {
+  background: var(--bg2);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 14px;
+}
+.ci-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 20px;
+}
+.ci-review-score {
+  font-size: 48px;
+  font-weight: 700;
+  text-align: center;
+}
+.ci-review-dimension {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 13px;
+}
+.ci-review-bar {
+  height: 5px;
+  background: var(--bg);
+  border-radius: 3px;
+  margin: 2px 0 8px;
+  overflow: hidden;
+}
+.ci-review-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+.ci-optimized-code {
+  background: var(--bg);
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-x: auto;
+  font-family: 'Consolas', 'Courier New', monospace;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* 响应式 */
+@media (max-width: 900px) {
+  .admin-stat-cards { grid-template-columns: repeat(2, 1fr); }
+  .admin-chart-row { grid-template-columns: 1fr; }
+  .admin-layout { flex-direction: column; height: auto; }
+  .admin-sidebar { width: 100%; flex-direction: row; display: flex; gap: 4px; padding: 8px; overflow-x: auto; }
+  .admin-sidebar .admin-nav-item { border-left: none; border-bottom: 3px solid transparent; white-space: nowrap; padding: 8px 16px; }
+  .admin-sidebar .admin-nav-item.active { border-bottom-color: var(--accent); border-left: none; }
+  .code-interview-container { flex-direction: column; height: auto; }
+  .ci-right { width: 100%; }
+  .ci-editor { min-height: 200px; }
+}
+
