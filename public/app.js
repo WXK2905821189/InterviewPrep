@@ -35,6 +35,7 @@ function debounce(fn, ms = 300) {
     btn.addEventListener('click', () => {
       document.documentElement.classList.toggle('dark');
       update();
+      redrawAllCharts();
     });
   }
 })();
@@ -227,9 +228,10 @@ function renderTrendChart(data) {
 
   var dimKeys = ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'];
   var dimLabels = ['STAR完整度', '量化程度', '岗位匹配', '结构逻辑', '亮点突出'];
-  var dimColors = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+  var t = chartTheme();
+  var dimColors = t.series;
 
-  var chart = echarts.init(el);
+  var chart = chartInstance(el);
 
   // 根据当前激活的按钮决定显示模式
   var activeMode = 'overall';
@@ -252,14 +254,14 @@ function renderTrendChart(data) {
         return html;
       }
     },
-    legend: { bottom: 0, textStyle: { fontSize: 11 } },
+    legend: { bottom: 0, textStyle: { fontSize: 11, color: t.muted } },
     grid: { left: 45, right: 16, top: 20, bottom: 40 },
     xAxis: {
       type: 'category',
       data: dates,
-      axisLabel: { fontSize: 10, rotate: dates.length > 10 ? 45 : 0 }
+      axisLabel: { fontSize: 10, color: t.muted, rotate: dates.length > 10 ? 45 : 0 }
     },
-    yAxis: { type: 'value', min: 0, max: 100, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+    yAxis: { type: 'value', min: 0, max: 100, axisLabel: { color: t.muted }, splitLine: { lineStyle: { color: t.rule } } },
     series: []
   };
 
@@ -269,9 +271,9 @@ function renderTrendChart(data) {
       type: 'line',
       data: overallScores,
       smooth: true,
-      lineStyle: { width: 2, color: '#4F46E5' },
-      itemStyle: { color: '#4F46E5' },
-      areaStyle: { color: 'rgba(79,70,229,0.1)' },
+      lineStyle: { width: 2, color: t.series[0] },
+      itemStyle: { color: t.series[0] },
+      areaStyle: { color: withAlpha(t.series[0], 0.12) },
       connectNulls: true
     }];
   } else {
@@ -291,21 +293,21 @@ function renderTrendChart(data) {
     });
   }
 
-  chart.setOption(option);
+  chart.setOption(option, true);
   chart._trendMode = activeMode;
 
-  // 绑定切换按钮事件
+  // 绑定切换按钮事件（onclick 覆盖式绑定，避免重绘后监听器叠加）
   toggleBtns.forEach(function(btn) {
-    btn.onclick = null; // 移除旧事件
-    btn.addEventListener('click', function() {
+    btn.onclick = function() {
       toggleBtns.forEach(function(b) { b.classList.remove('active'); });
       btn.classList.add('active');
       chart._trendMode = btn.dataset.trend;
       renderTrendChart(data);
-    });
+    };
   });
 
-  window.addEventListener('resize', function() { chart.resize(); });
+  bindChartResize(el);
+  mountChart(el, function() { renderTrendChart(data); });
 }
 
 function renderWeakDimensions(dimensions) {
@@ -314,7 +316,7 @@ function renderWeakDimensions(dimensions) {
   el.innerHTML = dimensions.map(function(d) {
     var score = d.avg || 0;
     var barWidth = Math.max(score, 5);
-    var color = score < 50 ? 'var(--red)' : score < 70 ? '#F59E0B' : 'var(--green)';
+    var color = scoreColor(score);
     return '<div style="flex:1;min-width:140px;background:var(--bg1);border-radius:8px;padding:0.8rem;">' +
       '<div style="font-size:0.82rem;font-weight:600;margin-bottom:0.3rem;">' + d.label + '</div>' +
       '<div style="font-size:1.2rem;font-weight:700;color:' + color + ';margin-bottom:0.3rem;">' + score + '<span style="font-size:0.7rem;color:var(--muted);">/100</span></div>' +
@@ -334,27 +336,29 @@ function renderRecentTrendChart(recentTrend) {
   var labels = recentTrend.map(function(r) { return r.date ? r.date.slice(5) : ''; });
   var scores = recentTrend.map(function(r) { return r.overallScore || 0; });
 
-  var chart = echarts.init(el);
+  var t = chartTheme();
+  var chart = chartInstance(el);
   chart.setOption({
     tooltip: { trigger: 'axis', confine: true, formatter: function(params) { return '<b>' + params[0].axisValue + '</b><br>总分: <b>' + params[0].value + '</b>'; } },
     grid: { left: 40, right: 10, top: 10, bottom: 25 },
-    xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 10 } },
-    yAxis: { type: 'value', min: 0, max: 100, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+    xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 10, color: t.muted } },
+    yAxis: { type: 'value', min: 0, max: 100, axisLabel: { color: t.muted }, splitLine: { lineStyle: { color: t.rule } } },
     series: [{
       type: 'bar',
-      data: scores.map(function(s, i) {
+      data: scores.map(function(s) {
         return {
           value: s,
           itemStyle: {
-            color: s >= 80 ? '#10B981' : s >= 60 ? '#F59E0B' : '#EF4444',
+            color: scoreColor(s),
             borderRadius: [3, 3, 0, 0]
           }
         };
       }),
       barWidth: '60%'
     }]
-  });
-  window.addEventListener('resize', function() { chart.resize(); });
+  }, true);
+  bindChartResize(el);
+  mountChart(el, function() { renderRecentTrendChart(recentTrend); });
 }
 
 function renderDashStats(data) {
@@ -380,18 +384,24 @@ function renderRadarChart(scores) {
   const values = keys.map(k => scores[k] || 0);
   if (values.every(v => v === 0)) { el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem;">完成练习后显示</p>'; return; }
 
-  const chart = echarts.init(el);
+  const t = chartTheme();
+  const chart = chartInstance(el);
   chart.setOption({
     tooltip: {},
     radar: {
-      indicator: labels.map((l,i) => ({ name: l, max: 100 })),
+      indicator: labels.map(l => ({ name: l, max: 100 })),
       center: ['50%','55%'],
-      radius: '65%'
+      radius: '65%',
+      axisName: { color: t.muted },
+      axisLine: { lineStyle: { color: t.rule } },
+      splitLine: { lineStyle: { color: t.rule } },
+      splitArea: { areaStyle: { color: [withAlpha(t.series[0], 0.02), withAlpha(t.series[0], 0.05)] } }
     },
-    series: [{ type: 'radar', data: [{ value: values, name: '平均得分', areaStyle: { color: 'rgba(79,70,229,0.15)' },
-      lineStyle: { color: '#4F46E5', width: 2 }, itemStyle: { color: '#4F46E5' } }] }]
-  });
-  window.addEventListener('resize', () => chart.resize());
+    series: [{ type: 'radar', data: [{ value: values, name: '平均得分', areaStyle: { color: withAlpha(t.series[0], 0.15) },
+      lineStyle: { color: t.series[0], width: 2 }, itemStyle: { color: t.series[0] } }] }]
+  }, true);
+  bindChartResize(el);
+  mountChart(el, function() { renderRadarChart(scores); });
 }
 
 // ============================================================
@@ -423,54 +433,55 @@ async function loadCompetitivenessRadar() {
     const myScores = dims.map(d => d.pct);
     const maxScores = dims.map(d => 100);
 
-    var chart = echarts.init(el);
-    chart.setOption({
-      tooltip: {
-        trigger: 'item',
-        formatter: function(params) {
-          var idx = params.dataIndex;
-          var dim = dims[idx];
-          if (!dim) return '';
-          return '<b>' + dim.label + '</b><br>' +
-            '得分: ' + dim.score + '/' + dim.max + ' (' + dim.pct + '%)<br>' +
-            '<span style="font-size:0.78rem;color:var(--muted);">' + (dim.detail || '') + '</span>';
-        }
-      },
-      radar: {
-        indicator: radarLabels.map(function(l) { return { name: l, max: 100 }; }),
-        center: ['50%','55%'],
-        radius: '65%',
-        shape: 'polygon',
-        splitNumber: 5,
-        name: { textStyle: { fontSize: 11, color: 'var(--text)' } },
-        splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
-        splitArea: { areaStyle: { color: ['rgba(79,70,229,0.02)','rgba(79,70,229,0.04)'] } },
-        axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
-      },
-      series: [{
-        type: 'radar',
-        data: [{
-          value: myScores,
-          name: '你的匹配度',
-          areaStyle: { color: 'rgba(79,70,229,0.2)' },
-          lineStyle: { color: '#4F46E5', width: 2 },
-          itemStyle: { color: '#4F46E5' }
-        }],
-        symbol: 'circle',
-        symbolSize: 6
-      }]
-    });
-    window.addEventListener('resize', function() { chart.resize(); });
+    var chart = chartInstance(el);
+    var applyRadar = function() {
+      var t = chartTheme();
+      chart.setOption({
+        tooltip: {
+          trigger: 'item',
+          formatter: function(params) {
+            var idx = params.dataIndex;
+            var dim = dims[idx];
+            if (!dim) return '';
+            return '<b>' + dim.label + '</b><br>' +
+              '得分: ' + dim.score + '/' + dim.max + ' (' + dim.pct + '%)<br>' +
+              '<span style="font-size:0.78rem;color:var(--muted);">' + (dim.detail || '') + '</span>';
+          }
+        },
+        radar: {
+          indicator: radarLabels.map(function(l) { return { name: l, max: 100 }; }),
+          center: ['50%','55%'],
+          radius: '65%',
+          shape: 'polygon',
+          splitNumber: 5,
+          name: { textStyle: { fontSize: 11, color: t.muted } },
+          splitLine: { lineStyle: { color: t.rule } },
+          splitArea: { areaStyle: { color: [withAlpha(t.series[0], 0.02), withAlpha(t.series[0], 0.05)] } },
+          axisLine: { lineStyle: { color: t.rule } }
+        },
+        series: [{
+          type: 'radar',
+          data: [{
+            value: myScores,
+            name: '你的匹配度',
+            areaStyle: { color: withAlpha(t.series[0], 0.2) },
+            lineStyle: { color: t.series[0], width: 2 },
+            itemStyle: { color: t.series[0] }
+          }],
+          symbol: 'circle',
+          symbolSize: 6
+        }]
+      }, true);
+    };
+    applyRadar();
+    bindChartResize(el);
+    mountChart(el, applyRadar);
 
     // 渲染详情面板
     const details = $('#dash-competitiveness-details');
     if (details) {
       var detailHtml = dims.map(function(d) {
-        var barColor = '#4F46E5';
-        if (d.pct >= 80) barColor = '#10B981';
-        else if (d.pct >= 60) barColor = '#22d3ee';
-        else if (d.pct >= 40) barColor = '#F59E0B';
-        else barColor = '#EF4444';
+        var barColor = scoreColor(d.pct);
 
         return '<div style="margin-bottom:0.6rem;padding:0.4rem 0.6rem;background:var(--bg1);border-radius:6px;">' +
           '<div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:0.3rem;">' +
@@ -503,26 +514,30 @@ function renderPieChart(data) {
   const el = document.getElementById('dash-pie');
   if (!el) return;
   const types = [
-    { key: 'behavioral', name: '行为面试', color: '#4F46E5' },
-    { key: 'technical', name: '专业能力', color: '#10B981' },
-    { key: 'project', name: '项目深挖', color: '#F59E0B' },
-    { key: 'stress', name: '压力测试', color: '#EF4444' },
-    { key: 'hr', name: 'HR面', color: '#8B5CF6' }
+    { key: 'behavioral', name: '行为面试' },
+    { key: 'technical', name: '专业能力' },
+    { key: 'project', name: '项目深挖' },
+    { key: 'stress', name: '压力测试' },
+    { key: 'hr', name: 'HR面' }
   ];
-  const hasData = types.some(t => (data[t.key] || 0) > 0);
+  const hasData = types.some(x => (data[x.key] || 0) > 0);
   if (!hasData) { el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem;">完成练习后显示</p>'; return; }
 
-  const chart = echarts.init(el);
+  const t = chartTheme();
+  const chart = chartInstance(el);
   chart.setOption({
     tooltip: { trigger: 'item' },
-    legend: { bottom: 0, textStyle: { fontSize: 11 } },
+    legend: { bottom: 0, textStyle: { fontSize: 11, color: t.muted } },
     series: [{
       type: 'pie', radius: ['45%','70%'], center: ['50%','50%'],
-      data: types.filter(t => (data[t.key]||0) > 0).map(t => ({ value: data[t.key], name: t.name, itemStyle: { color: t.color } })),
+      data: types.map((ty, i) => ({ key: ty.key, name: ty.name, color: t.series[i] }))
+        .filter(ty => (data[ty.key] || 0) > 0)
+        .map(ty => ({ value: data[ty.key], name: ty.name, itemStyle: { color: ty.color } })),
       label: { show: false }
     }]
-  });
-  window.addEventListener('resize', () => chart.resize());
+  }, true);
+  bindChartResize(el);
+  mountChart(el, function() { renderPieChart(data); });
 }
 
 function renderCalendar(calData) {
@@ -535,11 +550,10 @@ function renderCalendar(calData) {
     d.setDate(d.getDate() - i);
     const key = d.toISOString().slice(0,10);
     const count = calData[key] || 0;
-    let bg = '#1e293b';
-    if (count >= 5) bg = '#10B981';
-    else if (count >= 3) bg = '#34D399';
-    else if (count >= 1) bg = '#6EE7B7';
-    html += '<div title="' + key + ': ' + count + '次" style="width:14px;height:14px;border-radius:3px;background:' + bg + ';"></div>';
+    const level = count >= 5 ? 3 : count >= 3 ? 2 : count >= 1 ? 1 : 0;
+    const bg = level === 0 ? 'var(--rule)' : 'var(--score-good)';
+    const opacity = level === 0 || level === 3 ? 1 : level === 2 ? 0.62 : 0.34;
+    html += '<div title="' + key + ': ' + count + '次" style="width:14px;height:14px;border-radius:3px;background:' + bg + ';opacity:' + opacity + ';"></div>';
   }
   el.innerHTML = html;
 }
@@ -552,11 +566,11 @@ function showPracticeDetail(p) {
 
   const dateStr = p.createdAt ? new Date(p.createdAt).toLocaleDateString('zh-CN') + ' ' + new Date(p.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : (p.date ? new Date(p.date).toLocaleDateString('zh-CN') : '');
   const score = p.score || 0;
-  const scoreCls = score >= 80 ? 'color:var(--green);' : score >= 60 ? 'color:#F59E0B;' : 'color:var(--red);';
+  const scoreCls = score >= 80 ? 'color:var(--score-good);' : score >= 60 ? 'color:var(--score-mid);' : 'color:var(--score-bad);';
   const scores = p.scores || {};
   const dimKeys = ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'];
   const dimLabels = ['STAR完整度', '量化程度', '岗位匹配', '结构逻辑', '亮点突出'];
-  const dimColors = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+  const dimColors = ['var(--c-1)', 'var(--c-2)', 'var(--c-3)', 'var(--c-4)', 'var(--c-5)'];
 
   // 生成雷达图（使用内联SVG）
   var radarHtml = '';
@@ -569,7 +583,7 @@ function showPracticeDetail(p) {
       '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;">' +
       radarData.map(function(d) {
         var barPct = Math.max(d.value, 5);
-        var barColor = d.value >= 80 ? 'var(--green)' : d.value >= 60 ? '#F59E0B' : 'var(--red)';
+        var barColor = d.value >= 80 ? 'var(--score-good)' : d.value >= 60 ? 'var(--score-mid)' : 'var(--score-bad)';
         return '<div style="flex:1;min-width:100px;">' +
           '<div style="display:flex;justify-content:space-between;font-size:0.72rem;margin-bottom:0.2rem;">' +
           '<span style="color:var(--muted);">' + d.label + '</span>' +
@@ -638,7 +652,7 @@ async function openReportList() {
     }
     body.innerHTML = reports.map(function(r, idx) {
       var score = r.score || 0;
-      var scoreCls = score >= 80 ? 'color:var(--green);' : score >= 60 ? 'color:#F59E0B;' : 'color:var(--red);';
+      var scoreCls = score >= 80 ? 'color:var(--score-good);' : score >= 60 ? 'color:var(--score-mid);' : 'color:var(--score-bad);';
       var dateStr = r.createdAt ? new Date(r.createdAt).toLocaleDateString('zh-CN') + ' ' + new Date(r.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
       var typeLabel = r.type === 'drill' ? '专项训练' : '单题练习';
       return '<div class="dash-practice-item" data-report-idx="' + idx + '" style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0;border-bottom:1px solid var(--rule);cursor:pointer;" title="点击查看完整报告">' +
@@ -683,7 +697,7 @@ function renderRecentPractices(items) {
     '<div class="dash-practice-item" data-idx="' + idx + '" style="display:flex;align-items:center;gap:0.8rem;padding:0.5rem 0;border-bottom:1px solid var(--rule);cursor:pointer;" title="点击查看详情">' +
     '<span style="font-size:0.78rem;color:var(--muted);white-space:nowrap;">' + (p.date || '').slice(5) + '</span>' +
     '<span style="flex:1;font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (p.question || p.type || '练习') + '</span>' +
-    '<span style="font-weight:600;color:' + (p.score >= 80 ? 'var(--green)' : p.score >= 60 ? '#F59E0B' : 'var(--red)') + ';">' + (p.score || 0) + '分</span>' +
+    '<span style="font-weight:600;color:' + scoreColor(p.score || 0) + ';">' + (p.score || 0) + '分</span>' +
     '</div>'
   ).join('');
 
@@ -743,7 +757,7 @@ async function loadPracticeHistoryFromServer() {
       return;
     }
     el.innerHTML = phrases.map(p => {
-      const cls = (p.score || 0) >= 85 ? 'color:var(--green);' : (p.score || 0) >= 60 ? 'color:#D97706;' : 'color:var(--red);';
+      const cls = (p.score || 0) >= 85 ? 'color:var(--score-good);' : (p.score || 0) >= 60 ? 'color:var(--score-mid);' : 'color:var(--score-bad);';
       return `<details style="margin:4px 0;background:var(--tag-bg);border-radius:4px;padding:0.4rem 0.6rem;">
         <summary style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
           <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.82rem;">${new Date(p.createdAt).toLocaleDateString('zh-CN')} · ${(p.question||'').slice(0, 50)}</span>
@@ -950,10 +964,10 @@ function renderCounterQuestions(mode, data) {
   }
 
   var catColors = {
-    '业务/产品': '#3b82f6',
-    '团队/文化': '#8b5cf6',
-    '个人发展': '#10b981',
-    '行业洞察': '#f59e0b'
+    '业务/产品': 'var(--c-1)',
+    '团队/文化': 'var(--c-2)',
+    '个人发展': 'var(--c-3)',
+    '行业洞察': 'var(--c-4)'
   };
 
   container.innerHTML = `
@@ -1303,7 +1317,7 @@ $('#resume-file-input').addEventListener('change', async () => {
     const hintEl = $('#resume-hint');
     hintEl.textContent = `已解析 ${data.sourceType.toUpperCase()} 文件，可手动编辑后再分析`;
     if (data.warnings?.length) {
-      hintEl.innerHTML += `<br><span style="color:#e5a020;font-size:0.8rem;">⚠️ ${data.warnings.join('；')}</span>`;
+      hintEl.innerHTML += `<br><span style="color:var(--score-mid);font-size:0.8rem;">⚠️ ${data.warnings.join('；')}</span>`;
     }
     toast(`✅ 已解析: ${data.fileName}`);
   } catch(e) {
@@ -1750,7 +1764,7 @@ function renderAnalysisResult(data) {
         </div>`;
     }
     if (rawResumeText) {
-      const pdfBadge = isPdfResume ? ' <span class="pdf-badge" style="font-size:0.75rem;background:#e74c3c;color:#fff;padding:1px 6px;border-radius:3px;margin-left:4px;">PDF</span>' : '';
+      const pdfBadge = isPdfResume ? ' <span class="pdf-badge" style="font-size:0.75rem;background:var(--score-bad);color:var(--on-accent);padding:1px 6px;border-radius:3px;margin-left:4px;">PDF</span>' : '';
       const resumeHtml = isPdfResume
         ? `<div class="raw-jd-body">${formatJdText(rawResumeText)}</div>`
         : `<div class="raw-jd-body"><pre>${rawResumeText}</pre></div>`;
@@ -2338,7 +2352,7 @@ $('#btn-interview-multi-start').addEventListener('click', async () => {
     // 显示模式标记
     var modeBadge = document.createElement('div');
     modeBadge.id = 'multi-round-mode-badge';
-    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--accent);color:#fff;font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--accent);color:var(--on-accent);font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
     modeBadge.textContent = '🎯 多轮面试模式 — 第1轮: ' + (startRes.roundInfo?.roundLabel || '') + '（共' + infoRes.totalRounds + '轮）';
     $('#interview-chat').appendChild(modeBadge);
     
@@ -2376,7 +2390,7 @@ $('#btn-interview-stress-start').addEventListener('click', async () => {
     // 显示压力面试模式标记
     var modeBadge = document.createElement('div');
     modeBadge.id = 'stress-mode-badge';
-    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:#DC2626;color:#fff;font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--score-bad);color:var(--on-accent);font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
     modeBadge.textContent = '🔥 压力面试模式 — AI面试官会打断、质疑、施压，保持冷静！';
     $('#interview-chat').appendChild(modeBadge);
 
@@ -2449,11 +2463,11 @@ function renderStressReport(report) {
   var html = '<div class="card"><h3>📊 压力面试评估报告</h3>';
   html += '<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">';
   var dims = [
-    { key: 'stress_resistance', label: '抗压能力', color: '#4F46E5' },
-    { key: 'adaptability', label: '应变能力', color: '#10B981' },
-    { key: 'answer_quality', label: '回答质量', color: '#F59E0B' },
-    { key: 'emotion_control', label: '情绪控制', color: '#8B5CF6' },
-    { key: 'overall', label: '整体表现', color: '#22d3ee' }
+    { key: 'stress_resistance', label: '抗压能力', color: 'var(--c-1)' },
+    { key: 'adaptability', label: '应变能力', color: 'var(--c-2)' },
+    { key: 'answer_quality', label: '回答质量', color: 'var(--c-3)' },
+    { key: 'emotion_control', label: '情绪控制', color: 'var(--c-4)' },
+    { key: 'overall', label: '整体表现', color: 'var(--c-5)' }
   ];
   dims.forEach(function(d) {
     var v = scores[d.key] || 0;
@@ -2506,7 +2520,7 @@ $('#btn-practice-free-start').addEventListener('click', async () => {
     // 显示陪练模式标记
     var modeBadge = document.createElement('div');
     modeBadge.id = 'free-mode-badge';
-    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:#10B981;color:#fff;font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--score-good);color:var(--on-accent);font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
     modeBadge.textContent = '💬 面试陪练模式 — 自由对话，随时反问、换话题';
     $('#interview-chat').appendChild(modeBadge);
 
@@ -2557,7 +2571,7 @@ async function submitFreePracticeAnswer() {
       // 显示结束确认按钮
       var endDiv = document.createElement('div');
       endDiv.style.cssText = 'text-align:center;margin:0.5rem 0;';
-      endDiv.innerHTML = '<button onclick="endFreePractice()" class="btn-outline" style="font-size:0.78rem;color:#10B981;border-color:#10B981;">📊 结束陪练并查看评估</button>';
+      endDiv.innerHTML = '<button onclick="endFreePractice()" class="btn-outline" style="font-size:0.78rem;color:var(--score-good);border-color:var(--score-good);">📊 结束陪练并查看评估</button>';
       $('#interview-chat').appendChild(endDiv);
     }
   } catch (e) { toast('处理失败: ' + e.message); }
@@ -2589,11 +2603,11 @@ function renderFreePracticeReport(report) {
   var html = '<div class="card"><h3>📊 面试陪练评估报告</h3>';
   html += '<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">';
   var dims = [
-    { key: 'clarity', label: '表达清晰度', color: '#4F46E5' },
-    { key: 'depth', label: '内容深度', color: '#10B981' },
-    { key: 'interaction', label: '互动质量', color: '#F59E0B' },
-    { key: 'learning', label: '学习能力', color: '#8B5CF6' },
-    { key: 'overall', label: '整体表现', color: '#22d3ee' }
+    { key: 'clarity', label: '表达清晰度', color: 'var(--c-1)' },
+    { key: 'depth', label: '内容深度', color: 'var(--c-2)' },
+    { key: 'interaction', label: '互动质量', color: 'var(--c-3)' },
+    { key: 'learning', label: '学习能力', color: 'var(--c-4)' },
+    { key: 'overall', label: '整体表现', color: 'var(--c-5)' }
   ];
   dims.forEach(function(d) {
     var v = scores[d.key] || 0;
@@ -2887,7 +2901,7 @@ async function startNextMultiRound(roundNumber) {
     // 显示模式标记
     var modeBadge = document.createElement('div');
     modeBadge.id = 'multi-round-mode-badge';
-    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--accent);color:#fff;font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--accent);color:var(--on-accent);font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
     modeBadge.textContent = '🎯 多轮面试模式 — 第' + roundNumber + '轮进行中';
     $('#interview-chat').appendChild(modeBadge);
     
@@ -3043,28 +3057,35 @@ function renderInterviewReport(report) {
 function renderInterviewRadarChart(avg) {
   const el = document.getElementById('radar-chart');
   if (!el || !window.echarts) return;
-  const chart = echarts.init(el, null, { renderer: 'svg' });
+  const chart = echarts.getInstanceByDom(el) || echarts.init(el, null, { renderer: 'svg' });
   const labels = ['STAR完整性', '量化程度', '岗位匹配', '表达结构', '亮点突出'];
   const keys = ['star_completeness', 'quantification', 'position_match', 'structure', 'highlight'];
   const values = keys.map(k => avg[k] || 0);
-  chart.setOption({
-    animation: false,
-    radar: {
-      center: ['50%', '50%'],
-      radius: '70%',
-      indicator: labels.map(label => ({ name: label, max: 100 })),
-      axisName: { color: '#71748A', fontSize: 11 },
-      splitArea: { areaStyle: { color: ['rgba(79,70,229,0.02)', 'rgba(79,70,229,0.04)'] } }
-    },
-    series: [{
-      type: 'radar',
-      data: [{ value: values, name: '你的得分', areaStyle: { color: 'rgba(79,70,229,0.15)' } }],
-      symbol: 'circle', symbolSize: 5,
-      lineStyle: { color: '#4F46E5', width: 2 },
-      itemStyle: { color: '#4F46E5' }
-    }]
-  });
-  window.addEventListener('resize', () => chart.resize());
+  const apply = function() {
+    var t = chartTheme();
+    chart.setOption({
+      animation: false,
+      radar: {
+        center: ['50%', '50%'],
+        radius: '70%',
+        indicator: labels.map(label => ({ name: label, max: 100 })),
+        axisName: { color: t.muted, fontSize: 11 },
+        axisLine: { lineStyle: { color: t.rule } },
+        splitLine: { lineStyle: { color: t.rule } },
+        splitArea: { areaStyle: { color: [withAlpha(t.series[0], 0.02), withAlpha(t.series[0], 0.05)] } }
+      },
+      series: [{
+        type: 'radar',
+        data: [{ value: values, name: '你的得分', areaStyle: { color: withAlpha(t.series[0], 0.15) } }],
+        symbol: 'circle', symbolSize: 5,
+        lineStyle: { color: t.series[0], width: 2 },
+        itemStyle: { color: t.series[0] }
+      }]
+    }, true);
+  };
+  apply();
+  bindChartResize(el);
+  mountChart(el, apply);
 }
 
 // 全真模拟面试 — 反问按钮事件
@@ -3193,7 +3214,7 @@ $('#btn-optimize-resume').addEventListener('click', async () => {
     if (phaseTimer) clearInterval(phaseTimer);
 
     if (!result || (!result.optimizations?.length && !result.elevator_pitch && !result.raw)) {
-      emptyEl.innerHTML = '<p style="text-align:center;color:#D97706;padding:2rem;">⚠️ AI 返回了空结果，请确认AI供应商连接正常后重试</p>';
+      emptyEl.innerHTML = '<p style="text-align:center;color:var(--score-mid);padding:2rem;">⚠️ AI 返回了空结果，请确认AI供应商连接正常后重试</p>';
       btn.disabled = false; btn.textContent = '重新生成';
       return;
     }
@@ -3285,11 +3306,11 @@ function renderResumeScore(data) {
 
   const scores = data.scores || {};
   const bars = [
-    { key: 'format', label: '格式规范', color: '#4F46E5' },
-    { key: 'completeness', label: '内容完整', color: '#10B981' },
-    { key: 'quantification', label: '量化程度', color: '#F59E0B' },
-    { key: 'star_structure', label: 'STAR结构', color: '#8B5CF6' },
-    { key: 'position_alignment', label: '岗位对齐', color: '#EC4899' },
+    { key: 'format', label: '格式规范', color: 'var(--c-1)' },
+    { key: 'completeness', label: '内容完整', color: 'var(--c-2)' },
+    { key: 'quantification', label: '量化程度', color: 'var(--c-3)' },
+    { key: 'star_structure', label: 'STAR结构', color: 'var(--c-4)' },
+    { key: 'position_alignment', label: '岗位对齐', color: 'var(--c-5)' },
   ];
 
   $('#resume-score-detail').innerHTML = bars.map(b => {
@@ -4062,7 +4083,7 @@ function renderBehavioralSidebar(searchText = '') {
       <summary style="cursor:pointer;font-weight:600;font-size:0.82rem;padding:0.4rem 0.5rem;display:flex;align-items:center;gap:0.3rem;border-radius:6px;background:var(--bg0);margin-bottom:0.2rem;transition:background 0.15s;">
         <span>${cat}</span>
         <span style="font-size:0.7rem;color:var(--muted);margin-left:auto;">${answeredInCat}/${items.length}</span>
-        ${hasAnswer ? `<span style="font-size:0.65rem;background:var(--accent);color:#fff;padding:1px 5px;border-radius:8px;margin-left:0.3rem;">已答</span>` : ''}
+        ${hasAnswer ? `<span style="font-size:0.65rem;background:var(--accent);color:var(--on-accent);padding:1px 5px;border-radius:8px;margin-left:0.3rem;">已答</span>` : ''}
       </summary>`;
 
     for (const q of items) {
@@ -4965,7 +4986,7 @@ async function startOpencliSetup() {
 
 function renderSetupProgress(ev) {
   const icon = ev.status === 'ok' ? '✅' : ev.status === 'warn' ? '⚠️' : ev.status === 'error' ? '❌' : '⏳';
-  const color = ev.status === 'ok' ? 'var(--green)' : ev.status === 'warn' ? '#e6a817' : ev.status === 'error' ? 'var(--red)' : 'var(--muted)';
+  const color = ev.status === 'ok' ? 'var(--score-good)' : ev.status === 'warn' ? 'var(--score-mid)' : ev.status === 'error' ? 'var(--score-bad)' : 'var(--muted)';
   if (ev.step === 'done') {
     return '<p style="color:' + color + ';font-size:0.82rem;white-space:pre-line;">' + icon + ' ' + ev.detail + '</p>';
   }
@@ -5585,24 +5606,26 @@ function downloadFile(filename, content, mimeType) {
       el.innerHTML = '<p style="text-align:center;color:var(--muted);padding:2rem;">图表加载中...</p>';
       return;
     }
-    var chart = echarts.init(el);
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      grid: { left: 40, right: 20, top: 20, bottom: 30 },
-      xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 11 } },
-      yAxis: { type: 'value', min: 0, max: 100, axisLabel: { fontSize: 11 } },
-      series: [{
-        data: scores, type: 'line', smooth: true,
-        lineStyle: { color: '#4F46E5', width: 2 },
-        itemStyle: { color: '#4F46E5' },
-        areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(79,70,229,0.2)' }, { offset: 1, color: 'rgba(79,70,229,0.02)' }] } },
-        markLine: { silent: true, data: [{ yAxis: 60, lineStyle: { color: '#F59E0B', type: 'dashed' }, label: { formatter: '及格线 60' } }] }
-      }]
-    });
-    var resizeFn = function() { try { chart.resize(); } catch(e) {} };
-    window.addEventListener('resize', resizeFn);
-    el._chart = chart;
-    el._resizeFn = resizeFn;
+    var chart = chartInstance(el);
+    var apply = function() {
+      var t = chartTheme();
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        grid: { left: 40, right: 20, top: 20, bottom: 30 },
+        xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 11, color: t.muted } },
+        yAxis: { type: 'value', min: 0, max: 100, axisLabel: { fontSize: 11, color: t.muted }, splitLine: { lineStyle: { color: t.rule } } },
+        series: [{
+          data: scores, type: 'line', smooth: true,
+          lineStyle: { color: t.series[0], width: 2 },
+          itemStyle: { color: t.series[0] },
+          areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: withAlpha(t.series[0], 0.2) }, { offset: 1, color: withAlpha(t.series[0], 0.02) }] } },
+          markLine: { silent: true, data: [{ yAxis: 60, lineStyle: { color: t.mid, type: 'dashed' }, label: { formatter: '及格线 60' } }] }
+        }]
+      }, true);
+    };
+    apply();
+    bindChartResize(el);
+    mountChart(el, apply);
   }
 
   // ===== Drill Stats =====
@@ -6476,10 +6499,10 @@ function addGroupMessage(speaker, role, message) {
 }
 
 function getGroupRoleColor(role) {
-  if (role === '\u9762\u8BD5\u5B98') return '#6366f1';
-  if (role === '\u6FC0\u8FDB\u578B') return '#ef4444';
-  if (role === '\u534F\u4F5C\u578B') return '#22c55e';
-  if (role === '\u5206\u6790\u578B') return '#3b82f6';
+  if (role === '\u9762\u8BD5\u5B98') return 'var(--c-1)';
+  if (role === '\u6FC0\u8FDB\u578B') return 'var(--c-4)';
+  if (role === '\u534F\u4F5C\u578B') return 'var(--c-2)';
+  if (role === '\u5206\u6790\u578B') return 'var(--c-3)';
   return 'var(--accent)';
 }
 
@@ -7129,7 +7152,7 @@ function renderStudyPlan(plan) {
   // 需要补充什么
   var gapsEl = document.getElementById('studyplan-gaps');
   if (gapsEl && plan.gaps_to_fill && plan.gaps_to_fill.length) {
-    var catColor = { '知识短板': 'var(--red)', '经历缺口': 'var(--accent)', '表达准备': '#7C3AED', '面试技巧': '#2563EB' };
+    var catColor = { '知识短板': 'var(--score-bad)', '经历缺口': 'var(--accent)', '表达准备': 'var(--c-3)', '面试技巧': 'var(--c-5)' };
     gapsEl.innerHTML = plan.gaps_to_fill.map(function(item) {
       var catLabel = item.category || '其他';
       var color = catColor[catLabel] || 'var(--muted)';
@@ -7204,7 +7227,7 @@ function renderStudyPlan(plan) {
   }
 })();
 
-  // ============================================================
+// ============================================================
 // 面试复盘模块
 // ============================================================
 (function() {
@@ -7542,3 +7565,69 @@ function renderStudyPlan(plan) {
 // 初始加载
   setTimeout(loadExperiences, 1000);
 })();
+
+// ============================================================
+// 主题感知色板
+// ECharts 绘制在 canvas / SVG 上，无法解析 CSS var()，
+// 因此每次渲染前用 getComputedStyle 读出当前主题的真实色值。
+// ============================================================
+function chartTheme() {
+  var cs = getComputedStyle(document.documentElement);
+  var v = function(n) { return cs.getPropertyValue(n).trim(); };
+  return {
+    text: v('--ink'),
+    muted: v('--muted'),
+    rule: v('--rule'),
+    accent: v('--accent'),
+    glow: v('--accent-glow'),
+    series: [v('--c-1'), v('--c-2'), v('--c-3'), v('--c-4'), v('--c-5')],
+    good: v('--score-good'),
+    mid: v('--score-mid'),
+    bad: v('--score-bad')
+  };
+}
+
+// #RRGGBB → rgba(r,g,b,a)，供图表底纹 / 渐变使用
+function withAlpha(color, a) {
+  var m = String(color).trim().match(/^#([0-9a-f]{6})$/i);
+  if (!m) return color;
+  var n = parseInt(m[1], 16);
+  return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+
+// 分数档位 → 语义色（DOM 内联样式与图表通用）
+function scoreColor(score) {
+  var t = chartTheme();
+  return score >= 80 ? t.good : score >= 60 ? t.mid : t.bad;
+}
+
+// 复用已存在的 ECharts 实例，避免重复 init 警告
+function chartInstance(el) {
+  if (typeof echarts === 'undefined' || !el) return null;
+  return echarts.getInstanceByDom(el) || echarts.init(el);
+}
+
+// resize 监听只绑一次，回调里实时取实例（实例可能被重建）
+function bindChartResize(el) {
+  if (!el || el._resizeBound) return;
+  el._resizeBound = true;
+  window.addEventListener('resize', function() {
+    var c = echarts.getInstanceByDom(el);
+    if (c) c.resize();
+  });
+}
+
+// 已挂载图表登记表 —— 主题切换后统一按各自数据重绘
+var _mountedCharts = [];
+function mountChart(el, render) {
+  if (!el) return;
+  el._redraw = render;
+  if (_mountedCharts.indexOf(el) === -1) _mountedCharts.push(el);
+}
+
+function redrawAllCharts() {
+  _mountedCharts = _mountedCharts.filter(function(el) { return el.isConnected; });
+  _mountedCharts.forEach(function(el) {
+    try { el._redraw(); } catch (e) { /* 单个图表失败不影响其余 */ }
+  });
+}
