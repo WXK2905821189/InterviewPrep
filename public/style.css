@@ -19,8 +19,11 @@
   --accent-text: #8F5C18;
   --accent2: #4A7C59;
   --accent-glow: rgba(200, 135, 43, 0.12);
-  /* 强调色/档位色底上的前景色 —— 浅色底配白字，深色底配近黑字 */
-  --on-accent: #FFFFFF;
+  /* 实底前景色 —— 按实底明度分三对，浅色下红绿底偏暗配白字、琥珀底居中配近黑字；
+     深色下三种实底都够亮，一律近黑字（见 html.dark 块） */
+  --on-accent: #171210;
+  --on-danger: #FFFFFF;
+  --on-success: #FFFFFF;
   --tag-bg: #F5F0E6;
   --green: #3D7A4F;
   --red: #C0392B;
@@ -84,8 +87,10 @@ html.dark {
   --accent-text: #D4A843;
   --accent2: #5C9A6B;
   --accent-glow: rgba(212, 168, 67, 0.15);
-  /* 深色下强调色亮度高，白字对比度不足，改用近黑前景 */
-  --on-accent: #171210;
+  /* 深色下三种实底（#D4A843 / #E07060 / #5C9A6B）明度都足够高，一律近黑字；
+     --on-accent 与浅色同值，故只在 :root 定义一次 */
+  --on-danger: #171210;
+  --on-success: #171210;
   --green: #5C9A6B;
   --red: #E07060;
   --yellow: #D4A843;
@@ -1353,7 +1358,7 @@ select:focus, .styled-select:focus {
   font-family: var(--font-body);
 }
 .drill-smart-btn:hover { background: var(--danger-border); }
-.drill-smart-btn.active { background: var(--red); color: var(--on-accent); border-color: var(--red); }
+.drill-smart-btn.active { background: var(--red); color: var(--on-danger); border-color: var(--red); }
 
 /* ===== Review Cards ===== */
 .review-card {
@@ -1852,7 +1857,7 @@ select:focus, .styled-select:focus {
   transition: all var(--transition);
 }
 .btn-mic:hover, .btn-speak:hover { background: var(--tag-bg); border-color: var(--accent); }
-.btn-mic:active { background: var(--red); color: white; }
+.btn-mic:active { background: var(--red); color: var(--on-danger); }
 
 /* 知识库标签按钮 */
 .kb-tab-btn { font-size: var(--fs-sm); padding: 0.3rem 0.6rem; }

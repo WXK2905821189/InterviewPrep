@@ -1764,7 +1764,7 @@ function renderAnalysisResult(data) {
         </div>`;
     }
     if (rawResumeText) {
-      const pdfBadge = isPdfResume ? ' <span class="pdf-badge" style="font-size:0.75rem;background:var(--score-bad);color:var(--on-accent);padding:1px 6px;border-radius:3px;margin-left:4px;">PDF</span>' : '';
+      const pdfBadge = isPdfResume ? ' <span class="pdf-badge" style="font-size:0.75rem;background:var(--score-bad);color:var(--on-danger);padding:1px 6px;border-radius:3px;margin-left:4px;">PDF</span>' : '';
       const resumeHtml = isPdfResume
         ? `<div class="raw-jd-body">${formatJdText(rawResumeText)}</div>`
         : `<div class="raw-jd-body"><pre>${rawResumeText}</pre></div>`;
@@ -2390,7 +2390,7 @@ $('#btn-interview-stress-start').addEventListener('click', async () => {
     // 显示压力面试模式标记
     var modeBadge = document.createElement('div');
     modeBadge.id = 'stress-mode-badge';
-    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--score-bad);color:var(--on-accent);font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--score-bad);color:var(--on-danger);font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
     modeBadge.textContent = '🔥 压力面试模式 — AI面试官会打断、质疑、施压，保持冷静！';
     $('#interview-chat').appendChild(modeBadge);
 
@@ -2520,7 +2520,7 @@ $('#btn-practice-free-start').addEventListener('click', async () => {
     // 显示陪练模式标记
     var modeBadge = document.createElement('div');
     modeBadge.id = 'free-mode-badge';
-    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--score-good);color:var(--on-accent);font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
+    modeBadge.style.cssText = 'text-align:center;padding:0.3rem;background:var(--score-good);color:var(--on-success);font-size:0.78rem;border-radius:6px;margin-bottom:0.5rem;font-weight:600;';
     modeBadge.textContent = '💬 面试陪练模式 — 自由对话，随时反问、换话题';
     $('#interview-chat').appendChild(modeBadge);
 
@@ -7403,8 +7403,8 @@ function renderStudyPlan(plan) {
         var scoreColor = q.score >= 80 ? 'var(--green)' : (q.score >= 60 ? 'var(--accent)' : 'var(--red)');
         var followUpHtml = q.follow_up ? '<div style="font-size:0.8rem;color:var(--accent-text);margin-top:0.2rem;">🔍 追问：' + q.follow_up + '</div>' : '';
         var feedbackHtml = q.interviewer_feedback ? '<div style="font-size:0.8rem;color:var(--muted);margin-top:0.2rem;">📌 面试官反馈：' + q.interviewer_feedback + '</div>' : '';
-        var strengthsHtml = q.strengths && q.strengths.length ? q.strengths.map(function(s) { return '<span style="display:inline-block;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--green)15;color:var(--green);margin:0.15rem;">✅ ' + s + '</span>'; }).join('') : '';
-        var weaknessesHtml = q.weaknesses && q.weaknesses.length ? q.weaknesses.map(function(w) { return '<span style="display:inline-block;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--red)15;color:var(--red);margin:0.15rem;">⚠️ ' + w + '</span>'; }).join('') : '';
+        var strengthsHtml = q.strengths && q.strengths.length ? q.strengths.map(function(s) { return '<span style="display:inline-block;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--success-bg);color:var(--green);margin:0.15rem;">✅ ' + s + '</span>'; }).join('') : '';
+        var weaknessesHtml = q.weaknesses && q.weaknesses.length ? q.weaknesses.map(function(w) { return '<span style="display:inline-block;font-size:0.72rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--danger-bg);color:var(--red);margin:0.15rem;">⚠️ ' + w + '</span>'; }).join('') : '';
         var improvedHtml = q.improved_answer ? '<div style="margin-top:0.4rem;padding:0.5rem;background:var(--bg1);border-radius:6px;border-left:3px solid var(--accent);">' +
           '<div style="font-size:0.78rem;font-weight:600;color:var(--accent-text);margin-bottom:0.2rem;">💡 改进版回答</div>' +
           '<div style="font-size:0.8rem;color:var(--ink);line-height:1.6;">' + q.improved_answer.replace(/\n/g, '<br>') + '</div></div>' : '';
