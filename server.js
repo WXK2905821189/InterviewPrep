@@ -4099,8 +4099,9 @@ const GATEWAY_PORT = process.env.GATEWAY_PORT || 8787;
 const IS_ELECTRON = process.env.ELECTRON_MODE === '1';
 
 // 默认仅监听回环地址：避免同网段设备直接读取会话、调用本机 AI 配置。
-// 云端部署（如 Render）需显式设置 HOST=0.0.0.0，并在反向代理层做访问控制。
-const HOST = process.env.HOST || '127.0.0.1';
+// Render 会注入 RENDER=true，此时必须绑定 0.0.0.0，否则平台端口探针探测不到会判定部署失败。
+const IS_RENDER = process.env.RENDER === 'true';
+const HOST = process.env.HOST || (IS_RENDER ? '0.0.0.0' : '127.0.0.1');
 
 // 网关就绪标志（用于 SSE 流式等依赖网关的功能）
 let _gatewayReady = false;
