@@ -34,6 +34,9 @@
     "electron": "^33.3.1",
     "electron-builder": "^25.1.8"
   },
+  "overrides": {
+    "web-streams-polyfill": "4.3.0"
+  },
   "build": {
     "appId": "com.interviewprep.mvp",
     "productName": "InterviewPrep",
