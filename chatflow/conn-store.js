@@ -1,36 +1,38 @@
 // ============================================================
-// 连接存储 — 独立于 ai-provider-kit 的直接文件操作
-// 云端部署时替代 ai-provider-kit 的连接管理
+// 连接工具 — 独立于 ai-provider-kit 的实现
+// 云端部署时提供供应商预设列表、连接测试与模型拉取。
+// 注意：连接与密钥由访客浏览器本地持有，本模块不读写任何连接配置。
 // ============================================================
 
 const fs = require('fs');
 const path = require('path');
-const { OpenAI } = require('openai');
 
-const CONNECTIONS_FILE = path.resolve(__dirname, '..', '.local', 'ai-connections.json');
-const PROVIDERS_FILE = path.resolve(__dirname, '..', '.local', 'ai-providers.json');
+// openai SDK 延迟加载：它经 formdata-node 间接依赖 web-streams-polyfill，
+// 顶层 require 会让「服务启动」依赖「AI SDK 及其全部传递依赖完好」。
+// 云端构建缓存缺失文件时会导致进程直接退出，因此改为按需加载 + 可降级。
+let _OpenAI = null;
+let _openaiError = '';
 
-function ensureDir() {
-  const dir = path.dirname(CONNECTIONS_FILE);
-  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+function getOpenAI() {
+  if (_OpenAI) return _OpenAI;
+  if (_openaiError) return null;
+  try {
+    _OpenAI = require('openai').OpenAI;
+    return _OpenAI;
+  } catch (e) {
+    _openaiError = e.message;
+    console.error('[ConnStore] openai SDK 不可用，AI 连接测试与调用将不可用:', e.message);
+    return null;
+  }
 }
+
+const PROVIDERS_FILE = path.resolve(__dirname, '..', '.local', 'ai-providers.json');
 
 function readJSON(filePath, fallback = {}) {
   try {
     if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   } catch {}
   return fallback;
-}
-
-function writeJSON(filePath, data) {
-  ensureDir();
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    return true;
-  } catch (e) {
-    console.error('[ConnStore] 写入失败:', filePath, e.message);
-    return false;
-  }
 }
 
 // ─── 内置供应商预设 ───
@@ -49,43 +51,10 @@ function listProviders() {
   return { providers: merged };
 }
 
-function listConnections() {
-  const state = readJSON(CONNECTIONS_FILE, { aiConnections: [], activeConnectionId: '' });
-  return { connections: state.aiConnections || [], activeConnectionId: state.activeConnectionId || '' };
-}
-
-function saveConnection(input) {
-  const state = readJSON(CONNECTIONS_FILE, { aiConnections: [], activeConnectionId: '' });
-  const list = state.aiConnections || [];
-  const existing = list.findIndex(c => c.id === input.id);
-  if (existing >= 0) {
-    list[existing] = { ...list[existing], ...input };
-  } else {
-    list.push({ ...input, id: input.id || Date.now().toString(36) });
-  }
-  state.aiConnections = list;
-  if (!state.activeConnectionId && list.length > 0) state.activeConnectionId = list[0].id;
-  if (!writeJSON(CONNECTIONS_FILE, state)) return { ok: false, error: '写入连接配置失败，请检查磁盘权限' };
-  return { ok: true, connection: input };
-}
-
-function setActiveConnection(id) {
-  const state = readJSON(CONNECTIONS_FILE, { aiConnections: [], activeConnectionId: '' });
-  state.activeConnectionId = id;
-  if (!writeJSON(CONNECTIONS_FILE, state)) return { ok: false, error: '写入连接配置失败，请检查磁盘权限' };
-  return { ok: true };
-}
-
-function deleteConnection(id) {
-  const state = readJSON(CONNECTIONS_FILE, { aiConnections: [], activeConnectionId: '' });
-  state.aiConnections = (state.aiConnections || []).filter(c => c.id !== id);
-  if (state.activeConnectionId === id) state.activeConnectionId = (state.aiConnections[0] || {}).id || '';
-  writeJSON(CONNECTIONS_FILE, state);
-  return { ok: true };
-}
-
 async function testConnection(input) {
   const conn = input.connection || input;
+  const OpenAI = getOpenAI();
+  if (!OpenAI) return { ok: false, message: 'AI SDK 不可用：' + _openaiError };
   try {
     const client = new OpenAI({
       baseURL: conn.apiBaseUrl || 'https://api.openai.com/v1',
@@ -101,8 +70,7 @@ async function testConnection(input) {
 }
 
 async function fetchModels(input) {
-  const conn = input.connection || input;
   return testConnection(input);
 }
 
-module.exports = { listProviders, listConnections, saveConnection, setActiveConnection, deleteConnection, testConnection, fetchModels };
+module.exports = { listProviders, testConnection, fetchModels };

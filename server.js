@@ -137,6 +137,16 @@ function detectPositionType(position) {
 
 // ---- ai-provider-kit 集成（云端自动降级） ----
 // 判定条件为「能否真实初始化」：require 成功不代表 kit 可用（其内部为延迟 import）
+// 降级链：ai-provider-kit → conn-store → 空实现。任一步失败只能继续降级，不能中断启动。
+function loadFallbackProvider() {
+  try {
+    return require('./chatflow/conn-store');
+  } catch (e) {
+    logError('独立连接存储不可用，AI 功能将不可用: ' + e.message);
+    return null;
+  }
+}
+
 let provider;
 try {
   const kitProvider = require('./chatflow/ai-provider');
@@ -145,25 +155,20 @@ try {
     console.log('[Server] 使用 ai-provider-kit');
   } else {
     console.log('[Server] ai-provider-kit 未安装, 使用独立连接存储');
-    provider = require('./chatflow/conn-store');
+    provider = loadFallbackProvider();
   }
 } catch (e) {
   console.log('[Server] ai-provider-kit 加载失败, 使用独立连接存储:', e.message);
-  provider = require('./chatflow/conn-store');
+  provider = loadFallbackProvider();
 }
+provider = provider || {};
 
 const {
-  listConnections,
-  saveConnection,
-  setActiveConnection,
-  deleteConnection,
   testConnection,
   listProviders,
   fetchModels,
   startGateway = () => { throw new Error('gateway unavailable'); },
   PROVIDER_KIT_PATH = '',
-  setConnectionTemperature = () => {},
-  getConnectionTemperature = () => 0.7,
   getTokenUsage = () => ({ prompt: 0, completion: 0, total: 0, calls: 0 })
 } = provider;
 
@@ -191,6 +196,18 @@ const apiLimiter = rateLimit({
 app.use('/api', apiLimiter);
 
 app.use(express.json({ limit: '2mb' }));
+
+// 访客的 AI 密钥只随请求头带入，仅在本次请求生命周期内可见。
+// 服务端不读写任何连接配置文件，从根上杜绝多用户共用与明文落盘。
+const { runWithAiConfig, getAiConfig } = require('./chatflow/request-context');
+app.use((req, res, next) => {
+  const raw = req.headers['x-ai-config'];
+  if (!raw) return next();
+  let cfg = null;
+  try { cfg = JSON.parse(Buffer.from(String(raw), 'base64').toString('utf-8')); } catch {}
+  if (!cfg || typeof cfg !== 'object') return next();
+  runWithAiConfig(cfg, () => next());
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/knowledge', express.static(path.join(__dirname, 'knowledge')));
@@ -1798,50 +1815,10 @@ app.get('/api/providers/list', async (req, res) => {
   }
 });
 
-// 列出所有已保存的连接
-app.get('/api/providers/connections', async (req, res) => {
-  try {
-    const result = await listConnections();
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// 保存/更新连接
-app.post('/api/providers/connections', async (req, res) => {
-  try {
-    const result = await saveConnection(req.body);
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// 切换激活的连接
-app.post('/api/providers/connections/active', async (req, res) => {
-  try {
-    const result = await setActiveConnection(req.body.id);
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// 删除连接
-app.delete('/api/providers/connections/:id', async (req, res) => {
-  try {
-    const result = await deleteConnection(req.params.id);
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// 测试连接（传入原始字段 → 构造成 connection 对象）
+// 测试连接 — 密钥由访客在请求体中携带，服务端不读取、不保存任何连接配置
 app.post('/api/providers/test', async (req, res) => {
   try {
-    const { apiBaseUrl, apiKey, model, protocol, providerId } = req.body;
+    const { apiBaseUrl, apiKey, model, protocol, providerId } = req.body || {};
     const result = await testConnection({
       connection: {
         apiBaseUrl: apiBaseUrl || '',
@@ -1857,55 +1834,18 @@ app.post('/api/providers/test', async (req, res) => {
   }
 });
 
-// 拉取模型列表（支持通过连接ID或直接传 connection）
+// 拉取模型列表 — 同上，纯转发，不落盘
 app.post('/api/providers/models', async (req, res) => {
   try {
-    const { connectionId, apiBaseUrl, apiKey, model, protocol, providerId } = req.body;
-    if (connectionId) {
-      // 通过已保存的连接ID拉取
-      const conns = await listConnections();
-      const conn = conns.connections?.find(c => c.id === connectionId);
-      if (!conn) return res.status(404).json({ error: '连接未找到' });
-      const result = await fetchModels({ modelAlias: conn.name || conn.providerId });
-      res.json(result);
-    } else {
-      // 用临时连接对象拉取
-      const result = await fetchModels({
-        connection: {
-          apiBaseUrl: apiBaseUrl || '', apiKey: apiKey || '',
-          model: model || '', protocol: protocol || 'openai-compatible',
-          providerId: providerId || 'custom'
-        }
-      });
-      res.json(result);
-    }
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// 更新连接 temperature
-app.post('/api/providers/temperature', async (req, res) => {
-  try {
-    const { connectionId, temperature } = req.body;
-    if (!connectionId || temperature == null) return res.status(400).json({ error: '需要 connectionId 和 temperature' });
-    const t = Math.max(0, Math.min(2, Number(temperature)));
-    setConnectionTemperature(connectionId, t);
-    res.json({ ok: true, temperature: t });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// 读取所有连接的 temperature
-app.get('/api/providers/temperatures', async (req, res) => {
-  try {
-    const conns = await listConnections();
-    const temps = {};
-    (conns.connections || []).forEach(c => {
-      temps[c.id] = getConnectionTemperature(c.id);
+    const { apiBaseUrl, apiKey, model, protocol, providerId } = req.body || {};
+    const result = await fetchModels({
+      connection: {
+        apiBaseUrl: apiBaseUrl || '', apiKey: apiKey || '',
+        model: model || '', protocol: protocol || 'openai-compatible',
+        providerId: providerId || 'custom'
+      }
     });
-    res.json({ temperatures: temps });
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -3858,12 +3798,13 @@ app.post('/api/mianjing-analysis', async (req, res) => {
 // 健康检查（含 opencli 环境检测）
 // ============================================================
 app.get('/api/health', async (req, res) => {
-  let providerStatus = '未连接';
+  // 密钥由访客浏览器本地持有，服务端不保存；这里仅反映本次请求是否携带了配置
+  let providerStatus = '未携带 AI 配置';
   try {
-    const conns = await listConnections();
-    providerStatus = conns.activeConnection
-      ? `${conns.activeConnection.providerId} (${conns.activeConnection.name})`
-      : '未配置激活连接';
+    const cfg = getAiConfig();
+    if (cfg && (cfg.apiKey || cfg.apiBaseUrl)) {
+      providerStatus = cfg.model ? `已接收访客配置 (${cfg.model})` : '已接收访客配置';
+    }
   } catch { /* ignore */ }
 
   // opencli 自检

@@ -40,6 +40,87 @@ function debounce(fn, ms = 300) {
   }
 })();
 
+// ============================================================
+// AI 连接配置 — 只存浏览器本地，随请求带上，服务端不落盘
+// ============================================================
+const AI_CONN_STORE_KEY = 'ai_connections';
+
+function loadAiStore() {
+  try {
+    const s = JSON.parse(localStorage.getItem(AI_CONN_STORE_KEY) || '{}');
+    return {
+      connections: Array.isArray(s.connections) ? s.connections : [],
+      activeConnectionId: s.activeConnectionId || ''
+    };
+  } catch { return { connections: [], activeConnectionId: '' }; }
+}
+
+function saveAiStore(store) {
+  try { localStorage.setItem(AI_CONN_STORE_KEY, JSON.stringify(store)); } catch {}
+}
+
+function getActiveAiConnection() {
+  const s = loadAiStore();
+  if (!s.connections.length) return null;
+  return s.connections.find(c => c.id === s.activeConnectionId) || s.connections[0];
+}
+
+// base64 编码，避免非 ASCII 字符放进请求头报错
+function encodeAiConfig(conn) {
+  const payload = {
+    apiBaseUrl: conn.apiBaseUrl || '',
+    apiKey: conn.apiKey || '',
+    model: conn.model || '',
+    protocol: conn.protocol || 'openai-compatible',
+    temperature: conn.temperature != null ? conn.temperature : 0.7
+  };
+  try { return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))); } catch { return ''; }
+}
+
+// 统一在 fetch 出口注入访客自己的 AI 配置（仅同源 /api 请求）
+const _nativeFetch = window.fetch.bind(window);
+window.fetch = function (input, init) {
+  const url = typeof input === 'string' ? input : (input && input.url) || '';
+  const isApi = url.startsWith('/api') || url.startsWith(location.origin + '/api');
+  if (isApi) {
+    const conn = getActiveAiConnection();
+    if (conn && (conn.apiKey || conn.apiBaseUrl)) {
+      const headers = new Headers((init && init.headers) || {});
+      headers.set('x-ai-config', encodeAiConfig(conn));
+      init = Object.assign({}, init, { headers });
+    }
+  }
+  return _nativeFetch(input, init);
+};
+
+// ── 未配置密钥时的全局提醒 ──
+let _aiNoticeDismissed = false;
+
+function renderAiNotice(force) {
+  const el = document.getElementById('ai-key-notice');
+  if (!el) return;
+  const conn = getActiveAiConnection();
+  const configured = !!(conn && conn.apiKey);
+  if (configured || (_aiNoticeDismissed && !force)) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderAiNotice();
+  document.getElementById('ai-key-notice-btn')?.addEventListener('click', () => {
+    setSettingsOpen(true);
+    loadSettingsData();
+    loadTemperatures();
+  });
+  document.getElementById('ai-key-notice-close')?.addEventListener('click', () => {
+    _aiNoticeDismissed = true;
+    renderAiNotice();
+  });
+});
+
 // 全局 fetch 重试包装器（LLM API 错误时自动处理）
 async function fetchRetry(url, options = {}, retries = 2) {
   const opts = Object.assign({}, options);
@@ -56,6 +137,11 @@ async function fetchRetry(url, options = {}, retries = 2) {
         toast(`⏳ 第 ${i+1} 次重试...`);
         await new Promise(r => setTimeout(r, 1000 * (i + 1)));
         continue;
+      }
+      // 未配置密钥导致的失败：弹出提醒并引导去设置
+      if (/未配置 AI|API Key/i.test(e.message || '')) {
+        renderAiNotice(true);
+        toast('🔑 请先在设置里填入你自己的 API Key');
       }
       throw e;
     }
@@ -3499,22 +3585,20 @@ $('#settings-temperature').addEventListener('input', () => {
 });
 
 async function loadTemperatures() {
-  try {
-    const data = await fetchRetry('/api/providers/temperatures').then(r => r.json());
-    _settingsTemperatures = data.temperatures || {};
-    applyStoredTemperatures();
-  } catch {}
+  const s = loadAiStore();
+  _settingsTemperatures = {};
+  s.connections.forEach(c => { if (c.temperature != null) _settingsTemperatures[c.id] = c.temperature; });
+  applyStoredTemperatures();
 }
 let _settingsTemperatures = {};
 
 function applyStoredTemperatures() {
-  // 设置 temperature 滑块到当前选中连接的存储值（如果有），否则 0.7
-  const connId = _settingsSelectedConnectionId;
-  const t = connId && _settingsTemperatures[connId] != null ? _settingsTemperatures[connId] : 0.7;
+  // 设置 temperature 滑块到当前激活连接的存储值（如果有），否则 0.7
+  const active = getActiveAiConnection();
+  const t = active && active.temperature != null ? active.temperature : 0.7;
   $('#settings-temperature').value = t;
   $('#settings-temp-val').textContent = t;
 }
-let _settingsSelectedConnectionId = null;
 $('#btn-close-settings').addEventListener('click', () => setSettingsOpen(false));
 $('#settings-modal').addEventListener('click', (e) => {
   if (e.target === $('#settings-modal')) setSettingsOpen(false);
@@ -3593,67 +3677,70 @@ async function autoFetchModelsOnKeyInput() {
 }
 
 async function refreshConnectionList() {
-  try {
-    const c = await fetchRetry('/api/providers/connections').then(r => r.json());
-    const connections = c.connections || [];
-    const activeId = c.activeConnectionId;
+  const s = loadAiStore();
+  const connections = s.connections;
+  const activeId = s.activeConnectionId || (connections[0] && connections[0].id) || '';
+  renderAiNotice();
 
-    // 状态栏
-    if (activeId && connections.length > 0) {
-      const active = connections.find(x => x.id === activeId);
-      $('#settings-connections-status').innerHTML = active
-        ? `<p><span class="conn-badge active">✅ 已连接</span> ${active.name} · ${active.providerId} · ${active.hasApiKey ? '已配置Key' : '⚠️ 未配置Key'}</p>`
-        : '<p style="color:var(--muted);">未设置激活连接，将使用第一个可用连接</p>';
-    } else {
-      $('#settings-connections-status').innerHTML = '<p style="color:var(--muted);">⚠️ 尚未配置任何AI连接</p>';
-    }
+  // 状态栏
+  if (activeId && connections.length > 0) {
+    const active = connections.find(x => x.id === activeId);
+    $('#settings-connections-status').innerHTML = active
+      ? `<p><span class="conn-badge active">✅ 已连接</span> ${active.name} · ${active.providerId} · ${active.apiKey ? '已配置Key' : '⚠️ 未配置Key'}</p>`
+      : '<p style="color:var(--muted);">未设置激活连接，将使用第一个可用连接</p>';
+  } else {
+    $('#settings-connections-status').innerHTML = '<p style="color:var(--muted);">⚠️ 尚未配置任何AI连接</p>';
+  }
 
-    // 连接列表
-    if (connections.length === 0) {
-      $('#settings-connections-list').innerHTML = '<p style="color:var(--muted);">暂无连接，请在下方添加</p>';
-      return;
-    }
-    $('#settings-connections-list').innerHTML = connections.map(conn => {
-      const t = _settingsTemperatures[conn.id] != null ? _settingsTemperatures[conn.id] : 0.7;
-      return `
-      <div class="conn-item">
-        <div class="conn-info">
-          <span class="conn-provider">${conn.name || conn.providerId}</span>
-          <span class="conn-key">${conn.providerId} · ${conn.hasApiKey ? '🔑 已配置' : '⚠️ 无Key'} · 模型: ${conn.model || '未设置'} · 创意度: ${t}${conn.id === activeId ? ' · <strong style="color:var(--accent-text);">激活</strong>' : ''}</span>
-          ${conn.models?.length ? `<span class="conn-key" style="display:block;margin-top:2px;">可用模型: ${conn.models.slice(0,10).join(', ')}${conn.models.length > 10 ? '...等' + conn.models.length + '个' : ''}</span>` : ''}
-        </div>
-        <div class="conn-actions">
-          <button onclick="fetchModelsForConn('${conn.id}')" title="拉取模型列表">📡</button>
-          ${conn.id !== activeId ? `<button onclick="activateConnection('${conn.id}')">激活</button>` : ''}
-          <button onclick="editConnectionTemp('${conn.id}',${t})" title="调整创意度">🌡️</button>
-          <button class="danger" onclick="deleteConnection('${conn.id}')">删除</button>
-        </div>
+  // 连接列表
+  if (connections.length === 0) {
+    $('#settings-connections-list').innerHTML = '<p style="color:var(--muted);">暂无连接，请在下方添加</p>';
+    return;
+  }
+  $('#settings-connections-list').innerHTML = connections.map(conn => {
+    const t = conn.temperature != null ? conn.temperature : 0.7;
+    return `
+    <div class="conn-item">
+      <div class="conn-info">
+        <span class="conn-provider">${conn.name || conn.providerId}</span>
+        <span class="conn-key">${conn.providerId} · ${conn.apiKey ? '🔑 已配置' : '⚠️ 无Key'} · 模型: ${conn.model || '未设置'} · 创意度: ${t}${conn.id === activeId ? ' · <strong style="color:var(--accent-text);">激活</strong>' : ''}</span>
+        ${conn.models?.length ? `<span class="conn-key" style="display:block;margin-top:2px;">可用模型: ${conn.models.slice(0,10).join(', ')}${conn.models.length > 10 ? '...等' + conn.models.length + '个' : ''}</span>` : ''}
       </div>
-    `}).join('');
-  } catch {}
+      <div class="conn-actions">
+        <button onclick="fetchModelsForConn('${conn.id}')" title="拉取模型列表">📡</button>
+        ${conn.id !== activeId ? `<button onclick="activateConnection('${conn.id}')">激活</button>` : ''}
+        <button onclick="editConnectionTemp('${conn.id}',${t})" title="调整创意度">🌡️</button>
+        <button class="danger" onclick="deleteConnection('${conn.id}')">删除</button>
+      </div>
+    </div>
+  `}).join('');
 }
 
 window.activateConnection = async function(id) {
-  try {
-    await fetchRetry('/api/providers/connections/active', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
-    });
-    await refreshConnectionList();
-    toast('✅ 已切换激活连接');
-  } catch(e) { toast('切换失败'); }
+  const s = loadAiStore();
+  s.activeConnectionId = id;
+  saveAiStore(s);
+  await refreshConnectionList();
+  applyStoredTemperatures();
+  toast('✅ 已切换激活连接');
 };
 
 // 为已保存的连接拉取模型列表
 window.fetchModelsForConn = async function(connectionId) {
+  const s = loadAiStore();
+  const conn = s.connections.find(c => c.id === connectionId);
+  if (!conn) return toast('连接不存在');
   toast('📡 正在拉取模型列表...');
   try {
     const result = await fetchRetry('/api/providers/models', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connectionId })
+      body: JSON.stringify({ apiBaseUrl: conn.apiBaseUrl, apiKey: conn.apiKey, model: conn.model, protocol: conn.protocol, providerId: conn.providerId })
     }).then(r => r.json());
     if (result.models?.length) {
+      conn.models = result.models;
+      if (!conn.model) conn.model = result.models[0];
+      saveAiStore(s);
       toast(`✅ 发现 ${result.models.length} 个模型`);
     } else {
       toast('⚠️ 未获取到模型列表');
@@ -3664,15 +3751,14 @@ window.fetchModelsForConn = async function(connectionId) {
 
 window.deleteConnection = async function(id) {
   if (!confirm('确定删除此连接？')) return;
-  try {
-    const resp = await fetchRetry(`/api/providers/connections/${id}`, { method: 'DELETE' });
-    const result = await resp.json();
-    if (!result.ok) throw new Error(result.error || '删除失败');
-    toast('✅ 已删除');
-    await refreshConnectionList();
-    const c = await fetchRetry('/api/providers/connections').then(r => r.json());
-    if (!c.activeConnectionId) setStatus('⚠️ 未配置AI — 点击 ⚙️ 设置');
-  } catch(e) { toast('删除失败: ' + e.message); }
+  const s = loadAiStore();
+  s.connections = s.connections.filter(c => c.id !== id);
+  if (s.activeConnectionId === id) s.activeConnectionId = (s.connections[0] || {}).id || '';
+  saveAiStore(s);
+  toast('✅ 已删除');
+  await refreshConnectionList();
+  applyStoredTemperatures();
+  if (!s.activeConnectionId) setStatus('⚠️ 未配置AI — 点击 ⚙️ 设置');
 };
 
 // 快速调整创意度
@@ -3680,68 +3766,64 @@ window.editConnectionTemp = async function(id, current) {
   const val = prompt('创意度 (0=精确, 1=平衡, 2=创意):', current);
   if (val == null) return;
   const t = Math.max(0, Math.min(2, parseFloat(val) || 0.7));
-  try {
-    await fetchRetry('/api/providers/temperature', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connectionId: id, temperature: t })
-    });
-    _settingsTemperatures[id] = t;
-    await refreshConnectionList();
-    toast(`✅ 创意度已设为 ${t}`);
-  } catch(e) { toast('调整失败: ' + e.message); }
+  const s = loadAiStore();
+  const conn = s.connections.find(c => c.id === id);
+  if (conn) { conn.temperature = t; saveAiStore(s); }
+  _settingsTemperatures[id] = t;
+  await refreshConnectionList();
+  toast(`✅ 创意度已设为 ${t}`);
 };
 
-// 添加/保存连接
+// 添加/保存连接（写入浏览器本地存储，不上传服务端）
 $('#settings-add-connection').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
     const sel = $('#settings-provider');
     const opt = sel.selectedOptions[0];
-    const result = await fetchRetry('/api/providers/connections', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: $('#settings-name').value.trim(),
-        providerId: sel.value,
-        protocol: opt.dataset.protocol || 'openai-compatible',
-        apiBaseUrl: $('#settings-baseurl').value.trim() || opt.dataset.baseurl || '',
-        apiKey: $('#settings-apikey').value.trim(),
-        model: $('#settings-model-select').value || $('#settings-model-manual').value.trim() || $('#settings-model').value.trim() || opt.dataset.model || '',
-        setActive: $('#settings-set-active').checked
-      })
-    });
-    if (!result.ok && result.error) throw new Error(result.error);
-    toast('✅ 连接已保存');
+    const store = loadAiStore();
+    const name = $('#settings-name').value.trim() || (opt.textContent || '').trim();
+    const apiKey = $('#settings-apikey').value.trim();
+    // 同名同供应商视为更新，避免重复保存产生多条记录
+    const existing = store.connections.find(c => c.providerId === sel.value && (c.name || '') === name);
+    const id = existing?.id || ('c' + Date.now().toString(36));
+    const conn = {
+      id,
+      name,
+      providerId: sel.value,
+      protocol: opt.dataset.protocol || 'openai-compatible',
+      apiBaseUrl: $('#settings-baseurl').value.trim() || opt.dataset.baseurl || '',
+      apiKey: apiKey || existing?.apiKey || '',
+      model: $('#settings-model-select').value || $('#settings-model-manual').value.trim() || $('#settings-model').value.trim() || opt.dataset.model || '',
+      temperature: parseFloat($('#settings-temperature').value) || 0.7,
+      models: existing?.models || []
+    };
+    if (existing) Object.assign(existing, conn);
+    else store.connections.push(conn);
+    if ($('#settings-set-active').checked || !store.activeConnectionId) store.activeConnectionId = id;
+    saveAiStore(store);
+    toast('✅ 连接已保存（仅存本机浏览器）');
     $('#settings-apikey').value = '';
     await refreshConnectionList();
+    applyStoredTemperatures();
 
-    // 保存 temperature
-    const savedId = result.activeConnectionId || (result.connections?.length && result.connections[result.connections.length - 1]?.id);
-    if (savedId) {
-      const t = parseFloat($('#settings-temperature').value) || 0.7;
-      await fetchRetry('/api/providers/temperature', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionId: savedId, temperature: t })
-      });
-      _settingsTemperatures[savedId] = t;
-    }
-
-    // 自动拉取模型列表
-    if (savedId) {
+    // 自动拉取模型列表（密钥仅在此次请求体中出现，不落盘）
+    if (conn.apiBaseUrl && conn.apiKey) {
       toast('📡 正在自动拉取可用模型...');
       try {
         const modelsResp = await fetchRetry('/api/providers/models', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ connectionId: savedId })
+          body: JSON.stringify({ apiBaseUrl: conn.apiBaseUrl, apiKey: conn.apiKey, model: conn.model, protocol: conn.protocol, providerId: conn.providerId })
         }).then(r => r.json());
         if (modelsResp.models?.length) {
+          const store2 = loadAiStore();
+          const c2 = store2.connections.find(c => c.id === id);
+          if (c2) { c2.models = modelsResp.models; if (!c2.model) c2.model = modelsResp.models[0]; saveAiStore(store2); }
           toast(`✅ 连接成功！发现 ${modelsResp.models.length} 个可用模型`);
-          const models = modelsResp.models;
-          const s = $('#settings-model-select');
-          s.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
-          s.value = models[0];
-          $('#settings-model').value = models[0];
+          const modelSel = $('#settings-model-select');
+          modelSel.innerHTML = modelsResp.models.map(m => `<option value="${m}">${m}</option>`).join('');
+          modelSel.value = modelsResp.models[0];
+          $('#settings-model').value = modelsResp.models[0];
           await refreshConnectionList();
         }
       } catch { /* 模型拉取失败不阻塞 */ }
@@ -3762,13 +3844,15 @@ $('#btn-test-connection').addEventListener('click', async () => {
   res.textContent = '⏳ 正在测试...';
 
   try {
+    // 输入框为空时用当前激活连接已存的密钥补齐（密钥在浏览器本地）
+    const active = getActiveAiConnection();
     const result = await fetchRetry('/api/providers/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         providerId: sel.value,
-        apiBaseUrl: $('#settings-baseurl').value.trim() || opt.dataset.baseurl || '',
-        apiKey: $('#settings-apikey').value.trim(),
+        apiBaseUrl: $('#settings-baseurl').value.trim() || opt.dataset.baseurl || (active && active.apiBaseUrl) || '',
+        apiKey: $('#settings-apikey').value.trim() || (active && active.apiKey) || '',
         model: $('#settings-model-select').value || $('#settings-model').value.trim() || opt.dataset.model || '',
         protocol: opt.dataset.protocol || 'openai-compatible'
       })
@@ -5145,11 +5229,12 @@ function downloadFile(filename, content, mimeType) {
   try {
     const h = await fetchRetry('/api/health').then(r => r.json());
 
-    // 状态栏 — 同步更新 opencli 状态
+    // 状态栏 — AI 配置以浏览器本地为准，opencli 状态来自 health
     const oc = h.opencli || {};
     let statusParts = [];
-    if (h.provider && h.provider !== '未连接' && h.provider !== '未配置激活连接') {
-      statusParts.push('✅ ' + h.provider);
+    const aiConn = getActiveAiConnection();
+    if (aiConn && aiConn.apiKey) {
+      statusParts.push('✅ ' + (aiConn.name || aiConn.providerId));
     } else {
       statusParts.push('⚠️ 未配置AI — 点击 ⚙️ 设置');
     }

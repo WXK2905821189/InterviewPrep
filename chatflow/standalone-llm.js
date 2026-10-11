@@ -1,48 +1,49 @@
 // ============================================================
 // 独立 LLM 客户端 — 直接调用 OpenAI-compatible API
 // 不依赖 ai-provider-kit，适用于云端部署
+// 访客的密钥随请求头带入，服务端不落盘、不共享
 // ============================================================
 
-const fs = require('fs');
-const path = require('path');
 const { OpenAI } = require('openai');
+const { getAiConfig } = require('./request-context');
 
-const CONNECTIONS_FILE = path.resolve(__dirname, '..', '.local', 'ai-connections.json');
-
-function loadActiveConnection() {
-  try {
-    if (!fs.existsSync(CONNECTIONS_FILE)) return null;
-    const state = JSON.parse(fs.readFileSync(CONNECTIONS_FILE, 'utf-8'));
-    const activeId = state.activeConnectionId;
-    if (!activeId) return state.aiConnections?.[0];
-    return (state.aiConnections || []).find(c => c.id === activeId) || state.aiConnections?.[0];
-  } catch { return null; }
+function resolveConnection() {
+  const cfg = getAiConfig();
+  if (cfg && (cfg.apiBaseUrl || cfg.apiKey)) {
+    return {
+      apiBaseUrl: cfg.apiBaseUrl || 'https://api.openai.com/v1',
+      apiKey: cfg.apiKey || '',
+      model: cfg.model || 'gpt-4o-mini',
+      temperature: cfg.temperature
+    };
+  }
+  throw new Error('未配置 AI 供应商。请在设置面板中填写你自己的 API Key（仅保存在本机浏览器，不会上传）。');
 }
 
 let _client = null;
-let _connId = null;
+let _clientKey = '';
 
-function getClient() {
-  const conn = loadActiveConnection();
-  if (!conn) throw new Error('未配置 AI 供应商。请在设置面板中添加连接。');
+function getClient(conn) {
   const key = `${conn.apiBaseUrl}|${conn.apiKey || ''}`;
-  if (_client && _connId === key) return _client;
-  _client = new OpenAI({ baseURL: conn.apiBaseUrl || 'https://api.openai.com/v1', apiKey: conn.apiKey || '', timeout: 120000 });
-  _connId = key;
+  if (_client && _clientKey === key) return _client;
+  _client = new OpenAI({ baseURL: conn.apiBaseUrl, apiKey: conn.apiKey, timeout: 120000 });
+  _clientKey = key;
   return _client;
 }
 
-async function standaloneLlm(systemPrompt, userContent, { jsonMode = true, temperature = 0.7 } = {}) {
-  const client = getClient();
-  const conn = loadActiveConnection();
-  const model = conn?.model || 'gpt-4o-mini';
+async function standaloneLlm(systemPrompt, userContent, { jsonMode = true, temperature } = {}) {
+  const conn = resolveConnection();
+  const client = getClient(conn);
+  const model = conn.model || 'gpt-4o-mini';
+  // 调用方显式指定的 temperature 优先，其次用访客设置的创意度，最后 0.7
+  const temp = temperature != null ? temperature : (conn.temperature != null ? conn.temperature : 0.7);
 
   const messages = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: typeof userContent === 'string' ? userContent : JSON.stringify(userContent, null, 2) }
   ];
 
-  const resp = await client.chat.completions.create({ model, messages, temperature, max_tokens: 4096 });
+  const resp = await client.chat.completions.create({ model, messages, temperature: temp, max_tokens: 4096 });
   const text = resp.choices?.[0]?.message?.content || '';
 
   if (jsonMode) {
@@ -61,4 +62,4 @@ async function standaloneLlm(systemPrompt, userContent, { jsonMode = true, tempe
   return text;
 }
 
-module.exports = { standaloneLlm, loadActiveConnection };
+module.exports = { standaloneLlm };

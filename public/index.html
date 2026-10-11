@@ -40,6 +40,17 @@
 
 <main class="container">
 
+  <!-- AI 密钥未配置提醒 -->
+  <div id="ai-key-notice" class="ai-key-notice hidden">
+    <span class="ai-key-notice-icon">🔑</span>
+    <div class="ai-key-notice-text">
+      <b>还没有配置 API Key</b>
+      <span>AI 功能需要你自己的密钥才能使用。密钥只保存在本机浏览器，不会上传到服务器。</span>
+    </div>
+    <button class="btn-primary" id="ai-key-notice-btn" style="font-size:0.82rem;">去设置</button>
+    <button class="ai-key-notice-close" id="ai-key-notice-close" aria-label="关闭提醒">✕</button>
+  </div>
+
   <!-- ====== Tab 0: 仪表盘 ====== -->
   <section id="tab-dashboard" class="tab-content active">
     <!-- 面试准备度 -->
@@ -1066,6 +1077,7 @@
       <button class="modal-close" id="btn-close-settings">✕</button>
     </div>
     <div class="modal-body">
+      <div class="settings-hint">🔒 密钥仅保存在本机浏览器，调用时随请求发送、用完即弃，不会上传或保存到服务器。</div>
       <!-- 连接状态 -->
       <div class="settings-section">
         <h3>当前连接</h3>
@@ -1089,6 +1101,7 @@
           <div class="form-row">
             <label>API Key</label>
             <input id="settings-apikey" type="password" placeholder="sk-..." required>
+            <div class="settings-field-hint">仅存本机浏览器，不会上传到服务器</div>
           </div>
           <div class="form-row">
             <label>Base URL（可选）</label>

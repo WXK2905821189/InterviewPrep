@@ -1135,6 +1135,33 @@ html.dark .navbar {
 .conn-badge.active { background: var(--success-bg); color: var(--success-fg); }
 .conn-badge.inactive { background: var(--warn-bg); color: var(--warn-fg); }
 
+/* 密钥安全提示 */
+.settings-hint {
+  padding: 0.6rem 0.8rem; margin-bottom: 1rem;
+  background: var(--success-bg); color: var(--success-fg);
+  border-radius: 8px; font-size: var(--fs-sm); line-height: 1.5;
+}
+.settings-field-hint {
+  font-size: 0.72rem; color: var(--muted); margin-top: 0.25rem;
+}
+
+/* 未配置密钥提醒条 */
+.ai-key-notice {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.75rem 1rem; margin-bottom: 1rem;
+  background: var(--warn-bg); color: var(--warn-fg);
+  border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+  border-radius: 8px; font-size: var(--fs-base); flex-wrap: wrap;
+}
+.ai-key-notice-icon { font-size: 1.1rem; }
+.ai-key-notice-text { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; min-width: 220px; }
+.ai-key-notice-text span { font-size: 0.78rem; opacity: 0.85; }
+.ai-key-notice-close {
+  background: none; border: none; cursor: pointer; color: inherit;
+  opacity: 0.6; font-size: 0.9rem; padding: 0.2rem;
+}
+.ai-key-notice-close:hover { opacity: 1; }
+
 .conn-item {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0.6rem 0.8rem; border: 1px solid var(--rule);
