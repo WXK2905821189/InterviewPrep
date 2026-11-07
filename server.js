@@ -36,20 +36,13 @@ async function closeOpencliWindow() {
 
 // ---- 数据目录 (Electron模式用app.getPath('userData')，普通模式用__dirname) ----
 const DATA_DIR = process.env.DATA_DIR || __dirname;
-// ---- 日志系统（同时输出控制台 + 文件） ----
-const LOG_DIR = path.join(DATA_DIR, 'logs');
-try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
-const LOG_FILE = path.join(LOG_DIR, 'error.log');
+// ---- 日志系统：环形缓冲 + logs/app.log 落盘，支持 /api/logs/export 导出 ----
+const logger = require('./chatflow/logger');
+logger.init(DATA_DIR);
 
-function log(level, msg) {
-  const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  const line = `[${ts}] [${level}] ${msg}`;
-  console.log(line);
-  try { fs.appendFileSync(LOG_FILE, line + '\n'); } catch {}
-}
-function logInfo(msg)  { log('INFO', msg); }
-function logWarn(msg)  { log('WARN', msg); }
-function logError(msg) { log('ERROR', msg); }
+function logInfo(msg, extra)  { logger.info(msg, extra); }
+function logWarn(msg, extra)  { logger.warn(msg, extra); }
+function logError(msg, extra) { logger.error(msg, extra); }
 
 process.on('uncaughtException', (err) => {
   logError('未捕获异常: ' + (err.stack || err.message));
@@ -217,6 +210,36 @@ app.use('/knowledge', express.static(path.join(__dirname, 'knowledge')));
 // ============================================================
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
+
+// ============================================================
+// 运行日志 API — 导出 log 文件交给 AI 定位问题
+// ============================================================
+app.get('/api/logs/export', (req, res) => {
+  const filename = `interviewprep-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(logger.exportText());
+});
+
+app.get('/api/logs/recent', (req, res) => {
+  const n = Math.min(parseInt(req.query.n, 10) || 200, 2000);
+  res.json({ lines: logger.tail(n) });
+});
+
+// 前端错误上报（客户端堆栈一并入库，便于前后端链路对齐）
+app.post('/api/logs/client', (req, res) => {
+  const { source, message, stack, url } = req.body || {};
+  logger.warn(`[客户端上报] ${source || 'unknown'}: ${String(message || '').slice(0, 500)}`, {
+    stack: String(stack || '').slice(0, 1500),
+    page: url || ''
+  });
+  res.json({ ok: true });
+});
+
+app.post('/api/logs/clear', (req, res) => {
+  logger.clear();
+  res.json({ ok: true });
 });
 
 // 文件上传
@@ -3180,6 +3203,7 @@ app.post('/api/company-research', async (req, res) => {
     });
 
     if (result.error) {
+      logError(`公司调研失败 [${company}]`, result.error);
       sseError(res, result.error);
       return;
     }
@@ -3188,6 +3212,7 @@ app.post('/api/company-research', async (req, res) => {
     sseDone(res, { step: 'done', ...result });
 
   } catch (e) {
+    logError(`公司调研异常 [${company}]`, e.stack || e.message);
     sseError(res, '公司调研失败: ' + (e.message || String(e)));
   }
 });
@@ -3236,14 +3261,16 @@ app.post('/api/company-research/history', (req, res) => {
       company,
       position: position || '',
       result: {
+        // 白名单须与 company-research 节点的 prompt 输出契约一致，
+        // 否则保存的历史记录会缺失渲染所需字段或残留死键
         _summary: result._summary || '',
         interview_talking_points: result.interview_talking_points || null,
         mock_qa: result.mock_qa || null,
         company_basics: result.company_basics || null,
         business_insight: result.business_insight || null,
-        interview_intel: result.interview_intel || null,
-        latest_news: result.latest_news || null,
-        competitors: result.competitors || null
+        competitive_edge: result.competitive_edge || null,
+        culture_signals: result.culture_signals || null,
+        hot_prep: result.hot_prep || null
       },
       createdAt: new Date().toISOString()
     };
@@ -4016,8 +4043,8 @@ app.use((err, req, res, next) => {
   const isMulter = err && err.name === 'MulterError';
   const status = isMulter ? 400 : (err.status || err.statusCode || 500);
 
-  if (status >= 500) console.error('[未捕获错误]', req.method, req.originalUrl, err);
-  else console.warn('[请求错误]', req.method, req.originalUrl, err.message);
+  if (status >= 500) logError(`[未捕获错误] ${req.method} ${req.originalUrl}`, { stack: err.stack || err.message });
+  else logWarn(`[请求错误] ${req.method} ${req.originalUrl}`, err.message);
 
   if (res.headersSent) return next(err);
 

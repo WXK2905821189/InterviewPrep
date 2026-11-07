@@ -143,6 +143,10 @@ async function fetchRetry(url, options = {}, retries = 2) {
         renderAiNotice(true);
         toast('🔑 请先在设置里填入你自己的 API Key');
       }
+      // 最终失败时上报服务端日志（reportClientLog 定义在下方，函数声明会提升）
+      if (typeof reportClientLog === 'function') {
+        reportClientLog('fetchRetry: ' + url, e.message, e.stack);
+      }
       throw e;
     }
   }
@@ -3603,6 +3607,60 @@ $('#btn-close-settings').addEventListener('click', () => setSettingsOpen(false))
 $('#settings-modal').addEventListener('click', (e) => {
   if (e.target === $('#settings-modal')) setSettingsOpen(false);
 });
+
+// ============================================================
+// 运行日志 UI — 预览 / 导出 / 复制 / 清空
+// ============================================================
+async function loadLogPreview() {
+  const el = $('#log-preview');
+  if (!el) return;
+  try {
+    const data = await fetchRetry('/api/logs/recent?n=120').then(r => r.json());
+    el.textContent = (data.lines || []).join('\n') || '(暂无日志)';
+    el.scrollTop = el.scrollHeight;
+  } catch (e) { el.textContent = '日志加载失败: ' + e.message; }
+}
+$('#btn-open-settings')?.addEventListener('click', loadLogPreview);
+$('#btn-refresh-log')?.addEventListener('click', loadLogPreview);
+$('#btn-export-log')?.addEventListener('click', () => {
+  // 直接触发下载（fetch 注入的密钥头不影响该接口）
+  window.location.href = API + '/logs/export';
+});
+$('#btn-copy-log')?.addEventListener('click', async () => {
+  try {
+    const text = await fetchRetry(API + '/logs/export').then(r => r.text());
+    await navigator.clipboard.writeText(text);
+    toast('📋 日志已复制到剪贴板');
+  } catch (e) { toast('复制失败: ' + e.message); }
+});
+$('#btn-clear-log')?.addEventListener('click', async () => {
+  try { await fetchRetry(API + '/logs/clear', { method: 'POST' }); toast('日志已清空'); loadLogPreview(); }
+  catch (e) { toast('清空失败: ' + e.message); }
+});
+
+// ============================================================
+// 客户端错误上报 — 前端异常/接口失败回传服务端日志，便于全链路定位
+// ============================================================
+let _clientLogBusy = false;
+function reportClientLog(source, message, stack) {
+  if (_clientLogBusy) return;
+  _clientLogBusy = true;
+  try {
+    fetch(API + '/logs/client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, message, stack, url: location.pathname })
+    }).catch(() => {}).finally(() => { _clientLogBusy = false; });
+  } catch { _clientLogBusy = false; }
+}
+window.addEventListener('error', (e) => {
+  reportClientLog('window.error', e.message || '未知错误', e.error?.stack || '');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason;
+  reportClientLog('unhandledrejection', r?.message || String(r), r?.stack || '');
+});
+
 const opencliSetupBtn = $('#btn-opencli-setup-settings');
 if (opencliSetupBtn) opencliSetupBtn.onclick = () => startOpencliSetup();
 
@@ -4868,8 +4926,10 @@ async function doCompanyResearch() {
 
 function renderCompanyInterviewPrep(data, company) {
   const el = $('#company-result');
-  if (!data || data.error) {
-    el.innerHTML = `<div class="empty-state"><p>${data?.error || '暂无数据'}</p></div>`;
+  if (!data || data.error || data.parse_error) {
+    const msg = data?.error
+      || (data?.parse_error ? `AI 返回内容格式异常，未能生成手册${data?.error_detail ? '：' + data.error_detail : ''}，请重试` : '暂无数据');
+    el.innerHTML = `<div class="empty-state"><p>❌ ${msg}</p></div>`;
     return;
   }
 

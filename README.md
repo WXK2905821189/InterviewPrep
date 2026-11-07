@@ -43,6 +43,27 @@ npm run dev
 
 ---
 
+## 📁 项目结构
+
+```
+InterviewPrep/
+├── server.js            # 服务端入口：Express 路由 + 中间件 + 启动链
+├── electron/            # 桌面壳（main.js / preload.js / 图标）
+├── public/              # 前端（index.html / app.js / nav.js / style.css）
+├── chatflow/            # AI 引擎：LLM 双后端、提示词、流水线、请求级密钥上下文
+├── server/              # 后端业务模块（pg8 等）
+├── knowledge/           # 5 层知识库题库（JSON）
+├── scripts/             # 工具脚本（图标生成等）
+├── tests/               # 测试（node --test）与测试数据
+├── docs/                # 项目知识库（架构 / 路由 / 前端 / AI 引擎 / 运维）
+├── start.sh             # Render 部署启动脚本
+└── logs / .data /       # 运行时日志与数据（已 gitignore，勿提交）
+```
+
+> 密钥说明：访客的 API Key **只存浏览器 localStorage**，随请求头发送，服务端无状态透传、不落盘。
+
+---
+
 ## 🧭 功能导航
 
 v2.0.0 起，导航从「15 个平铺 Tab」改为**两级结构：5 个主模块 / 15 个子模块**（`public/nav.js` 动态渲染）。

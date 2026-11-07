@@ -1,9 +1,9 @@
 {
   "name": "interview-prep-mvp",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "description": "InterviewPrep MVP - AI面试押题与模拟面试官",
   "author": "wxk29",
-  "main": "server.js",
+  "main": "electron/main.js",
   "engines": {
     "node": ">=18"
   },

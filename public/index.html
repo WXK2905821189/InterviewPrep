@@ -1144,11 +1144,24 @@
       <div class="settings-section">
         <h3>版本更新</h3>
         <div id="update-section">
-          <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.5rem;">当前版本：<b id="current-version">v2.0.0</b></p>
+          <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.5rem;">当前版本：<b id="current-version">v2.0.2</b></p>
           <button id="btn-check-update" class="btn-outline" style="font-size:0.82rem;">🔍 检查更新</button>
           <span id="update-status" style="font-size:0.82rem;margin-left:0.5rem;"></span>
           <div id="update-detail" class="hidden" style="margin-top:0.6rem;"></div>
         </div>
+      </div>
+
+      <!-- 运行日志 -->
+      <div class="settings-section">
+        <h3>📋 运行日志</h3>
+        <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.5rem;">导出日志文件可交给 AI 快速定位问题。</p>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <button id="btn-export-log" class="btn-outline" style="font-size:0.78rem;">⬇️ 导出日志</button>
+          <button id="btn-copy-log" class="btn-outline" style="font-size:0.78rem;">📋 复制日志</button>
+          <button id="btn-refresh-log" class="btn-outline" style="font-size:0.78rem;">🔄 刷新</button>
+          <button id="btn-clear-log" class="btn-outline" style="font-size:0.78rem;">🗑️ 清空</button>
+        </div>
+        <pre id="log-preview" style="margin-top:0.6rem;max-height:200px;overflow:auto;font-size:0.7rem;background:var(--bg,#fafafa);border:1px solid var(--border,#e5e7eb);border-radius:6px;padding:0.5rem;white-space:pre-wrap;word-break:break-all;">加载中...</pre>
       </div>
 
       <!-- opencli 环境 -->
