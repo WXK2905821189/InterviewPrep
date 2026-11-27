@@ -280,6 +280,16 @@
           <input type="checkbox" id="use-quick-mode">
           <span>⚡ 快速模式（只用3类核心题型，约快5倍）</span>
         </label>
+        <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;color:var(--muted);">
+          🎚 题目难度
+          <select id="difficulty-select" style="padding:0.3rem 0.5rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.85rem;">
+            <option value="" selected disabled>每次生成前请选择</option>
+            <option value="简单">简单（热身/保底题）</option>
+            <option value="中等">中等（真实面试常规）</option>
+            <option value="困难">困难（深挖与压力题）</option>
+            <option value="贴近真实">贴近真实（按目标公司校准）</option>
+          </select>
+        </label>
       </div>
       <button id="btn-analyze" class="btn-primary">开始分析 →</button>
     </div>
@@ -986,7 +996,7 @@
     <!-- 开始区域 -->
     <div class="card" id="group-start-card">
       <h3>开始群面模拟</h3>
-      <p style="color:var(--muted);margin-bottom:1rem;">AI 将扮演面试官和3位候选人，模拟真实无领导小组讨论场景。你需要在讨论中积极发言、展现自己的观点。</p>
+      <p style="color:var(--muted);margin-bottom:1rem;">模拟真实群面三阶段：<strong>① 1分钟自我介绍 → ② 无领导小组讨论（排序/选择类题目，限时） → ③ 面试官单独问答</strong>。重点训练你的结构框架思维与表达能力。</p>
       <div id="group-topic-info" style="display:none;margin-bottom:1rem;"></div>
       <button class="btn-primary" id="btn-group-start" disabled>🚀 开始群面模拟</button>
       <p style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem;" id="group-start-hint">请先在"分析&押题"中完成JD分析</p>
@@ -995,12 +1005,13 @@
     <!-- 讨论区域 -->
     <div class="card" id="group-discussion-card" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-        <h3 style="margin:0;">💬 自由讨论</h3>
+        <h3 style="margin:0;" id="group-discussion-title">💬 群面模拟</h3>
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <span style="font-size:0.85rem;color:var(--muted);" id="group-stage">准备阶段</span>
           <span style="font-size:0.85rem;font-weight:600;color:var(--accent-text);" id="group-timer">00:00</span>
         </div>
       </div>
+      <div id="group-topic-bar" style="display:none;margin-bottom:0.8rem;"></div>
       <div id="group-discussion-log" style="max-height:450px;overflow-y:auto;margin-bottom:1rem;padding:0.5rem;background:var(--bg);border-radius:var(--radius-sm);"></div>
       <div style="display:flex;gap:0.5rem;">
         <textarea id="group-input" placeholder="输入你的发言..." rows="2" style="flex:1;"></textarea>
@@ -1009,7 +1020,7 @@
       </div>
       <div style="display:flex;gap:0.5rem;margin-top:0.5rem;justify-content:flex-end;">
         <button class="btn-outline btn-sm" id="btn-group-skip">⏭ 跳过本轮</button>
-        <button class="btn-outline btn-sm" id="btn-group-end">⏹ 结束讨论</button>
+        <button class="btn-outline btn-sm" id="btn-group-end">➡ 结束讨论，进入问答</button>
       </div>
     </div>
     

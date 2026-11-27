@@ -62,6 +62,7 @@ const {
   optimizeResume,
   groupInterviewStart,
   groupInterviewRespond,
+  groupInterviewStartQa,
   groupInterviewEvaluate
 } = require('./chatflow/engine');
 
@@ -445,10 +446,15 @@ app.post('/api/parse-jd-url', async (req, res) => {
 // API 1: 一键分析（SSE 流式 + 进度 + 预估剩余时间）
 // ============================================================
 app.post('/api/analyze', async (req, res) => {
-  const { jdText, resumeText, useMianjing, quickMode, manualUrls, resumeFileName, resumeSourceType } = req.body;
+  const { jdText, resumeText, useMianjing, quickMode, manualUrls, resumeFileName, resumeSourceType, difficulty } = req.body;
   if (!jdText || !resumeText) {
     return res.status(400).json({ error: '请同时提供JD文本和简历文本' });
   }
+
+  // 题库难度：用户每次生成前自行选择，未选默认"贴近真实"
+  const { DIFFICULTY_GUIDES } = require('./chatflow/prompts');
+  const difficultyGuide = DIFFICULTY_GUIDES[difficulty] || DIFFICULTY_GUIDES['贴近真实'];
+  logInfo(`[分析] 题库难度=${DIFFICULTY_GUIDES[difficulty] ? difficulty : '贴近真实(默认)'}`);
 
   // 快速模式：跳过面经，只用3类核心题型
 
@@ -552,7 +558,8 @@ app.post('/api/analyze', async (req, res) => {
         gap_analysis: gapAnalysis,
         position: jdParsed.position || '',
         mianjing_data: '无面经数据',
-        focus_type: qType
+        focus_type: qType,
+        difficulty_guide: difficultyGuide
       });
       const qResult = await safeCall(() => llm(questionPrompt, '', { temperature: 0.7 }));
       return { type: qType, result: qResult };
@@ -3533,11 +3540,12 @@ ${questionsText}
 // ============================================================
 app.post('/api/generate-questions-batch', async (req, res) => {
   try {
-    const { jdText, resumeText, count = 15 } = req.body;
+    const { jdText, resumeText, count = 15, difficulty } = req.body;
     if (!jdText) return res.status(400).json({ error: '请提供JD文本' });
 
     const { llm, fillTemplate } = require('./chatflow/llm-client');
     const prompts = require('./chatflow/prompts');
+    const difficultyGuide = prompts.DIFFICULTY_GUIDES[difficulty] || prompts.DIFFICULTY_GUIDES['贴近真实'];
 
     const questionTypes = ['行为面试', '专业能力', '项目深挖', '压力测试', 'HR面'];
     const qCount = Math.min(Math.max(parseInt(count) || 15, 10), 20);
@@ -3546,7 +3554,9 @@ app.post('/api/generate-questions-batch', async (req, res) => {
     const allQuestions = [];
     const promises = questionTypes.map(async (qType) => {
       const genPrompt = `你是面试出题专家。请根据JD和候选人简历，生成${perType}道「${qType}」类面试题目。
-输出JSON数组: [{"question":"题目","difficulty":"简单/中等/困难","examiner_intent":"考察意图","suggested_answer":"建议回答要点"}]`;
+输出JSON数组: [{"question":"题目","difficulty":"简单/中等/困难","examiner_intent":"考察意图","suggested_answer":"建议回答要点"}]
+
+${difficultyGuide}`;
       const userPrompt = `JD: ${jdText.slice(0, 2000)}\n简历: ${(resumeText || "").slice(0, 2000)}\n请生成${qType}题目。`;
       try {
         const result = await llm(genPrompt, userPrompt, { temperature: 0.8 });
@@ -3693,11 +3703,42 @@ app.post('/api/group-interview/start', async (req, res) => {
     res.json({
       topic: groupSession.topic,
       candidates: groupSession.candidates,
-      stage: groupSession.stage
+      stage: groupSession.stage,
+      stageLabel: groupSession.stageLabel,
+      introOpening: groupSession.introOpening
     });
   } catch (e) {
     logError('群面开始失败: ' + (e.stack || e.message));
     res.status(500).json({ error: '群面初始化失败: ' + (e.message || '未知错误') });
+  }
+});
+
+// ============================================================
+// API: 群面模拟 - 结束讨论，进入面试官单独问答
+// ============================================================
+app.post('/api/group-interview/start-qa', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = sessions.get(sessionId);
+    if (!session?.groupInterview) {
+      return res.status(400).json({ error: '请先开始群面模拟' });
+    }
+    if (session.groupInterview.stage !== 'topic') {
+      return res.status(400).json({ error: '当前不在小组讨论阶段，无法进入单独问答' });
+    }
+    const firstQuestion = await groupInterviewStartQa(session.groupInterview, session.analysis?.jd);
+    saveSessions();
+    res.json({
+      speaker: '面试官',
+      role: '面试官',
+      message: firstQuestion,
+      action: 'qa_start',
+      stage: session.groupInterview.stage,
+      stageLabel: session.groupInterview.stageLabel
+    });
+  } catch (e) {
+    logError('群面进入问答失败: ' + (e.stack || e.message));
+    res.status(500).json({ error: '进入单独问答失败: ' + (e.message || '未知错误') });
   }
 });
 
@@ -3723,7 +3764,9 @@ app.post('/api/group-interview/respond', async (req, res) => {
       speaker: result.speaker,
       role: result.role,
       message: result.message,
-      action: result.action
+      action: result.action,
+      stage: result.stage || session.groupInterview.stage,
+      stageLabel: result.stageLabel || session.groupInterview.stageLabel
     });
   } catch (e) {
     logError('群面发言处理失败: ' + (e.stack || e.message));

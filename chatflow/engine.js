@@ -51,7 +51,8 @@ async function runAnalysisPipeline(jdText, resumeText, useMianjing = false) {
     gap_analysis: gapAnalysis,
     position: jdParsed.position || '',
     mianjing_data: mianjingData || '无面经数据，请基于JD和简历差距分析生成题目',
-    focus_type: '综合'
+    focus_type: '综合',
+    difficulty_guide: prompts.DIFFICULTY_GUIDES['贴近真实']
   });
   const questions = await llm(questionPrompt, '', { temperature: 0.8 });
 
@@ -290,19 +291,30 @@ async function optimizeResume(jdParsed, resumeText) {
 }
 
 // ============================================================
-// Chatflow 4: 群面模拟
+// Chatflow 4: 群面模拟 — 三阶段状态机
+//   ① intro（自我介绍）→ ② topic（小组讨论）→ ③ qa（面试官单独问答）→ 评估
+// 核心目标：训练结构框架思维与表达能力，时间限制由前端倒计时执行
 // ============================================================
 async function groupInterviewStart(jdParsed, resumeParsed) {
   const topicPrompt = fillTemplate(prompts.GROUP_DISCUSSION_TOPIC, {
     jd_parsed: typeof jdParsed === 'string' ? jdParsed : JSON.stringify(jdParsed, null, 2),
     position: (jdParsed && jdParsed.position) || '通用岗位'
   });
-  const topic = await llm(topicPrompt, '', { temperature: 0.8 });
+  // 题目与自我介绍开场白并行生成，缩短等待
+  const [topic, introOpening] = await Promise.all([
+    llm(topicPrompt, '', { temperature: 0.8 }),
+    // 开场白是纯文本而非JSON，必须关闭 jsonMode，否则解析失败返回对象
+    llm(prompts.GROUP_INTRO_OPENING, '', { jsonMode: false, temperature: 0.7 })
+  ]);
 
   return {
     topic,
-    discussionHistory: [],
     stage: 'intro',
+    stageLabel: '① 自我介绍',
+    introOpening: String(introOpening || '欢迎参加今天的无领导小组讨论。请先用1分钟做自我介绍：姓名背景、应聘岗位、一个核心亮点。介绍完我们进入讨论环节。'),
+    qaQuestions: [],
+    qaIndex: 0,
+    discussionHistory: [],
     candidates: [
       { id: 'A', name: '候选人A', role: '激进型', style: '观点鲜明，抢先发言，偶尔强势' },
       { id: 'B', name: '候选人B', role: '协作型', style: '温和友善，补充观点，推动共识' },
@@ -311,11 +323,101 @@ async function groupInterviewStart(jdParsed, resumeParsed) {
   };
 }
 
+// 结束讨论 → 进入面试官单独问答，生成问题并返回第一问
+async function groupInterviewStartQa(session, jdParsed) {
+  const qaPrompt = fillTemplate(prompts.GROUP_QA_SYSTEM, {
+    topic: JSON.stringify(session.topic, null, 2),
+    discussion_log: JSON.stringify(session.discussionHistory || [], null, 2),
+    jd_parsed: JSON.stringify(jdParsed || {}, null, 2),
+    qa_count: 3
+  });
+  let questions = [];
+  try {
+    const result = await llm(qaPrompt, '', { temperature: 0.6 });
+    questions = Array.isArray(result?.questions) ? result.questions : [];
+  } catch {}
+  if (!questions.length) {
+    questions = [
+      { q: '请用1分钟总结你在刚才讨论中的核心观点和推动共识的过程。', intent: '总结能力' },
+      { q: '你刚才的方案如果只能保留一个优化方向，你会选什么？为什么？', intent: '优先级判断' },
+      { q: '结合今天的讨论和JD要求，你认为你最大的优势是什么？', intent: '自我认知' }
+    ];
+  }
+  session.stage = 'qa';
+  session.stageLabel = '③ 单独问答';
+  session.qaQuestions = questions;
+  session.qaIndex = 0;
+
+  const first = questions[0];
+  const message = `讨论环节结束，进入面试官单独问答。共 ${questions.length} 个问题，我会根据你的回答逐题点评。\n\n问题 1/${questions.length}：${first.q}`;
+  session.discussionHistory.push({ speaker: '面试官', message, stage: 'qa' });
+  return message;
+}
+
 async function groupInterviewRespond(session, userMessage) {
   if (!session.discussionHistory) {
     session.discussionHistory = [];
   }
-  session.discussionHistory.push({ speaker: '我', message: userMessage });
+
+  // ---- 阶段①：自我介绍 ----
+  if (session.stage === 'intro') {
+    session.discussionHistory.push({ speaker: '我', message: userMessage, stage: 'intro' });
+    session.stage = 'topic';
+    session.stageLabel = '② 小组讨论';
+    const t = session.topic || {};
+    const message = `感谢你的自我介绍。现在进入小组讨论环节。\n\n📌题目：${t.topic || '（题目生成异常，按原题继续）'}\n背景：${t.background || ''}\n题型：${t.type || ''}\n\n请先用1分钟思考，然后开始发言。注意：先亮出你的排序/分类框架，再展开具体观点。`;
+    session.discussionHistory.push({ speaker: '面试官', message, stage: 'topic' });
+    return { speaker: '面试官', role: '面试官', message, action: 'start_topic' };
+  }
+
+  // ---- 阶段③：面试官单独问答 ----
+  if (session.stage === 'qa') {
+    session.discussionHistory.push({ speaker: '我', message: userMessage, stage: 'qa' });
+    const idx = session.qaIndex || 0;
+    const questions = session.qaQuestions || [];
+    const isLast = idx >= questions.length - 1;
+
+    if (isLast) {
+      // 最后一题答完，点评后宣布问答结束
+      const fbPrompt = fillTemplate(prompts.GROUP_QA_FEEDBACK, {
+        topic: JSON.stringify(session.topic, null, 2),
+        question: questions[idx]?.q || '',
+        answer: userMessage,
+        next_question: '（无，这是最后一个问题）'
+      });
+      let feedback = '';
+      try {
+        const r = await llm(fbPrompt, '', { temperature: 0.5 });
+        feedback = r?.feedback || '';
+      } catch {}
+      session.stage = 'done';
+      session.stageLabel = '✅ 问答结束';
+      const message = `${feedback}\n\n所有问题已问完。点击「结束并评估」查看你的群面评估报告。`;
+      session.discussionHistory.push({ speaker: '面试官', message, stage: 'qa' });
+      return { speaker: '面试官', role: '面试官', message, action: 'qa_done', stage: session.stage, stageLabel: session.stageLabel };
+    }
+
+    const nextQ = questions[idx + 1];
+    const fbPrompt = fillTemplate(prompts.GROUP_QA_FEEDBACK, {
+      topic: JSON.stringify(session.topic, null, 2),
+      question: questions[idx]?.q || '',
+      answer: userMessage,
+      next_question: nextQ?.q || ''
+    });
+    let feedback = '', nextQuestion = nextQ?.q || '';
+    try {
+      const r = await llm(fbPrompt, '', { temperature: 0.5 });
+      feedback = r?.feedback || '';
+      nextQuestion = r?.next_question || nextQuestion;
+    } catch {}
+    session.qaIndex = idx + 1;
+    const message = `${feedback}\n\n问题 ${session.qaIndex + 1}/${questions.length}：${nextQuestion}`;
+    session.discussionHistory.push({ speaker: '面试官', message, stage: 'qa' });
+    return { speaker: '面试官', role: '面试官', message, action: 'qa_next', stage: session.stage, stageLabel: session.stageLabel };
+  }
+
+  // ---- 阶段②：小组讨论 ----
+  session.discussionHistory.push({ speaker: '我', message: userMessage, stage: 'topic' });
 
   // 判断下一个发言者
   const nextSpeaker = getNextSpeaker(session);
@@ -328,9 +430,9 @@ async function groupInterviewRespond(session, userMessage) {
   });
 
   const response = await llm(responsePrompt, '', { temperature: 0.7 });
-  session.discussionHistory.push({ speaker: nextSpeaker.name, message: response.message });
+  session.discussionHistory.push({ speaker: nextSpeaker.name, message: response.message, stage: 'topic' });
 
-  return { speaker: nextSpeaker.name, role: nextSpeaker.role, message: response.message, action: response.action };
+  return { speaker: nextSpeaker.name, role: nextSpeaker.role, message: response.message, action: response.action, stage: session.stage, stageLabel: session.stageLabel };
 }
 
 function getNextSpeaker(session) {
@@ -371,5 +473,6 @@ module.exports = {
   optimizeResume,
   groupInterviewStart,
   groupInterviewRespond,
+  groupInterviewStartQa,
   groupInterviewEvaluate
 };

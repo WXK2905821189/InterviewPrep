@@ -1486,7 +1486,7 @@ function switchTab(tabName) {
     // 检查是否有分析结果，有则启用开始按钮
     var btnStart = document.getElementById('btn-group-start');
     var hint = document.getElementById('group-start-hint');
-    if (state.analysis && state.analysis.jdParsed) {
+    if (state.analysis && (state.analysis.jd || state.analysis.jdParsed)) {
       if (btnStart) btnStart.disabled = false;
       if (hint) hint.textContent = '已检测到JD分析结果，可以开始群面模拟';
     } else {
@@ -1522,7 +1522,7 @@ document.addEventListener('click', (e) => {
 // ============================================================
 // API Calls
 // ============================================================
-async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, manualUrls = [], resumeFileName = '', resumeSourceType = '') {
+async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, manualUrls = [], resumeFileName = '', resumeSourceType = '', difficulty = '') {
   setStatus('🔄 分析中...');
 
   // 显示进度条
@@ -1577,7 +1577,7 @@ async function apiAnalyze(jdText, resumeText, useMianjing, quickMode, manualUrls
     const resp = await fetch(`${API}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jdText, resumeText, useMianjing, quickMode, manualUrls, resumeFileName, resumeSourceType })
+      body: JSON.stringify({ jdText, resumeText, useMianjing, quickMode, manualUrls, resumeFileName, resumeSourceType, difficulty })
     });
 
     const reader = resp.body.getReader();
@@ -1748,8 +1748,13 @@ $('#btn-analyze').addEventListener('click', async () => {
   const jdText = $('#jd-input').value.trim();
   const resumeText = $('#resume-input').value.trim();
   const quickMode = $('#use-quick-mode')?.checked || false;
+  const difficulty = $('#difficulty-select')?.value || '';
 
   if (!jdText || !resumeText) return toast('请同时填写JD和简历内容');
+  if (!difficulty) {
+    $('#difficulty-select')?.focus();
+    return toast('🎚 请先选择题目难度（每次生成前都需要选择）');
+  }
 
   const btn = $('#btn-analyze');
   btn.disabled = true;
@@ -1757,7 +1762,7 @@ $('#btn-analyze').addEventListener('click', async () => {
   btn.textContent = `${modeLabel}分析中...`;
 
   try {
-    const result = await apiAnalyze(jdText, resumeText, false, quickMode, [], state.resumeFileName, state.resumeSourceType);
+    const result = await apiAnalyze(jdText, resumeText, false, quickMode, [], state.resumeFileName, state.resumeSourceType, difficulty);
     state.sessionId = result.sessionId;
     state.analysis = result;
     state.jdText = jdText;
@@ -6380,10 +6385,12 @@ async function generateBatchQuestions(jdText, resumeText) {
   btn.className = 'btn-primary';
   btn.style.cssText = 'margin-top:0.5rem;';
   btn.onclick = async function() {
+    var difficulty = document.getElementById('difficulty-select')?.value || '';
+    if (!difficulty) { toast('🎚 请先在分析区选择题目难度'); return; }
     btn.disabled = true;
     btn.textContent = '\u751F\u6210\u4E2D...';
     try {
-      var resp = await fetch(API + '/generate-questions-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jdText: jdText, resumeText: resumeText, count: 15 }) });
+      var resp = await fetch(API + '/generate-questions-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jdText: jdText, resumeText: resumeText, count: 15, difficulty: difficulty }) });
       var data = await resp.json();
       if (data.questions && data.questions.length) {
         renderBatchResults(data.questions);
@@ -6619,27 +6626,70 @@ function getCurrentSession() {
   return { sessionId: state.sessionId, analysis: state.analysis };
 }
 
+// 阶段 UI 统一更新：标题、输入框、按钮文案
+var groupStage = 'intro';
+
+function updateGroupStageUI(stage, stageLabel) {
+  if (stage) groupStage = stage;
+  var stageEl = document.getElementById('group-stage');
+  if (stageEl && stageLabel) stageEl.textContent = stageLabel;
+  var title = document.getElementById('group-discussion-title');
+  var input = document.getElementById('group-input');
+  var btnEnd = document.getElementById('btn-group-end');
+  var btnSkip = document.getElementById('btn-group-skip');
+  var btnSpeak = document.getElementById('btn-group-speak');
+  if (btnEnd) btnEnd.disabled = false;
+  if (btnSkip) btnSkip.disabled = false;
+  if (btnSpeak) btnSpeak.disabled = false;
+  if (groupStage === 'intro') {
+    if (title) title.textContent = '🙋 自我介绍';
+    if (input) { input.disabled = false; input.placeholder = '用1分钟做自我介绍：姓名 + 背景 + 一个核心亮点'; }
+    if (btnEnd) btnEnd.textContent = '⏭ 跳过介绍，开始讨论';
+    if (btnSpeak) btnSpeak.textContent = '🙋 完成介绍';
+  } else if (groupStage === 'topic') {
+    if (title) title.textContent = '💬 小组讨论';
+    if (input) { input.disabled = false; input.placeholder = '输入你的发言（先亮出框架，再展开观点）...'; }
+    if (btnEnd) btnEnd.textContent = '➡ 结束讨论，进入问答';
+    if (btnSpeak) btnSpeak.textContent = '💬 发言';
+  } else if (groupStage === 'qa') {
+    if (title) title.textContent = '🎯 单独问答';
+    if (input) { input.disabled = false; input.placeholder = '回答面试官的问题...'; }
+    if (btnEnd) btnEnd.textContent = '⏹ 结束并评估';
+    if (btnSpeak) btnSpeak.textContent = '🙋 回答';
+  } else {
+    if (title) title.textContent = '✅ 问答结束';
+    if (input) { input.disabled = true; input.placeholder = '问答已结束，点击「结束并评估」查看报告'; }
+    if (btnEnd) btnEnd.textContent = '📊 结束并评估';
+    if (btnSpeak) btnSpeak.disabled = true;
+    if (btnSkip) btnSkip.disabled = true;
+  }
+}
+
 async function startGroupInterview() {
   var session = getCurrentSession();
   if (!session || !session.analysis) { alert('\u8BF7\u5148\u5728\u201C\u5206\u6790&\u62BC\u9898\u201D\u4E2D\u5B8C\u6210JD\u5206\u6790'); return; }
-  
+  if (!session.sessionId) { alert('\u8BF7\u5148\u5B8C\u6210JD\u5206\u6790'); return; }
+
   try {
     var resp = await fetchRetry('/api/group-interview/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jdParsed: session.analysis.jdParsed, resumeParsed: session.analysis.resumeParsed })
+      body: JSON.stringify({ sessionId: session.sessionId })
     });
     var data = await resp.json();
     if (data.error) { alert(data.error); return; }
-    
+
     groupSession = data;
-    renderGroupTopic(data.topic);
     document.getElementById('group-start-card').style.display = 'none';
     document.getElementById('group-discussion-card').style.display = '';
     document.getElementById('group-discussion-log').innerHTML = '';
-    
-    // Add interviewer opening
-    addGroupMessage('\u9762\u8BD5\u5B98', '\u9762\u8BD5\u5B98', '\u9898\u76EE\uFF1A' + data.topic.topic + '\n\n\u80CC\u666F\uFF1A' + data.topic.background + '\n\n\u8BF7\u5404\u4F4D\u5019\u9009\u4EBA\u75282\u5206\u949F\u65F6\u95F4\u601D\u8003\uFF0C\u7136\u540E\u81EA\u7531\u8BA8\u8BBA\u3002\u8BA8\u8BBA\u65F6\u95F415\u5206\u949F\u3002');
-    startGroupTimer(900); // 15 min
+    var topicBar = document.getElementById('group-topic-bar');
+    if (topicBar) { topicBar.style.display = 'none'; topicBar.innerHTML = ''; }
+
+    // 阶段①：面试官开场 + 自我介绍
+    addGroupMessage('\u9762\u8BD5\u5B98', '\u9762\u8BD5\u5B98',
+      data.introOpening || '\u6B22\u8FCE\u53C2\u52A0\u4ECA\u5929\u7684\u65E0\u9886\u5BFC\u5C0F\u7EC4\u8BA8\u8BBA\u3002\u8BF7\u5148\u75281\u5206\u949F\u505A\u81EA\u6211\u4ECB\u7ECD\uFF1A\u59D3\u540D\u80CC\u666F\u3001\u5E94\u8058\u5C97\u4F4D\u3001\u4E00\u4E2A\u6838\u5FC3\u4EAE\u70B9\u3002\u4ECB\u7ECD\u5B8C\u6211\u4EEC\u8FDB\u5165\u8BA8\u8BBA\u73AF\u8282\u3002');
+    updateGroupStageUI(data.stage || 'intro', data.stageLabel || '\u2460 \u81EA\u6211\u4ECB\u7ECD');
+    startGroupTimer(120); // 自我介绍限时 2 分钟
   } catch(e) { alert('\u542F\u52A8\u7FA4\u9762\u5931\u8D25: ' + e.message); }
 }
 
@@ -6667,45 +6717,103 @@ function getGroupRoleColor(role) {
   return 'var(--accent)';
 }
 
-async function submitGroupMessage() {
+async function submitGroupMessage(overrideMsg) {
   var input = document.getElementById('group-input');
-  var msg = input.value.trim();
+  var msg = (typeof overrideMsg === 'string' ? overrideMsg : input.value).trim();
   if (!msg) return;
-  input.value = '';
-  
+  if (typeof overrideMsg !== 'string') input.value = '';
+
   addGroupMessage('\u6211', '\u5019\u9009\u4EBA', msg);
-  
+
   try {
     var resp = await fetchRetry('/api/group-interview/respond', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: msg })
+      body: JSON.stringify({ sessionId: state.sessionId, message: msg })
     });
     var data = await resp.json();
     if (data.error) { alert(data.error); return; }
     addGroupMessage(data.speaker, data.role, data.message);
+    handleGroupStageResponse(data);
   } catch(e) { alert('\u53D1\u8A00\u5931\u8D25: ' + e.message); }
+}
+
+// 根据服务端返回的 stage/action 更新 UI 并按阶段重置倒计时
+function handleGroupStageResponse(data) {
+  updateGroupStageUI(data.stage, data.stageLabel);
+  if (data.action === 'start_topic') {
+    renderGroupTopicBar(groupSession && groupSession.topic);
+    startGroupTimer(900); // 讨论限时 15 分钟
+  } else if (data.action === 'qa_next') {
+    startGroupTimer(300); // 每道问答限时 5 分钟
+  } else if (data.action === 'qa_done') {
+    clearInterval(groupTimer);
+    updateGroupStageUI('done', data.stageLabel || '\u2705 \u95EE\u7B54\u7ED3\u675F');
+  }
+}
+
+// 讨论区顶部题目栏（进入小组讨论后显示）
+function renderGroupTopicBar(topic) {
+  var bar = document.getElementById('group-topic-bar');
+  if (!bar || !topic) return;
+  bar.style.display = '';
+  bar.innerHTML =
+    '<div style="background:var(--tag-bg);padding:0.6rem 0.8rem;border-radius:var(--radius-sm);font-size:0.85rem;">' +
+    '<strong>' + escapeHtml(topic.topic) + '</strong>' +
+    '<span style="color:var(--muted);margin-left:0.5rem;">\u9898\u578B\uFF1A' + escapeHtml(topic.type) + '</span>' +
+    '<div style="color:var(--muted);margin-top:0.2rem;">' + escapeHtml(topic.background) + '</div>' +
+    '</div>';
+}
+
+// 进入阶段③：面试官单独问答
+async function startGroupQa() {
+  try {
+    var resp = await fetchRetry('/api/group-interview/start-qa', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: state.sessionId })
+    });
+    var data = await resp.json();
+    if (data.error) { alert(data.error); return; }
+    addGroupMessage(data.speaker, data.role, data.message);
+    updateGroupStageUI(data.stage, data.stageLabel);
+    startGroupTimer(300); // 首题限时 5 分钟
+  } catch(e) { alert('\u8FDB\u5165\u95EE\u7B54\u5931\u8D25: ' + e.message); }
+}
+
+// 按当前阶段执行「结束」按钮语义
+function groupEndHandler() {
+  if (groupStage === 'intro') {
+    submitGroupMessage('\uFF08\u8DF3\u8FC7\u81EA\u6211\u4ECB\u7ECD\uFF09');
+  } else if (groupStage === 'topic') {
+    startGroupQa();
+  } else {
+    endGroupInterview();
+  }
+}
+
+// 跳过本轮：发送占位发言，保持流程推进
+function groupSkipHandler() {
+  if (groupStage === 'intro') {
+    submitGroupMessage('\uFF08\u8DF3\u8FC7\u81EA\u6211\u4ECB\u7ECD\uFF09');
+  } else if (groupStage === 'qa') {
+    submitGroupMessage('\uFF08\u672C\u9898\u8DF3\u8FC7\uFF0C\u8BF7\u76F4\u63A5\u8FDB\u5165\u4E0B\u4E00\u9898\uFF09');
+  } else {
+    submitGroupMessage('\uFF08\u672C\u8F6E\u4E0D\u53D1\u8A00\uFF09');
+  }
 }
 
 async function endGroupInterview() {
   clearInterval(groupTimer);
   try {
-    var resp = await fetchRetry('/api/group-interview/evaluate', { method: 'POST' });
+    var resp = await fetchRetry('/api/group-interview/evaluate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: state.sessionId })
+    });
     var data = await resp.json();
+    if (data.error) { alert(data.error); return; }
     document.getElementById('group-discussion-card').style.display = 'none';
     document.getElementById('group-report-card').style.display = '';
     renderGroupReport(data);
   } catch(e) { alert('\u8BC4\u4F30\u5931\u8D25: ' + e.message); }
-}
-
-function renderGroupTopic(topic) {
-  var info = document.getElementById('group-topic-info');
-  info.style.display = '';
-  info.innerHTML = 
-    '<div style=\"background:var(--tag-bg);padding:0.8rem;border-radius:var(--radius-sm);\">' +
-    '<strong>' + escapeHtml(topic.topic) + '</strong>' +
-    '<p style=\"margin:0.5rem 0 0;color:var(--muted);\">' + escapeHtml(topic.background) + '</p>' +
-    '<span style=\"font-size:0.75rem;color:var(--accent-text);\">\u9898\u578B\uFF1A' + escapeHtml(topic.type) + '</span>' +
-    '</div>';
 }
 
 function renderGroupReport(report) {
@@ -6744,7 +6852,23 @@ function startGroupTimer(seconds) {
   groupTimer = setInterval(function() {
     remaining--;
     updateGroupTimer(remaining);
-    if (remaining <= 0) { clearInterval(groupTimer); endGroupInterview(); }
+    if (remaining <= 0) {
+      clearInterval(groupTimer);
+      // 时间到：按当前阶段自动推进
+      if (groupStage === 'intro') {
+        toast('\u23F0 自我介绍时间到，进入小组讨论');
+        submitGroupMessage('\uFF08\u81EA\u6211\u4ECB\u7ECD\u65F6\u95F4\u5230\uFF09');
+      } else if (groupStage === 'topic') {
+        toast('\u23F0 讨论时间到，进入单独问答');
+        startGroupQa();
+      } else if (groupStage === 'qa') {
+        toast('\u23F0 本题时间到，进入下一题');
+        submitGroupMessage('\uFF08\u672C\u9898\u65F6\u95F4\u5230\uFF09');
+      } else {
+        toast('\u23F0 时间到，结束群面');
+        endGroupInterview();
+      }
+    }
   }, 1000);
 }
 
@@ -6961,15 +7085,13 @@ function renderMianjingAnalysis(data, container) {
   if (btnStart) btnStart.addEventListener('click', startGroupInterview);
   
   var btnSpeak = document.getElementById('btn-group-speak');
-  if (btnSpeak) btnSpeak.addEventListener('click', submitGroupMessage);
+  if (btnSpeak) btnSpeak.addEventListener('click', function() { submitGroupMessage(); });
   
   var btnEnd = document.getElementById('btn-group-end');
-  if (btnEnd) btnEnd.addEventListener('click', endGroupInterview);
+  if (btnEnd) btnEnd.addEventListener('click', groupEndHandler);
   
   var btnSkip = document.getElementById('btn-group-skip');
-  if (btnSkip) btnSkip.addEventListener('click', function() {
-    submitGroupMessage(); // For now, skip just sends an empty or placeholder
-  });
+  if (btnSkip) btnSkip.addEventListener('click', groupSkipHandler);
   
   var btnMjAnalysis = document.getElementById('btn-mj-analysis');
   if (btnMjAnalysis) btnMjAnalysis.addEventListener('click', doMianjingAnalysis);
